@@ -33,7 +33,7 @@ jobs:
 
       - name: Docker meta
         id: stolon-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
             name=ghcr.io/${{ github.repository_owner }}/stolon-proxy,enable=true
@@ -80,7 +80,7 @@ jobs:
 
       - name: Docker meta
         id: stolon-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
             name=ghcr.io/${{ github.repository_owner }}/stolon-sentinel,enable=true
@@ -130,7 +130,7 @@ jobs:
 
       - name: Docker meta
         id: stolon-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: |
             name=ghcr.io/${{ github.repository_owner }}/stolon-keeper,enable=true
