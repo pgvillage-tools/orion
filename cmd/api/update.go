@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	v1 "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/internal/logging"
-	"github.com/pgvillage-tools/stolon/internal/store"
+	v1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/consensus"
+	"github.com/pgvillage-tools/orion/internal/logging"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
@@ -113,7 +113,7 @@ func patchClusterSpec(cs *v1.Spec, p []byte) (*v1.Spec, error) {
 	return newcs, nil
 }
 
-func tryUpdateSpec(ctx context.Context, client store.Store, patch []byte, replace bool) error {
+func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, replace bool) error {
 	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
 	logger.Debug().Str("patch", string(patch)).Bool("update", replace).Msg("")
 	cd, pair, err := client.GetClusterData(ctx)
@@ -155,7 +155,7 @@ func tryUpdateSpec(ctx context.Context, client store.Store, patch []byte, replac
 	return nil
 }
 
-func updateSpecRetries(ctx context.Context, client store.Store, patch []byte, update bool) error {
+func updateSpecRetries(ctx context.Context, client consensus.Store, patch []byte, update bool) error {
 	const maxRetries = 3
 	var errs []error
 	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)

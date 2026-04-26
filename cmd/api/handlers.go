@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	"github.com/pgvillage-tools/stolon/internal/logging"
-	"github.com/pgvillage-tools/stolon/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
+	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 type Route struct {
@@ -16,12 +16,12 @@ type Route struct {
 }
 
 type Handlers struct {
-	client store.Store
+	client consensus.Store
 	Ready  *atomic.Bool
 	nextID int
 }
 
-func NewHandlers(client store.Store, ready *atomic.Bool) *Handlers {
+func NewHandlers(client consensus.Store, ready *atomic.Bool) *Handlers {
 	return &Handlers{
 		client: client,
 		Ready:  ready,

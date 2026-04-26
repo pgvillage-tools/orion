@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pgvillage-tools/stolon/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 func (h *Handlers) FailKeeperRoutes() []Route {

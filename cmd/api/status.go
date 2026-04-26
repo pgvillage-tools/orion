@@ -7,10 +7,10 @@ import (
 	"sort"
 	"time"
 
-	v1 "github.com/pgvillage-tools/stolon/api/v1"
-	cmdcommon "github.com/pgvillage-tools/stolon/cmd"
-	"github.com/pgvillage-tools/stolon/internal/logging"
-	"github.com/pgvillage-tools/stolon/internal/store"
+	v1 "github.com/pgvillage-tools/orion/api/v1"
+	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/internal/consensus"
+	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 func (h *Handlers) StatusRoutes() []Route {
@@ -64,7 +64,7 @@ func (h *Handlers) sentinelInfo(ctx context.Context) (is v1.InfoSentinels, err e
 		return nil, err
 	}
 	lsid, err := election.Leader()
-	if err != nil && err != store.ErrElectionNoLeader {
+	if err != nil && err != consensus.ErrElectionNoLeader {
 		logger.Error().AnErr("error", err).Msg("failed to get leader info")
 		return nil, err
 	}

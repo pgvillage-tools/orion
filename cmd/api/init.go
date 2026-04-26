@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	v1 "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/logging"
+	v1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 func (h *Handlers) InitRoutes() []Route {

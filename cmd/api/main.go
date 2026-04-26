@@ -22,9 +22,9 @@ import (
 	"os"
 	"sync/atomic"
 
-	cmdcommon "github.com/pgvillage-tools/stolon/cmd"
-	"github.com/pgvillage-tools/stolon/internal/flagutil"
-	"github.com/pgvillage-tools/stolon/internal/logging"
+	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/internal/flagutil"
+	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
 )

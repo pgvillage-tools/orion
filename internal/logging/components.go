@@ -37,8 +37,6 @@ const (
 	ProxyComponent Component = iota
 	// SentinelComponent is the main component specifically for the Sentinel commands
 	SentinelComponent Component = iota
-	// CmdComponent is the main component specifically for orion-cli commands
-	CmdComponent Component = iota
 	// WebApiComponent is the main component specifically for the WebApi
 	WebApiComponent Component = iota
 
@@ -65,8 +63,6 @@ var (
 		"orion-cli":           CmdComponent,
 		"postgres":            PgComponent,
 		"postgres-utils":      PgUtilsComponent,
-		"sentinel":            SentinelComponent,
-		"orion-cli":           CmdComponent,
 		"undefined_component": UnknownComponent,
 		"unittest_component":  TestComponent,
 		"web-api":             WebApiComponent,
