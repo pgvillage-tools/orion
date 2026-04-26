@@ -15,7 +15,7 @@ require (
 	github.com/kvtools/etcdv2 v1.0.2
 	github.com/kvtools/etcdv3 v1.0.3
 	github.com/kvtools/valkeyrie v1.0.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.12.3
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/onsi/ginkgo/v2 v2.27.2
