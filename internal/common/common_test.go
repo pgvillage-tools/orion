@@ -72,24 +72,24 @@ var _ = Describe("Parameters", func() {
 })
 
 var _ = Describe("StolonName", func() {
-	It("should return the stolon prefixed name", func() {
-		Expect(common.StolonName("test")).To(Equal("stolon_test"))
+	It("should return the orion prefixed name", func() {
+		Expect(common.OrionName("test")).To(Equal("orion_test"))
 	})
 })
 
 var _ = Describe("NameFromStolonName", func() {
-	It("should return the name without the stolon prefix", func() {
-		Expect(common.NameFromStolonName("stolon_test")).To(Equal("test"))
+	It("should return the name without the orion prefix", func() {
+		Expect(common.NameFromOrionName("orion_test")).To(Equal("test"))
 	})
 })
 
 var _ = Describe("IsStolonName", func() {
-	It("should return true if the name is a stolon name", func() {
-		Expect(common.IsStolonName("stolon_test")).To(BeTrue())
+	It("should return true if the name is a orion name", func() {
+		Expect(common.IsOrionName("orion_test")).To(BeTrue())
 	})
 
-	It("should return false if the name is not a stolon name", func() {
-		Expect(common.IsStolonName("test")).To(BeFalse())
+	It("should return false if the name is not a orion name", func() {
+		Expect(common.IsOrionName("test")).To(BeFalse())
 	})
 })
 
@@ -111,7 +111,7 @@ var _ = Describe("WriteFileAtomic", func() {
 	var tmpDir string
 	BeforeEach(func() {
 		var err error
-		tmpDir, err = os.MkdirTemp("", "stolon-test")
+		tmpDir, err = os.MkdirTemp("", "orion-test")
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -135,7 +135,7 @@ var _ = Describe("WriteFileAtomicFunc", func() {
 	var tmpDir string
 	BeforeEach(func() {
 		var err error
-		tmpDir, err = os.MkdirTemp("", "stolon-test")
+		tmpDir, err = os.MkdirTemp("", "orion-test")
 		Expect(err).ToNot(HaveOccurred())
 	})
 

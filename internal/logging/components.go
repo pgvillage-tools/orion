@@ -35,7 +35,7 @@ const (
 	ProxyComponent Component = iota
 	// SentinelComponent is the main component specifically for the Sentinel commands
 	SentinelComponent Component = iota
-	// CmdComponent is the main component specifically for stolon-cmd commands
+	// CmdComponent is the main component specifically for orion-cli commands
 	CmdComponent Component = iota
 
 	// PgComponent is the component for all PostgreSQL logging
@@ -57,7 +57,7 @@ var (
 		"keeper":              KeeperComponent,
 		"proxy":               ProxyComponent,
 		"sentinel":            SentinelComponent,
-		"stolon-cmd":          CmdComponent,
+		"orion-cli":           CmdComponent,
 		"postgres":            PgComponent,
 		"postgres-utils":      PgUtilsComponent,
 		"kv-store":            StoreComponent,

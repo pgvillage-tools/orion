@@ -23,7 +23,7 @@ import (
 var (
 	lastCheckSuccessSeconds = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "stolon_sentinel_last_cluster_check_success_seconds",
+			Name: "orion_sentinel_last_cluster_check_success_seconds",
 			Help: "Last time we successfully performed a cluster check as seconds since unix epoch",
 		},
 	)
@@ -31,13 +31,13 @@ var (
 	// that shouldn't be updated as part of the sentinel code, but should be
 	// gathered just prior to providing Prometheus with a measurement.
 	isLeaderDesc = prometheus.NewDesc(
-		"stolon_sentinel_is_leader",
+		"orion_sentinel_is_leader",
 		"Set to 1 if the sentinel is currently a leader",
 		[]string{},
 		nil,
 	)
 	leaderCountDesc = prometheus.NewDesc(
-		"stolon_sentinel_leader_count",
+		"orion_sentinel_leader_count",
 		"Number of times this sentinel has been elected as leader",
 		[]string{},
 		nil,

@@ -38,20 +38,20 @@ func TestParseSynchronousStandbyNames(t *testing.T) {
 		err error
 	}{
 		{
-			in:  "2 (stolon_2c3870f3,stolon_c874a3cb)",
-			out: []string{"stolon_2c3870f3", "stolon_c874a3cb"},
+			in:  "2 (orion_2c3870f3,orion_c874a3cb)",
+			out: []string{"orion_2c3870f3", "orion_c874a3cb"},
 		},
 		{
-			in:  "2 ( stolon_2c3870f3 , stolon_c874a3cb )",
-			out: []string{"stolon_2c3870f3", "stolon_c874a3cb"},
+			in:  "2 ( orion_2c3870f3 , orion_c874a3cb )",
+			out: []string{"orion_2c3870f3", "orion_c874a3cb"},
 		},
 		{
-			in:  "21 (\" stolon_2c3870f3\",stolon_c874a3cb)",
-			out: []string{"\" stolon_2c3870f3\"", "stolon_c874a3cb"},
+			in:  "21 (\" orion_2c3870f3\",orion_c874a3cb)",
+			out: []string{"\" orion_2c3870f3\"", "orion_c874a3cb"},
 		},
 		{
-			in:  "stolon_2c3870f3,stolon_c874a3cb",
-			out: []string{"stolon_2c3870f3", "stolon_c874a3cb"},
+			in:  "orion_2c3870f3,orion_c874a3cb",
+			out: []string{"orion_2c3870f3", "orion_c874a3cb"},
 		},
 		{
 			in:  "node1",

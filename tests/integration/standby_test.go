@@ -25,20 +25,20 @@ import (
 	"github.com/gofrs/uuid"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
 func TestInitStandbyCluster(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	defer os.RemoveAll(dir)
 
-	// Setup a remote stolon cluster (with just one keeper and one sentinel)
+	// Setup a remote orion cluster (with just one keeper and one sentinel)
 	primaryClusterName := uuid.Must(uuid.NewV4()).String()
 
 	ptstore := setupStore(t, dir)
@@ -46,7 +46,7 @@ func TestInitStandbyCluster(t *testing.T) {
 
 	primaryStoreEndpoints := fmt.Sprintf("%s:%s", ptstore.listenAddress, ptstore.port)
 	pStorePath := filepath.Join(common.StorePrefix, primaryClusterName)
-	psm := store.NewKVBackedStore(ptstore.store, pStorePath)
+	psm := consensus.NewKVBackedStore(ptstore.store, pStorePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -95,7 +95,7 @@ func TestInitStandbyCluster(t *testing.T) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	pgpass, err := os.CreateTemp(dir, "pgpass")
 	if err != nil {
@@ -165,13 +165,13 @@ func TestInitStandbyCluster(t *testing.T) {
 func TestPromoteStandbyCluster(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	defer os.RemoveAll(dir)
 
-	// Setup a remote stolon cluster (with just one keeper and one sentinel)
+	// Setup a remote orion cluster (with just one keeper and one sentinel)
 	primaryClusterName := uuid.Must(uuid.NewV4()).String()
 
 	ptstore := setupStore(t, dir)
@@ -179,7 +179,7 @@ func TestPromoteStandbyCluster(t *testing.T) {
 
 	primaryStoreEndpoints := fmt.Sprintf("%s:%s", ptstore.listenAddress, ptstore.port)
 	pStorePath := filepath.Join(common.StorePrefix, primaryClusterName)
-	psm := store.NewKVBackedStore(ptstore.store, pStorePath)
+	psm := consensus.NewKVBackedStore(ptstore.store, pStorePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -228,7 +228,7 @@ func TestPromoteStandbyCluster(t *testing.T) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	pgpass, err := os.CreateTemp(dir, "pgpass")
 	if err != nil {
@@ -295,7 +295,7 @@ func TestPromoteStandbyCluster(t *testing.T) {
 	}
 
 	// promote the standby cluster to a primary cluster
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "promote", "-y")
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "promote", "-y")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestPromoteStandbyCluster(t *testing.T) {
 func TestPromoteStandbyClusterArchiveRecovery(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestPromoteStandbyClusterArchiveRecovery(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
-	// Setup a remote stolon cluster (with just one keeper and one sentinel)
+	// Setup a remote orion cluster (with just one keeper and one sentinel)
 	primaryClusterName := uuid.Must(uuid.NewV4()).String()
 
 	ptstore := setupStore(t, dir)
@@ -328,7 +328,7 @@ func TestPromoteStandbyClusterArchiveRecovery(t *testing.T) {
 
 	primaryStoreEndpoints := fmt.Sprintf("%s:%s", ptstore.listenAddress, ptstore.port)
 	pStorePath := filepath.Join(common.StorePrefix, primaryClusterName)
-	psm := store.NewKVBackedStore(ptstore.store, pStorePath)
+	psm := consensus.NewKVBackedStore(ptstore.store, pStorePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -381,7 +381,7 @@ func TestPromoteStandbyClusterArchiveRecovery(t *testing.T) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	pgpass, err := os.CreateTemp(dir, "pgpass")
 	if err != nil {
@@ -457,7 +457,7 @@ func TestPromoteStandbyClusterArchiveRecovery(t *testing.T) {
 	}
 
 	// promote the standby cluster to a primary cluster
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "promote", "-y")
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "promote", "-y")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}

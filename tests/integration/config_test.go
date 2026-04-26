@@ -26,8 +26,8 @@ import (
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
-	"github.com/pgvillage-tools/orion/internal/store"
 
 	"github.com/gofrs/uuid"
 )
@@ -58,7 +58,7 @@ func TestServerParameters(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -92,7 +92,7 @@ func TestServerParameters(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "unexistent_parameter": "value" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "unexistent_parameter": "value" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestServerParameters(t *testing.T) {
 	}
 
 	// Fix wrong parameters
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : null }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : null }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestWalLevel(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -190,7 +190,7 @@ func TestWalLevel(t *testing.T) {
 	}
 
 	// "archive" isn't an accepted wal_level
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_level": "archive" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_level": "archive" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestWalLevel(t *testing.T) {
 	}
 
 	// "logical" is an accepted wal_level
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_level": "logical" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_level": "logical" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestWalKeepSegments(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -313,7 +313,7 @@ func TestWalKeepSegments(t *testing.T) {
 	}
 
 	// "archive" isn't an accepted wal_level
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_level": "archive" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_level": "archive" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestWalKeepSegments(t *testing.T) {
 	}
 
 	// test setting a wal_keep_segments value greater than the default
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_keep_segments": "20" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_keep_segments": "20" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestWalKeepSegments(t *testing.T) {
 	}
 
 	// test setting a wal_keep_segments value less than the default
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_keep_segments": "5" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_keep_segments": "5" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestWalKeepSegments(t *testing.T) {
 	}
 
 	// test setting a bad wal_keep_segments value
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_keep_segments": "badvalue" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "wal_keep_segments": "badvalue" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestAlterSystem(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -505,7 +505,7 @@ func TestAlterSystem(t *testing.T) {
 func TestAdditionalReplicationSlots(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestAdditionalReplicationSlots(t *testing.T) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -553,54 +553,54 @@ func TestAdditionalReplicationSlots(t *testing.T) {
 	}
 
 	// create additional replslots on master
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : [ "replslot01", "replslot02" ] }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : [ "replslot01", "replslot02" ] }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if err := waitStolonReplicationSlots(master, []string{standbyDBUID, "replslot01", "replslot02"}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(master, []string{standbyDBUID, "replslot01", "replslot02"}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// no repl slot on standby
-	if err := waitStolonReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
 	// remove replslot02
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : [ "replslot01" ] }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : [ "replslot01" ] }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if err := waitStolonReplicationSlots(master, []string{standbyDBUID, "replslot01"}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(master, []string{standbyDBUID, "replslot01"}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// no repl slot on standby
-	if err := waitStolonReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
 	// remove additional replslots on master
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : null }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : null }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if err := waitStolonReplicationSlots(master, []string{standbyDBUID}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(master, []string{standbyDBUID}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// no repl slot on standby
-	if err := waitStolonReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
 	// create additional replslots on master
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : [ "replslot01", "replslot02" ] }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "additionalMasterReplicationSlots" : [ "replslot01", "replslot02" ] }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if err := waitStolonReplicationSlots(master, []string{standbyDBUID, "replslot01", "replslot02"}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(master, []string{standbyDBUID, "replslot01", "replslot02"}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// no repl slot on standby
-	if err := waitStolonReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(standby, []string{}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
@@ -608,15 +608,15 @@ func TestAdditionalReplicationSlots(t *testing.T) {
 	if _, err := master.Exec("select pg_create_physical_replication_slot('manualreplslot')"); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	// Manually create a replication slot starting with stolon_ . It should be dropped.
-	if _, err := master.Exec("select pg_create_physical_replication_slot('stolon_manualreplslot')"); err != nil {
+	// Manually create a replication slot starting with orion_ . It should be dropped.
+	if _, err := master.Exec("select pg_create_physical_replication_slot('orion_manualreplslot')"); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if err := waitStolonReplicationSlots(master, []string{standbyDBUID, "replslot01", "replslot02"}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(master, []string{standbyDBUID, "replslot01", "replslot02"}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// check it here so we are sure the refresh slots function has already been called
-	if err := waitNotStolonReplicationSlots(master, []string{"manualreplslot"}, 30*time.Second); err != nil {
+	if err := waitNotOrionReplicationSlots(master, []string{"manualreplslot"}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
@@ -633,7 +633,7 @@ func TestAdditionalReplicationSlots(t *testing.T) {
 	}
 
 	// repl slot on standby which is the new master
-	if err := waitStolonReplicationSlots(standby, []string{"replslot01", "replslot02"}, 30*time.Second); err != nil {
+	if err := waitOrionReplicationSlots(standby, []string{"replslot01", "replslot02"}, 30*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 }
@@ -664,7 +664,7 @@ func TestAutomaticPgRestart(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 	automaticPgRestart := true
 	pgParameters := map[string]string{"max_connections": "100"}
 
@@ -703,7 +703,7 @@ func TestAutomaticPgRestart(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "max_connections": "150" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "max_connections": "150" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -730,12 +730,12 @@ func TestAutomaticPgRestart(t *testing.T) {
 	}
 
 	// Allow users to opt out
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "automaticPgRestart" : false }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "automaticPgRestart" : false }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "max_connections": "200" } }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "pgParameters" : { "max_connections": "200" } }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -788,7 +788,7 @@ func TestAdvertise(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -877,7 +877,7 @@ func TestKeeperBootsWithWalDir(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 	automaticPgRestart := true
 	pgParameters := map[string]string{"max_connections": "100"}
 

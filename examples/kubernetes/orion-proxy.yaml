@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orion-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: orion-proxy
+      orion-cluster: kube-orion
+  template:
+    metadata:
+      labels:
+        component: orion-proxy
+        orion-cluster: kube-orion
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: orion-proxy
+          image: ghcr.io/pgvillage-tools/orion-keeper:17-latest
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              exec gosu orion orion-proxy
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ORIONPROXY_CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['orion-cluster']
+            - name: ORIONPROXY_STORE_BACKEND
+              value: "kubernetes"
+            - name: ORIONPROXY_KUBE_RESOURCE_KIND
+              value: "configmap"
+            - name: ORIONPROXY_LISTEN_ADDRESS
+              value: "0.0.0.0"
+            - name: ORIONPROXY_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+            ## Uncomment this to enable debug logs
+            #- name: ORIONPROXY_DEBUG
+            #  value: "true"
+          ports:
+            - containerPort: 5432
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            timeoutSeconds: 5

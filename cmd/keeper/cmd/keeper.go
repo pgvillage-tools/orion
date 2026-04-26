@@ -39,10 +39,10 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
-	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/rs/zerolog"
 
@@ -85,7 +85,7 @@ const (
 
 // CmdKeeper exports the main keeper process
 var CmdKeeper = &cobra.Command{
-	Use:     "stolon-keeper",
+	Use:     "orion-keeper",
 	Run:     keeper,
 	Version: cmd.Version,
 }
@@ -185,7 +185,7 @@ func init() {
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUConnType, "pg-su-connection-type", connTypeHost, "postgres superuser connection type. Default is host.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUAuthMethod, "pg-su-auth-method", authMd5, "postgres superuser auth method. Default is authMd5.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSULocalAuthMethod, "pg-su-local-auth-method", "", "postgres superuser auth method. Default is same as pg-su-auth-method.")
-	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUUsername, "pg-su-username", "", "postgres superuser user name. Used for keeper managed instance access and pg_rewind based synchronization. It'll be created on db initialization. Defaults to the name of the effective user running stolon-keeper. Must be the same for all keepers.")
+	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUUsername, "pg-su-username", "", "postgres superuser user name. Used for keeper managed instance access and pg_rewind based synchronization. It'll be created on db initialization. Defaults to the name of the effective user running orion-keeper. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUPassword, "pg-su-password", "", "postgres superuser password. Only one of --pg-su-password or --pg-su-passwordfile must be provided. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUPasswordFile, "pg-su-passwordfile", "", "postgres superuser password file. Only one of --pg-su-password or --pg-su-passwordfile must be provided. Must be the same for all keepers)")
 	CmdKeeper.PersistentFlags().BoolVar(&cfg.debug, "debug", false, "enable debug logging")
@@ -242,7 +242,7 @@ func readPasswordFromFile(ctx context.Context, filePath string) (string, error) 
 		// TODO: enforce this by exiting with an error. Kubernetes makes this file too open today.
 		logger.Warn().Str("file", filePath).Str("mode", fmt.Sprintf("%#o", fi.Mode())).
 			Msgf("password file permissions are too open. " +
-				"This file should only be readable to the user executing stolon! Continuing...")
+				"This file should only be readable to the user executing orion! Continuing...")
 	}
 
 	pwBytes, err := os.ReadFile(filePath)
@@ -347,7 +347,7 @@ func (p *PostgresKeeper) getSUConnParams(db, followedDB *cluster.DB) pg.ConnPara
 		WithUser(p.pgSUUsername).
 		WithHost(followedDB.Status.ListenAddress).
 		WithSPort(followedDB.Status.Port).
-		WithAppName(common.StolonName(db.UID)).
+		WithAppName(common.OrionName(db.UID)).
 		WithDbName(defaultDatabase).
 		// This is currently only used for pgRewind, which requires a SU (repluser might not be enough).
 		// Pgrewind is the only feature using SU over remote connection
@@ -367,7 +367,7 @@ func (p *PostgresKeeper) getReplConnParams(db, followedDB *cluster.DB) pg.ConnPa
 		WithUser(p.pgReplUsername).
 		WithHost(followedDB.Status.ListenAddress).
 		WithSPort(followedDB.Status.Port).
-		WithAppName(common.StolonName(db.UID)).
+		WithAppName(common.OrionName(db.UID)).
 		WithSSLMode("prefer")
 	if p.pgReplAuthMethod == authMd5 {
 		cp = cp.WithPassword(p.pgReplPassword)
@@ -447,7 +447,7 @@ func (p *PostgresKeeper) createPGParameters(ctx context.Context, db *cluster.DB)
 			len(db.Spec.ExternalSynchronousStandbys) > 0) {
 		synchronousStandbys := []string{}
 		for _, synchronousStandby := range db.Spec.SynchronousStandbys {
-			synchronousStandbys = append(synchronousStandbys, common.StolonName(synchronousStandby))
+			synchronousStandbys = append(synchronousStandbys, common.OrionName(synchronousStandby))
 		}
 		synchronousStandbys = append(synchronousStandbys, db.Spec.ExternalSynchronousStandbys...)
 
@@ -558,7 +558,7 @@ type PostgresKeeper struct {
 	sleepInterval  time.Duration
 	requestTimeout time.Duration
 
-	e   store.Store
+	e   consensus.Store
 	pgm *pg.Manager
 	end chan error
 
@@ -784,8 +784,8 @@ func (p *PostgresKeeper) GetInSyncStandbys(ctx context.Context) ([]string, error
 
 	inSyncStandbys := []string{}
 	for _, s := range inSyncStandbysFullName {
-		if common.IsStolonName(s) {
-			inSyncStandbys = append(inSyncStandbys, common.NameFromStolonName(s))
+		if common.IsOrionName(s) {
+			inSyncStandbys = append(inSyncStandbys, common.NameFromOrionName(s))
 		}
 	}
 
@@ -962,7 +962,7 @@ func (p *PostgresKeeper) Start(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			logger.Debug().Msg("stopping stolon keeper")
+			logger.Debug().Msg("stopping orion keeper")
 			if err = p.pgm.StopIfStarted(ctx, true); err != nil {
 				logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
 			}
@@ -1009,7 +1009,7 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 	replConnParams := p.getReplConnParams(db, followedDB)
 	standbySettings := &cluster.StandbySettings{
 		PrimaryConninfo: replConnParams.ConnString(),
-		PrimarySlotName: common.StolonName(db.UID)}
+		PrimarySlotName: common.OrionName(db.UID)}
 
 	// TODO(sgotti) Actually we don't check if pg_rewind is installed or if
 	// postgresql version is > 9.5 since someone can also use an externally
@@ -1018,7 +1018,7 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 	// fallback to pg_basebackup
 	if tryPgrewind && p.usePgrewind(db) {
 		// pg_rewind doesn't support running against a database that is in recovery, as it
-		// builds temporary tables and this is not supported on a hot-standby. Stolon doesn't
+		// builds temporary tables and this is not supported on a hot-standby. Orion doesn't
 		// currently support cascading replication, but we should be clear when issuing a
 		// rewind that it targets the current primary, rather than whatever database we
 		// follow.
@@ -1043,7 +1043,7 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 	}
 	replSlot := ""
 	if version.GreaterThanEqual(pg.V96) {
-		replSlot = common.StolonName(db.UID)
+		replSlot = common.OrionName(db.UID)
 	}
 
 	if err := pgm.RemoveAllIfInitialized(ctx); err != nil {
@@ -1139,17 +1139,17 @@ func (p *PostgresKeeper) updateReplSlots(
 		if followerUID == uid {
 			continue
 		}
-		internalReplSlots[common.StolonName(followerUID)] = struct{}{}
+		internalReplSlots[common.OrionName(followerUID)] = struct{}{}
 	}
 
 	// Add AdditionalReplicationSlots
 	for _, slot := range additionalReplSlots {
-		internalReplSlots[common.StolonName(slot)] = struct{}{}
+		internalReplSlots[common.OrionName(slot)] = struct{}{}
 	}
 
 	// Drop internal replication slots
 	for _, slot := range curReplSlots {
-		if !common.IsStolonName(slot) {
+		if !common.IsOrionName(slot) {
 			continue
 		}
 		if _, ok := internalReplSlots[slot]; !ok {
@@ -1743,7 +1743,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			replConnParams := p.getReplConnParams(db, followedDB)
 			standbySettings = &cluster.StandbySettings{
 				PrimaryConninfo: replConnParams.ConnString(),
-				PrimarySlotName: common.StolonName(db.UID)}
+				PrimarySlotName: common.OrionName(db.UID)}
 		case cluster.FollowTypeExternal:
 			standbySettings = db.Spec.FollowConfig.StandbySettings
 		default:
@@ -1783,7 +1783,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 				standbySettings := &cluster.StandbySettings{
 					PrimaryConninfo: newReplConnParams.ConnString(),
-					PrimarySlotName: common.StolonName(db.UID)}
+					PrimarySlotName: common.OrionName(db.UID)}
 
 				curRecoveryOptions := pgm.CurRecoveryOptions()
 				newRecoveryOptions := p.createRecoveryOptions(pg.RecoveryModeStandby, standbySettings, nil, nil)
@@ -2046,7 +2046,7 @@ func localAuthMethod(ctx context.Context, authMethod string) string {
 // connections and pgReplUsername replication connections.
 func (p *PostgresKeeper) generateHBA(ctx context.Context, cd *cluster.Data, db *cluster.DB,
 	onlyInternal bool) []string {
-	// Minimal entries for local normal and replication connections needed by the stolon keeper
+	// Minimal entries for local normal and replication connections needed by the orion keeper
 	// Matched local connections are for postgres database and suUsername user with authMd5 auth
 	// Matched local replication connections are for replUsername user with authMd5 auth
 	computedHBA := []string{
@@ -2124,7 +2124,7 @@ func sigHandler(ctx context.Context, sigs chan os.Signal, cancel context.CancelF
 // Execute is the main executor of keeper file
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.KeeperComponent)
-	if err := flagutil.SetFlagsFromEnv(CmdKeeper.PersistentFlags(), "STKEEPER"); err != nil {
+	if err := flagutil.SetFlagsFromEnv(CmdKeeper.PersistentFlags(), "ORIONKEEPER"); err != nil {
 		logger.Fatal().AnErr("err", err).Msg("")
 	}
 

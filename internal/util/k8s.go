@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package util has all kind of util functions to support stolon
+// Package util has all kind of util functions to support orion
 package util
 
 import (
@@ -27,19 +27,19 @@ const (
 	// KubePodName defines the env variabele for a Pod when used in k8s
 	KubePodName = "POD_NAME"
 
-	// KubeResourcePrefix is a hardcoded prefix for the configmap when running stolon on k8s
-	KubeResourcePrefix = "stolon-cluster"
+	// KubeResourcePrefix is a hardcoded prefix for the configmap when running orion on k8s
+	KubeResourcePrefix = "orion-cluster"
 
 	// KubeClusterLabel is a hardcoded label key to be set to the name of the cluster for all k8s resources belonging to
 	// the cluster
-	KubeClusterLabel = "stolon-cluster"
+	KubeClusterLabel = "orion-cluster"
 
 	// KubeClusterDataAnnotation is the key of the annotation that should be set on a ClusterData configmap
-	KubeClusterDataAnnotation = "stolon-clusterdata"
+	KubeClusterDataAnnotation = "orion-clusterdata"
 
 	// KubeStatusAnnnotation is the key of the annotation that should be set to define the status for every Pod for
 	// this cluster
-	KubeStatusAnnnotation = "stolon-status"
+	KubeStatusAnnnotation = "orion-status"
 )
 
 // PodName returns the name of the Pod from the env variabele

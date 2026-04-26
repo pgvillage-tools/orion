@@ -27,7 +27,7 @@ import (
 	"github.com/gofrs/uuid"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 )
 
 func TestProxyListening(t *testing.T) {
@@ -79,7 +79,7 @@ func TestProxyListening(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	cd := &cluster.Data{
 		FormatVersion: cluster.CurrentCDFormatVersion,

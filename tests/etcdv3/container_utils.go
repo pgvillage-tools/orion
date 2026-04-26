@@ -50,7 +50,7 @@ func runEtcd(
 	return etcdContainer, fmt.Sprintf("http://%s:2379", ips[0]), nil
 }
 
-func runStolonCtl(
+func runOrionCli(
 	ctx context.Context,
 	etcdEndpoints string,
 	nw *testcontainers.DockerNetwork,
@@ -61,11 +61,11 @@ func runStolonCtl(
 			ContainerRequest: testcontainers.ContainerRequest{
 				Cmd: command,
 				Env: map[string]string{
-					"STOLONCTL_STORE_ENDPOINTS": etcdEndpoints,
-					"STOLONCTL_LOG_LEVEL":       "debug",
+					"ORIONCLI_STORE_ENDPOINTS": etcdEndpoints,
+					"ORIONCLI_LOG_LEVEL":       "debug",
 				},
 				Networks: []string{nw.Name},
-				Image:    "stolonctl",
+				Image:    "cli",
 			},
 			Started: true,
 		})
@@ -83,11 +83,11 @@ func runKeeper(
 		pgVersion = "18"
 	}
 	envSettings := map[string]string{
-		"STKEEPER_STORE_ENDPOINTS": etcdEndpoints,
-		"STKEEPER_LOG_LEVEL":       "debug",
+		"ORIONKEEPER_STORE_ENDPOINTS": etcdEndpoints,
+		"ORIONKEEPER_LOG_LEVEL":       "debug",
 	}
 	for k, v := range settings {
-		k = fmt.Sprintf("STKEEPER_%s",
+		k = fmt.Sprintf("ORIONKEEPER_%s",
 			strings.ReplaceAll(strings.ToUpper(k), "-", "_"))
 		envSettings[k] = v
 	}
@@ -116,8 +116,8 @@ func runSentinel(
 		ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
 				Env: map[string]string{
-					"STSENTINEL_STORE_ENDPOINTS": etcdEndpoints,
-					"STSENTINEL_LOG_LEVEL":       "debug",
+					"ORIONSENTINEL_STORE_ENDPOINTS": etcdEndpoints,
+					"ORIONSENTINEL_LOG_LEVEL":       "debug",
 				},
 				Networks:   []string{nw.Name},
 				ExtraHosts: []string{},
@@ -134,8 +134,8 @@ func runProxy(
 	aliasses map[string][]string,
 ) (testcontainers.Container, error) {
 	envSettings := map[string]string{
-		"STPROXY_STORE_ENDPOINTS": etcdEndpoints,
-		"STPROXY_LOG_LEVEL":       "debug",
+		"ORIONPROXY_STORE_ENDPOINTS": etcdEndpoints,
+		"ORIONPROXY_LOG_LEVEL":       "debug",
 	}
 	return testcontainers.GenericContainer(
 		ctx, testcontainers.GenericContainerRequest{

@@ -20,7 +20,7 @@ var _ = Describe("Smoke", Ordered, func() {
 	const (
 		numEtcd       = 1
 		autoRemove    = false
-		initialConfig = `{"stolon_custom_config":{"defaultSUReplAccessMode":"strict","pgParameters":{},"pgHBA":[]}}`
+		initialConfig = `{"orion_custom_config":{"defaultSUReplAccessMode":"strict","pgParameters":{},"pgHBA":[]}}`
 
 		numKeepers = 3
 
@@ -63,17 +63,17 @@ var _ = Describe("Smoke", Ordered, func() {
 		Ω(etcdErr).NotTo(HaveOccurred())
 		allContainers = []testcontainers.Container{etcdContainer}
 
-		// run stolonctl to define a new cluster in etcd
-		stolonCtlInitCnt, initErr := runStolonCtl(
+		// run orion-cli to define a new cluster in etcd
+		orionCLIInitCnt, initErr := runOrionCli(
 			ctx,
 			etcdEndpoints,
 			nw,
 			"init", "--yes")
 		Ω(initErr).NotTo(HaveOccurred())
-		allContainers = append(allContainers, stolonCtlInitCnt)
+		allContainers = append(allContainers, orionCLIInitCnt)
 
-		// Run stolonctl patch to set initial config
-		stolonCtlPatchCnt, patchErr := runStolonCtl(
+		// Run orion-cli patch to set initial config
+		orionCLIPatchCnt, patchErr := runOrionCli(
 			ctx,
 			etcdEndpoints,
 			nw,
@@ -82,12 +82,12 @@ var _ = Describe("Smoke", Ordered, func() {
 			initialConfig,
 		)
 		Ω(patchErr).NotTo(HaveOccurred())
-		allContainers = append(allContainers, stolonCtlPatchCnt)
-		// - cat myspec.json | stolonctl update --patch --file -
+		allContainers = append(allContainers, orionCLIPatchCnt)
+		// - cat myspec.json | orion update --patch --file -
 		//   or
-		// - stolonctl update --patch "${MYSPEC}"
+		// - orion update --patch "${MYSPEC}"
 		//   or
-		// - stolonctl update --patch --file "${STOLONCTL_FILE}"'
+		// - orion update --patch --file "${ORIONCLI_FILE}"'
 
 		// Start sentinel
 		var sentinelErr error

@@ -283,7 +283,7 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 			Msg("moving WAL from src to dest")
 	}
 	// We use tmpPath here first and (if needed) mv tmpPath to desiredPath when all is copied.
-	// This allows stolon-keeper to re-read symlink dest and continue should stolon-keeper be restarted while copying.
+	// This allows orion-keeper to re-read symlink dest and continue should orion-keeper be restarted while copying.
 	if err = moveDirRecursive(ctx, curPath, tmpPath); err != nil {
 		return err
 	}
@@ -641,7 +641,7 @@ func (p *Manager) Promote(ctx context.Context) error {
 	return p.writeConfs(ctx, false)
 }
 
-// SetupRoles will connect to PostgreSQL to setup all users as required by stolon
+// SetupRoles will connect to PostgreSQL to setup all users as required by orion
 func (p *Manager) SetupRoles(ctx context.Context) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
 	ctx, cancel := context.WithTimeout(ctx, p.requestTimeout)

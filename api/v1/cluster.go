@@ -38,7 +38,7 @@ const (
 	// DefaultStoreTimeout sets the default for a store timeout
 	DefaultStoreTimeout = 5 * time.Second
 
-	// DefaultDBNotIncreasingXLogPosTimes sets a default for the number of checks that it is ok for stolon
+	// DefaultDBNotIncreasingXLogPosTimes sets a default for the number of checks that it is ok for orion
 	// not to detect XLog position increases on a standby. If WAL position is not increased more then this value,
 	// the standby is assumed not to be syncing properly.
 	DefaultDBNotIncreasingXLogPosTimes = 10
@@ -95,7 +95,7 @@ const (
 	// DefaultMaxSynchronousStandbys sets the default for maximum number of sync standby's
 	DefaultMaxSynchronousStandbys uint16 = 1
 
-	// DefaultAdditionalWalSenders sets the default for additional wal-senders on top of as required for stolon managed
+	// DefaultAdditionalWalSenders sets the default for additional wal-senders on top of as required for orion managed
 	DefaultAdditionalWalSenders = 5
 
 	// DefaultUsePgrewind sets the default for using PgRewind (over starting over)
@@ -221,10 +221,10 @@ type Spec struct {
 	// Interval where the proxy must successfully complete a check
 	ProxyTimeout *Duration `json:"proxyTimeout,omitempty"`
 	// Max number of standbys. This needs to be greater enough to cover both
-	// standby managed by stolon and additional standbys configured by the
+	// standby managed by orion and additional standbys configured by the
 	// user. Its value affect different postgres parameters like
 	// max_replication_slots and max_wal_senders. Setting this to a number
-	// lower than the sum of stolon managed standbys and user managed
+	// lower than the sum of orion managed standbys and user managed
 	// standbys will have unpredicatable effects due to problems creating
 	// replication slots or replication problems due to exhausted wal
 	// senders.
@@ -244,7 +244,7 @@ type Spec struct {
 	// to be configured when SynchronousReplication is true
 	MaxSynchronousStandbys *uint16 `json:"maxSynchronousStandbys,omitempty"`
 	// AdditionalWalSenders defines the number of additional wal_senders in
-	// addition to the ones internally defined by stolon
+	// addition to the ones internally defined by orion
 	AdditionalWalSenders *uint16 `json:"additionalWalSenders"`
 	// AdditionalMasterReplicationSlots defines additional replication slots to
 	// be created on the master postgres instance. Replication slots not defined
@@ -512,7 +512,7 @@ func validateReplicationSlot(replicationSlot string) error {
 	if !postgresql.IsValidReplSlotName(replicationSlot) {
 		return fmt.Errorf("wrong replication slot name: %q", replicationSlot)
 	}
-	if common.IsStolonName(replicationSlot) {
+	if common.IsOrionName(replicationSlot) {
 		return fmt.Errorf("replication slot name is reserved: %q", replicationSlot)
 	}
 	return nil

@@ -26,7 +26,7 @@ import (
 	"github.com/gofrs/uuid"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
@@ -107,7 +107,7 @@ func testInitNew(t *testing.T, merge bool) {
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -186,7 +186,7 @@ func testInitExisting(t *testing.T, merge bool) {
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -252,7 +252,7 @@ func testInitExisting(t *testing.T, merge bool) {
 
 	t.Logf("reinitializing cluster")
 	// Initialize cluster with new spec
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "init", "-y", "-f", initialClusterSpecFile)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "init", "-y", "-f", initialClusterSpecFile)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestInitUsers(t *testing.T) {
 	clusterName = uuid.Must(uuid.NewV4()).String()
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -378,7 +378,7 @@ func TestInitUsers(t *testing.T) {
 	clusterName = uuid.Must(uuid.NewV4()).String()
 	storePath = filepath.Join(common.StorePrefix, clusterName)
 
-	sm = store.NewKVBackedStore(tstore.store, storePath)
+	sm = consensus.NewKVBackedStore(tstore.store, storePath)
 
 	ts2, err := newTestSentinel(t, dir, clusterName, tstore.storeBackend, storeEndpoints, fmt.Sprintf("--initial-cluster-spec=%s", initialClusterSpecFile))
 	if err != nil {
@@ -426,7 +426,7 @@ func TestInitialClusterSpec(t *testing.T) {
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:               &newCluster,
@@ -546,8 +546,8 @@ func TestPasswordTrailingNewLine(t *testing.T) {
 	u := uuid.Must(uuid.NewV4())
 	id := fmt.Sprintf("%x", u[:4])
 
-	pgSUPassword := "stolon_superuserpassword\n"
-	pgReplPassword := "stolon_replpassword\n"
+	pgSUPassword := "orion_superuserpassword\n"
+	pgReplPassword := "orion_replpassword\n"
 
 	tk, err := newTestKeeperWithID(t, dir, id, clusterName, pgSUUsername, pgSUPassword, pgReplUsername, pgReplPassword, tstore.storeBackend, storeEndpoints)
 	if err != nil {
@@ -565,7 +565,7 @@ func TestPasswordTrailingNewLine(t *testing.T) {
 	}
 	tk.Stop()
 
-	pgSUPassword = "stolon_superuserpassword\n"
+	pgSUPassword = "orion_superuserpassword\n"
 	pgReplPassword = "\n"
 
 	tk, err = newTestKeeperWithID(t, dir, id, clusterName, pgSUUsername, pgSUPassword, pgReplUsername, pgReplPassword, tstore.storeBackend, storeEndpoints)
@@ -586,7 +586,7 @@ func TestPasswordTrailingNewLine(t *testing.T) {
 	tk.Stop()
 
 	pgSUPassword = "\n"
-	pgReplPassword = "stolon_replpassword\n"
+	pgReplPassword = "orion_replpassword\n"
 
 	tk, err = newTestKeeperWithID(t, dir, id, clusterName, pgSUUsername, pgSUPassword, pgReplUsername, pgReplPassword, tstore.storeBackend, storeEndpoints)
 	if err != nil {

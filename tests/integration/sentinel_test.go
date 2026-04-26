@@ -28,7 +28,7 @@ import (
 	"github.com/gofrs/uuid"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 )
 
 func TestSentinelEnabledProxies(t *testing.T) {
@@ -48,7 +48,7 @@ func TestSentinelEnabledProxies(t *testing.T) {
 	clusterName := uuid.Must(uuid.NewV4()).String()
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,

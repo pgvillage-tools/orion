@@ -152,7 +152,7 @@ var _ = Describe("Cluster", func() {
 					MinSynchronousStandbys: util.ToPtr(uint16(1))},
 				{InitMode: nil},
 				{AdditionalMasterReplicationSlots: []string{"slot-1"}},
-				{AdditionalMasterReplicationSlots: []string{"stolon_slot"}},
+				{AdditionalMasterReplicationSlots: []string{"orion_slot"}},
 				{PGHBA: []string{"local all all md5\n"}},
 				{InitMode: &invalidInitMode},
 				{InitMode: &initModeNew, Role: &roleReplica},

@@ -39,7 +39,7 @@ override:
   #  threshold: 100
   - path: ^cmd
 
-  - path: ^internal/mock/store/store.go
+  - path: ^internal/mock/consensus_mock/store.go	
     threshold: 22
   - path: ^internal/postgresql/main.go
     threshold: 25
@@ -62,13 +62,13 @@ override:
   - path: scripts/gen_commands_doc.go
     threshold: 0
 
-  - path: ^internal/mock/store$
+  - path: ^internal/mock/consensus_mock$
     threshold: 22
   - path: ^internal/postgresql$
     threshold: 13.9
   - path: ^internal/flagutil$
     threshold: 0
-  - path: ^internal/store$
+  - path: ^internal/consensus
     threshold: 0
   - path: ^scripts$
     threshold: 0

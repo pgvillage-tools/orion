@@ -7,7 +7,7 @@ The best approch to deploy Stolon in openshift is to create a dedicate service a
 ```
 oc create sa <service_account_name>
 ```
-stolon_role.yaml and  role-binding.yaml must be modified to match service account name and the namespace for the cluster deployment
+orion_role.yaml and  role-binding.yaml must be modified to match service account name and the namespace for the cluster deployment
 
 As additional step assign anyuid scc to the service account:
 ```
@@ -16,15 +16,15 @@ oc adm policy add-scc-to-user anyuid system:serviceaccount:<namespace>:<service_
 ## Patch cluster components:
 Sentinel:
 ```
-oc patch --local=true -f stolon-sentinel.yaml -p '{"spec":{"template":{"spec":{"serviceAccount": "<service_account_name>"}}}}' -o yaml > stolon-sentinel_new.yaml
+oc patch --local=true -f orion-sentinel.yaml -p '{"spec":{"template":{"spec":{"serviceAccount": "<service_account_name>"}}}}' -o yaml > orion-sentinel_new.yaml
  ```
  Keeper
  ```
- oc patch --local=true -f stolon-keeper.yaml -p '{"spec":{"template":{"spec":{"serviceAccount": "<service_account_name>"}}}}' -o yaml > stolon-keeper_new.yaml
+ oc patch --local=true -f orion-keeper.yaml -p '{"spec":{"template":{"spec":{"serviceAccount": "<service_account_name>"}}}}' -o yaml > orion-keeper_new.yaml
  ```
  Proxy
   ```
- oc patch --local=true -f stolon-proxy.yaml -p '{"spec":{"template":{"spec":{"serviceAccount": "<service_account_name>"}}}}' -o yaml > stolon-proxy_new.yaml
+ oc patch --local=true -f orion-proxy.yaml -p '{"spec":{"template":{"spec":{"serviceAccount": "<service_account_name>"}}}}' -o yaml > orion-proxy_new.yaml
  ```
 ## Deployment
 Deploy the Stolon components using the files created at the previous step.

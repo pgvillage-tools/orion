@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package postgresql has all stolon specific postgresql code
+// Package postgresql has all orion specific postgresql code
 package postgresql
 
 import (
@@ -53,7 +53,7 @@ const (
 	postgresRecoverySignal = "recovery.signal"
 	postgresRecoveryDone   = "recovery.done"
 	postgresAutoConf       = "postgresql.auto.conf"
-	tmpPostgresConf        = "stolon-temp-postgresql.conf"
+	tmpPostgresConf        = "orion-temp-postgresql.conf"
 
 	startTimeout                  = 60 * time.Second
 	exitStatusNotRunning          = 3

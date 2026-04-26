@@ -34,11 +34,11 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/postgresql"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
-	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/timer"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -49,7 +49,7 @@ import (
 )
 
 const (
-	fakeStandbyName = "stolonfakestandby"
+	fakeStandbyName = "orionfakestandby"
 )
 
 const (
@@ -68,7 +68,7 @@ const (
 
 // CmdSentinel is a variable which contains the cobra command
 var CmdSentinel = &cobra.Command{
-	Use:     "stolon-sentinel",
+	Use:     "orion-sentinel",
 	Run:     sentinel,
 	Version: cmd.Version,
 }
@@ -2030,9 +2030,9 @@ func (p ProxyInfoHistories) DeepCopy() (cp ProxyInfoHistories) {
 type Sentinel struct {
 	uid string
 	cfg *config
-	e   store.Store
+	e   consensus.Store
 
-	election store.Election
+	election consensus.Election
 	end      chan bool
 
 	lastLeadershipCount uint
@@ -2121,7 +2121,7 @@ func (s *Sentinel) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info().Msg("stopping stolon sentinel")
+			logger.Info().Msg("stopping orion sentinel")
 			s.end <- true
 			return
 		case <-timerCh:
@@ -2275,7 +2275,7 @@ func sigHandler(ctx context.Context, sigs chan os.Signal, cancel context.CancelF
 // Execute is the main execute function of the sentinel file
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
-	if err := flagutil.SetFlagsFromEnv(CmdSentinel.PersistentFlags(), "STSENTINEL"); err != nil {
+	if err := flagutil.SetFlagsFromEnv(CmdSentinel.PersistentFlags(), "ORIONSENTINEL"); err != nil {
 		logger.Fatal().AnErr("err", err).Msg("")
 	}
 
