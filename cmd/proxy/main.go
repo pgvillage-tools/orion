@@ -17,7 +17,7 @@
 package main
 
 import (
-	"github.com/pgvillage-tools/stolon/cmd/proxy/cmd"
+	"github.com/pgvillage-tools/orion/cmd/proxy/cmd"
 )
 
 func main() {

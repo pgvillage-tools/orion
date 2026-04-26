@@ -22,8 +22,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/util"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/util"
 )
 
 var _ = Describe("UID", func() {

@@ -23,10 +23,10 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid"
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/store"
-	"github.com/pgvillage-tools/stolon/internal/util"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/util"
 )
 
 func TestInitStandbyCluster(t *testing.T) {

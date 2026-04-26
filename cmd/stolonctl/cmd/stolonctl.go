@@ -23,11 +23,11 @@ import (
 	"os"
 	"strings"
 
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/cmd"
-	"github.com/pgvillage-tools/stolon/internal/flagutil"
-	"github.com/pgvillage-tools/stolon/internal/logging"
-	"github.com/pgvillage-tools/stolon/internal/store"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/internal/flagutil"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/store"
 
 	"github.com/spf13/cobra"
 )

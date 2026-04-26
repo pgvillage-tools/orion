@@ -17,7 +17,7 @@
 package main
 
 import (
-	"github.com/pgvillage-tools/stolon/cmd/keeper/cmd"
+	"github.com/pgvillage-tools/orion/cmd/keeper/cmd"
 )
 
 func main() {

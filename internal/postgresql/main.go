@@ -38,8 +38,8 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/rs/zerolog"
 
 	// TODO: This can probably go

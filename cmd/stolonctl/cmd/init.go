@@ -21,9 +21,9 @@ import (
 	"io"
 	"os"
 
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	cmdcommon "github.com/pgvillage-tools/stolon/cmd"
-	"github.com/pgvillage-tools/stolon/internal/common"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/spf13/cobra"
 )
 

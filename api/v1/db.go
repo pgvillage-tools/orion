@@ -18,7 +18,7 @@ package v1
 import (
 	"time"
 
-	"github.com/pgvillage-tools/stolon/internal/common"
+	"github.com/pgvillage-tools/orion/internal/common"
 )
 
 // DBSpec defines the spec of a database
