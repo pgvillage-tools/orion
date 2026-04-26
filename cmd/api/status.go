@@ -7,10 +7,9 @@ import (
 	"sort"
 	"time"
 
-	v1 "github.com/pgvillage-tools/orion/api/v1"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/consensus"
-	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 func (h *Handlers) StatusRoutes() []Route {
@@ -23,16 +22,11 @@ func (h *Handlers) StatusRoutes() []Route {
 
 // ProxyStatusHandler endpoint
 func (h *Handlers) ProxyStatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	if proxiesInfo, err := h.client.GetProxiesInfo(ctx); err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to get cluster data")
-		if _, err := w.Write([]byte("ERROR")); err != nil {
-			logger.Error().AnErr("error", err).Msg("unable to return cluster data")
-		}
-		w.WriteHeader(http.StatusInternalServerError)
+		handleError(ctx, err, w, "failed to get cluster data")
 	} else {
 		h.writeJSON(ctx, w, proxiesInfo)
 	}
@@ -40,41 +34,35 @@ func (h *Handlers) ProxyStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 // SentinelStatusHandler endpoint
 func (h *Handlers) SentinelStatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	if sentinelsInfo, err := h.client.GetSentinelsInfo(ctx); err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to get cluster data")
-		if _, err := w.Write([]byte("ERROR")); err != nil {
-			logger.Error().AnErr("error", err).Msg("unable to return cluster data")
-		}
-		w.WriteHeader(http.StatusInternalServerError)
+		handleError(ctx, err, w, "failed to get cluster data")
 	} else {
 		h.writeJSON(ctx, w, sentinelsInfo)
 	}
 }
 
-func (h *Handlers) sentinelInfo(ctx context.Context) (is v1.InfoSentinels, err error) {
-	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-	var ssi v1.SentinelsInfo
-	election, err := cmdcommon.NewElection(ctx, &cfg.CommonConfig, "")
+func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, err error) {
+	var ssi apiv1.SentinelsInfo
+	election, err := cmdcommon.NewElection(context.TODO(), &cfg.CommonConfig, "")
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to get election info")
+		handleError(ctx, err, nil, "failed to get election info")
 		return nil, err
 	}
 	lsid, err := election.Leader()
 	if err != nil && err != consensus.ErrElectionNoLeader {
-		logger.Error().AnErr("error", err).Msg("failed to get leader info")
+		handleError(ctx, err, nil, "failed to get leader info")
 		return nil, err
 	}
 	if ssi, err = h.client.GetSentinelsInfo(ctx); err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to get sentinels info")
+		handleError(ctx, err, nil, "failed to get sentinels info")
 		return nil, err
 	}
 	for _, si := range ssi {
 		leader := lsid != "" && si.UID == lsid
-		is = append(is, v1.InfoSentinel{
+		is = append(is, apiv1.InfoSentinel{
 			UID:    si.UID,
 			Leader: leader,
 		})
@@ -82,23 +70,22 @@ func (h *Handlers) sentinelInfo(ctx context.Context) (is v1.InfoSentinels, err e
 	return is, nil
 }
 
-func (h *Handlers) proxyInfo(ctx context.Context) (ip v1.InfoProxies, err error) {
-	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+func (h *Handlers) proxyInfo(ctx context.Context) (ip apiv1.InfoProxies, err error) {
 	proxiesInfo, err := h.client.GetProxiesInfo(context.TODO())
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to get proxies info")
+		handleError(ctx, err, nil, "failed to get proxies info")
 		return nil, err
 	}
 	proxiesInfoSlice := proxiesInfo.ToSlice()
 
 	sort.Sort(proxiesInfoSlice)
 	for _, pi := range proxiesInfoSlice {
-		ip = append(ip, v1.InfoProxy{UID: pi.UID, Generation: pi.Generation})
+		ip = append(ip, apiv1.InfoProxy{UID: pi.UID, Generation: pi.Generation})
 	}
 	return ip, nil
 }
 
-func (h *Handlers) keepersInfo(ctx context.Context, cd *v1.Data) (ik v1.InfoKeepers, err error) {
+func (h *Handlers) keepersInfo(ctx context.Context, cd *apiv1.Data) (ik apiv1.InfoKeepers, err error) {
 	kssKeys := cd.Keepers.SortedKeys()
 	for _, kuid := range kssKeys {
 		k := cd.Keepers[kuid]
@@ -119,7 +106,7 @@ func (h *Handlers) keepersInfo(ctx context.Context, cd *v1.Data) (ik v1.InfoKeep
 				dbListenAddress = fmt.Sprintf("%s:%s", db.Status.ListenAddress, db.Status.Port)
 			}
 		}
-		ik = append(ik, v1.InfoKeeper{
+		ik = append(ik, apiv1.InfoKeeper{
 			UID:                 kuid,
 			ListenAddress:       dbListenAddress,
 			Healthy:             k.Status.Healthy,
@@ -131,42 +118,42 @@ func (h *Handlers) keepersInfo(ctx context.Context, cd *v1.Data) (ik v1.InfoKeep
 	return ik, err
 }
 
-func (h *Handlers) clusterInfo(ctx context.Context) (v1.InfoCluster, error) {
+func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 	var (
-		cd  *v1.Data
-		p   v1.InfoProxies
-		s   v1.InfoSentinels
-		k   v1.InfoKeepers
+		cd  *apiv1.Data
+		p   apiv1.InfoProxies
+		s   apiv1.InfoSentinels
+		k   apiv1.InfoKeepers
 		err error
 	)
 	cd, _, err = h.client.GetClusterData(ctx)
 	k, err = h.keepersInfo(ctx, cd)
 	if err != nil {
-		return v1.InfoCluster{}, err
+		return apiv1.InfoCluster{}, err
 	}
 	p, err = h.proxyInfo(ctx)
 	if err != nil {
-		return v1.InfoCluster{}, err
+		return apiv1.InfoCluster{}, err
 	}
 	s, err = h.sentinelInfo(ctx)
 
-	var clusterStatus v1.InfoGenericStatus
+	var clusterStatus apiv1.InfoGenericStatus
 
 	if cd.Cluster == nil || cd.DBs == nil {
-		clusterStatus = v1.InfoGenericStatus{"available": false}
+		clusterStatus = apiv1.InfoGenericStatus{"available": false}
 	} else if cd.Cluster.Status.Master == "" {
-		clusterStatus = v1.InfoGenericStatus{"available": true}
+		clusterStatus = apiv1.InfoGenericStatus{"available": true}
 	} else {
 		primary := cd.Cluster.Status.Master
 		primaryKeeper := cd.DBs[primary].Spec.KeeperUID
-		clusterStatus = v1.InfoGenericStatus{
+		clusterStatus = apiv1.InfoGenericStatus{
 			"available":     true,
 			"primaryDB":     cd.DBs[primary].UID,
 			"primaryKeeper": cd.Keepers[primaryKeeper].UID,
 		}
 	}
 
-	return v1.InfoCluster{
+	return apiv1.InfoCluster{
 		Keepers:   k,
 		Proxies:   p,
 		Sentinels: s,
@@ -175,19 +162,13 @@ func (h *Handlers) clusterInfo(ctx context.Context) (v1.InfoCluster, error) {
 }
 
 func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	ic, err := h.clusterInfo(ctx)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("")
-		if _, err := w.Write([]byte("ERROR")); err != nil {
-			logger.Error().AnErr("error", err).Msg("unable to return ERROR message")
-		}
-		w.WriteHeader(http.StatusInternalServerError)
+		handleError(ctx, err, w, "")
 		return
 	}
 	h.writeJSON(ctx, w, ic)
-
 }

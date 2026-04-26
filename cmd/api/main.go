@@ -105,7 +105,6 @@ func api(c *cobra.Command, _ []string) {
 }
 
 func main() {
-
 	_, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdWebApi.PersistentFlags(), "STAPI"); err != nil {
 		logger.Fatal().AnErr("err", err).Msg("")
@@ -114,4 +113,19 @@ func main() {
 	if err := CmdWebApi.Execute(); err != nil {
 		logger.Fatal().AnErr("err", err).Msg("")
 	}
+}
+
+func handleError(ctx context.Context, err error, w http.ResponseWriter, msg string) {
+	if err == nil {
+		return
+	}
+	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	logger.Error().AnErr("error", err).Msg(msg)
+	if w == nil {
+		return
+	}
+	if _, err := w.Write([]byte("ERROR")); err != nil {
+		logger.Error().AnErr("error", err).Msg("unable to return ERROR")
+	}
+	w.WriteHeader(http.StatusInternalServerError)
 }

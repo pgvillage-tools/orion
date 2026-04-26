@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
-
-	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 func (h *Handlers) HealthRoutes() []Route {
@@ -17,29 +16,26 @@ func (h *Handlers) HealthRoutes() []Route {
 
 // Health endpoints
 func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
 	var (
 		status = http.StatusOK
 		msg    = []byte("OK")
 	)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	if err := h.client.Healthy(ctx); err != nil {
-		logger.Error().AnErr("error", err).Msg("store is not healthy")
-		status = http.StatusInternalServerError
-		msg = []byte("ERROR")
+		handleError(ctx, err, w, "store is not healthy")
 	}
 	w.WriteHeader(status)
 	if _, err := w.Write(msg); err != nil {
-		logger.Error().AnErr("error", err).Msg("unable to return healthz response")
+		handleError(ctx, err, w, "unable to return healthz response")
 	}
 }
 
 func (h *Handlers) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
-	_, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	ctx := context.TODO()
 	if !h.Ready.Load() {
-		http.Error(w, "Not Ready", http.StatusServiceUnavailable)
+		handleError(ctx, errors.New("Service not ready yet"), w, "Not Ready")
 		return
 	}
 
@@ -47,6 +43,6 @@ func (h *Handlers) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := w.Write([]byte("Ready"))
 
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("unable to return readyz response")
+		handleError(ctx, err, w, "unable to return readyz response")
 	}
 }

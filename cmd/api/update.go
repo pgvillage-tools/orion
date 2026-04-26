@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	v1 "github.com/pgvillage-tools/orion/api/v1"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
@@ -59,7 +59,12 @@ func (h *Handlers) clusterSpecPatchHandler(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		err := r.Body.Close()
+		if err != nil {
+			logger.Error().AnErr("error", err).Msg("Failed to close Body")
+		}
+	}()
 
 	err = updateSpecRetries(ctx, h.client, patch, false)
 	if err != nil {
@@ -83,7 +88,11 @@ func (h *Handlers) clusterSpecPutHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			logger.Error().AnErr("error", err).Msg("Failed to close Body")
+		}
+	}()
 
 	err = updateSpecRetries(ctx, h.client, patch, true)
 	if err != nil {
@@ -96,17 +105,17 @@ func (h *Handlers) clusterSpecPutHandler(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func patchClusterSpec(cs *v1.Spec, p []byte) (*v1.Spec, error) {
+func patchClusterSpec(cs *apiv1.Spec, p []byte) (*apiv1.Spec, error) {
 	csj, err := json.Marshal(cs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal cluster spec: %v", err)
 	}
 
-	newcsj, err := strategicpatch.StrategicMergePatch(csj, p, &v1.Spec{})
+	newcsj, err := strategicpatch.StrategicMergePatch(csj, p, &apiv1.Spec{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge patch cluster spec: %v", err)
 	}
-	var newcs *v1.Spec
+	var newcs *apiv1.Spec
 	if err := json.Unmarshal(newcsj, &newcs); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal patched cluster spec: %v", err)
 	}
@@ -128,7 +137,7 @@ func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, re
 	}
 
 	logger.Debug().Any("cluster data", cd).Msg("")
-	var newcs *v1.Spec
+	var newcs *apiv1.Spec
 	if replace {
 		if err = json.Unmarshal(patch, &newcs); err != nil {
 			return fmt.Errorf("failed to unmarshal cluster spec: %v", err)
@@ -161,13 +170,13 @@ func updateSpecRetries(ctx context.Context, client consensus.Store, patch []byte
 	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
 	for i := 0; i < maxRetries; i++ {
 		logger.Debug().Int("try", i).Msg("trying")
-		if err := tryUpdateSpec(ctx, client, patch, update); err != nil {
-			logger.Debug().AnErr("error", err).Msg("failed")
-			errs = append(errs, err)
-		} else {
+		err := tryUpdateSpec(ctx, client, patch, update)
+		if err == nil {
 			logger.Debug().Int("try", i).Msg("succeeded")
 			return nil
 		}
+		logger.Debug().AnErr("error", err).Msg("failed")
+		errs = append(errs, err)
 	}
 	return fmt.Errorf("failed to update in %d retries: %v", maxRetries, errors.Join(errs...))
 }
