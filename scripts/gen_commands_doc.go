@@ -21,10 +21,10 @@ import (
 	"log"
 	"os"
 
+	cli "github.com/pgvillage-tools/orion/cmd/cli/cmd"
 	keepercmd "github.com/pgvillage-tools/orion/cmd/keeper/cmd"
 	proxycmd "github.com/pgvillage-tools/orion/cmd/proxy/cmd"
 	sentinelcmd "github.com/pgvillage-tools/orion/cmd/sentinel/cmd"
-	stolonctlcmd "github.com/pgvillage-tools/orion/cmd/stolonctl/cmd"
 
 	"github.com/spf13/cobra/doc"
 )
@@ -47,7 +47,7 @@ func main() {
 	if err := doc.GenMarkdownTree(proxycmd.CmdProxy, outDir); err != nil {
 		log.Fatal(err)
 	}
-	if err := doc.GenMarkdownTree(stolonctlcmd.CmdStolonCtl, outDir); err != nil {
+	if err := doc.GenMarkdownTree(cli.CmdCLI, outDir); err != nil {
 		log.Fatal(err)
 	}
 }

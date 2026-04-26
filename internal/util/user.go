@@ -23,7 +23,7 @@ import (
 
 var currentUserFunc = user.Current
 
-// GetUser returns the linux username running stolon
+// GetUser returns the linux username running orion
 func GetUser() (string, error) {
 	u, err := currentUserFunc()
 	if err == nil {

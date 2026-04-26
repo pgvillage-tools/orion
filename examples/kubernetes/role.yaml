@@ -1,15 +1,15 @@
-# This is an example and generic rbac role definition for stolon. It could be
+# This is an example and generic rbac role definition for orion. It could be
 # fine tuned and split per component.
 # The required permission per component should be:
 # keeper/proxy/sentinel: update their own pod annotations
-# sentinel/stolonctl: get, create, update configmaps
-# sentinel/stolonctl: list components pods
-# sentinel/stolonctl: get components pods annotations
+# sentinel/orionctl: get, create, update configmaps
+# sentinel/orionctl: list components pods
+# sentinel/orionctl: get components pods annotations
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: stolon
+  name: orion
   namespace: default
 rules:
 - apiGroups:

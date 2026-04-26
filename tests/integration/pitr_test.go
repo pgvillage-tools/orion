@@ -26,7 +26,7 @@ import (
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 
 	"github.com/gofrs/uuid"
 )
@@ -44,7 +44,7 @@ func TestPITRRecoveryTarget(t *testing.T) {
 }
 
 func testPITR(t *testing.T, recoveryTarget bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -68,7 +68,7 @@ func testPITR(t *testing.T, recoveryTarget bool) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -151,7 +151,7 @@ func testPITR(t *testing.T, recoveryTarget bool) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// Delete sentinel leader key to just speedup new election
-	if err := tstore.store.Delete(context.TODO(), filepath.Join(storePath, common.SentinelLeaderKey)); err != nil && err != store.ErrKeyNotFound {
+	if err := tstore.store.Delete(context.TODO(), filepath.Join(storePath, common.SentinelLeaderKey)); err != nil && err != consensus.ErrKeyNotFound {
 		t.Fatalf("unexpected err: %v", err)
 	}
 

@@ -1,0 +1,91 @@
+# PetSet was renamed to StatefulSet in k8s 1.5
+# apiVersion: apps/v1alpha1
+# kind: PetSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orion-keeper
+spec:
+  serviceName: "orion-keeper"
+  replicas: 2
+  selector:
+    matchLabels:
+      component: orion-keeper
+      orion-cluster: kube-orion
+  template:
+    metadata:
+      labels:
+        component: orion-keeper
+        orion-cluster: kube-orion
+      annotations:
+        pod.alpha.kubernetes.io/initialized: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: orion-keeper
+          image: ghcr.io/pgvillage-tools/orion-keeper:17-latest
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              # Generate our keeper uid using the pod index
+              IFS='-' read -ra ADDR <<< "$(hostname)"
+              export ORIONKEEPER_UID="keeper${ADDR[-1]}"
+              export POD_IP=$(hostname -i)
+              export ORIONKEEPER_PG_LISTEN_ADDRESS=$POD_IP
+              export ORION_DATA=/orion-data
+              chown postgres: $ORION_DATA
+              exec gosu postgres orion-keeper --data-dir $ORION_DATA
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ORIONKEEPER_CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['orion-cluster']
+            - name: ORIONKEEPER_STORE_BACKEND
+              value: "kubernetes"
+            - name: ORIONKEEPER_KUBE_RESOURCE_KIND
+              value: "configmap"
+            - name: ORIONKEEPER_PG_REPL_USERNAME
+              value: "repluser"
+              # Or use a password file like in the below supersuser password
+            - name: ORIONKEEPER_PG_REPL_PASSWORD
+              value: "replpassword"
+            - name: ORIONKEEPER_PG_SU_USERNAME
+              value: "orion"
+            - name: ORIONKEEPER_PG_SU_PASSWORDFILE
+              value: "/etc/secrets/orion/password"
+            - name: ORIONKEEPER_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+            # Uncomment this to enable debug logs
+            #- name: ORIONKEEPER_DEBUG
+            #  value: "true"
+          ports:
+            - containerPort: 5432
+            - containerPort: 8080
+          volumeMounts:
+            - mountPath: /orion-data
+              name: data
+            - mountPath: /etc/secrets/orion
+              name: orion
+      volumes:
+        - name: orion
+          secret:
+            secretName: orion
+  # Define your own volumeClaimTemplate. This example uses dynamic PV provisioning with a storage class named "standard" (so it will works by default with minikube)
+  # In production you should use your own defined storage-class and configure your persistent volumes (statically or dynamically using a provisioner, see related k8s doc).
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          volume.alpha.kubernetes.io/storage-class: standard
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 512Mi

@@ -29,16 +29,16 @@ import (
 	"github.com/gofrs/uuid"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
-	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
 const (
-	pgReplUsername = "stolon_repluser"
-	pgReplPassword = "stolon_replpassword"
-	pgSUUsername   = "stolon_superuser"
-	pgSUPassword   = "stolon_superuserpassword"
+	pgReplUsername = "orion_repluser"
+	pgReplPassword = "orion_replpassword"
+	pgSUUsername   = "orion_superuser"
+	pgSUPassword   = "orion_superuserpassword"
 )
 
 type testKeepers map[string]*testKeeper
@@ -61,7 +61,7 @@ func setupStore(t *testing.T, dir string) *testStore {
 func TestInitWithMultipleKeepers(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestInitWithMultipleKeepers(t *testing.T) {
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
 
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	initialClusterSpec := &cluster.Spec{
 		InitMode:           &newCluster,
@@ -316,7 +316,7 @@ func shutdown(tks map[string]*testKeeper, tss map[string]*testSentinel, tp *test
 	}
 }
 
-func waitKeeperReady(t *testing.T, sm *store.KVBackedStore, keeper *testKeeper) {
+func waitKeeperReady(t *testing.T, sm *consensus.KVBackedStore, keeper *testKeeper) {
 	if err := waitClusterDataKeeperInitialized(keeper.uid, sm, 60*time.Second); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -325,7 +325,7 @@ func waitKeeperReady(t *testing.T, sm *store.KVBackedStore, keeper *testKeeper) 
 	}
 }
 
-func waitMasterStandbysReady(t *testing.T, sm *store.KVBackedStore, tks testKeepers) (master *testKeeper, standbys []*testKeeper) {
+func waitMasterStandbysReady(t *testing.T, sm *consensus.KVBackedStore, tks testKeepers) (master *testKeeper, standbys []*testKeeper) {
 	// Wait for normal cluster phase (master ready)
 	masterUID, err := waitClusterDataWithMaster(sm, 60*time.Second)
 	if err != nil {
@@ -347,7 +347,7 @@ func waitMasterStandbysReady(t *testing.T, sm *store.KVBackedStore, tks testKeep
 }
 
 func testMasterStandby(t *testing.T, syncRepl bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -359,7 +359,7 @@ func testMasterStandby(t *testing.T, syncRepl bool) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -399,7 +399,7 @@ func TestMasterStandbySyncRepl(t *testing.T) {
 }
 
 func testFailover(t *testing.T, syncRepl bool, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -423,7 +423,7 @@ func testFailover(t *testing.T, syncRepl bool, standbyCluster bool) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -510,7 +510,7 @@ func TestFailoverSyncReplStandbyCluster(t *testing.T) {
 // Tests standby elected as new master but fails to become master. Then old
 // master comes back and is re-elected as master.
 func testFailoverFailed(t *testing.T, syncRepl bool, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -534,7 +534,7 @@ func testFailoverFailed(t *testing.T, syncRepl bool, standbyCluster bool) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -622,7 +622,7 @@ func TestFailoverFailedSyncStandbyCluster(t *testing.T) {
 // master (reported) xlogpos won't be elected as the new master. This test is
 // valid only for asynchronous replication
 func testFailoverTooMuchLag(t *testing.T, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -646,7 +646,7 @@ func testFailoverTooMuchLag(t *testing.T, standbyCluster bool) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -701,7 +701,7 @@ func TestFailoverTooMuchLagStandbyCluster(t *testing.T) {
 }
 
 func testOldMasterRestart(t *testing.T, syncRepl, minSync0 bool, usePgrewind bool, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -729,7 +729,7 @@ func testOldMasterRestart(t *testing.T, syncRepl, minSync0 bool, usePgrewind boo
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 
@@ -855,7 +855,7 @@ func TestOldMasterRestartStandbyCluster(t *testing.T) {
 }
 
 func testPartition1(t *testing.T, syncRepl, minSync0, usePgrewind bool, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -883,7 +883,7 @@ func testPartition1(t *testing.T, syncRepl, minSync0, usePgrewind bool, standbyC
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 
@@ -1024,7 +1024,7 @@ func TestPartition1StandbyCluster(t *testing.T) {
 }
 
 func testTimelineFork(t *testing.T, syncRepl, usePgrewind bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1037,7 +1037,7 @@ func testTimelineFork(t *testing.T, syncRepl, usePgrewind bool) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 
@@ -1217,7 +1217,7 @@ func TestTimelineForkSyncReplPgrewind(t *testing.T) {
 // postgres (without triggering failover since it restart before being marked
 // ad failed) make the slave continue to sync using the new address
 func testMasterChangedAddress(t *testing.T, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1241,7 +1241,7 @@ func testMasterChangedAddress(t *testing.T, standbyCluster bool) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 
@@ -1315,7 +1315,7 @@ func TestMasterChangedAddressStandbyCluster(t *testing.T) {
 
 func TestFailedStandby(t *testing.T) {
 	t.Parallel()
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1337,7 +1337,7 @@ func TestFailedStandby(t *testing.T) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	// Wait for clusterView containing a master
 	masterUID, err := waitClusterDataWithMaster(sm, 30*time.Second)
@@ -1406,7 +1406,7 @@ func TestFailedStandby(t *testing.T) {
 
 func TestLoweredMaxStandbysPerSender(t *testing.T) {
 	t.Parallel()
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1429,7 +1429,7 @@ func TestLoweredMaxStandbysPerSender(t *testing.T) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	// Wait for clusterView containing a master
 	masterUID, err := waitClusterDataWithMaster(sm, 30*time.Second)
@@ -1458,7 +1458,7 @@ func TestLoweredMaxStandbysPerSender(t *testing.T) {
 	}
 
 	// Set MaxStandbysPerSender to 1
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "maxStandbysPerSender" : 1 }`)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "update", "--patch", `{ "maxStandbysPerSender" : 1 }`)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1471,7 +1471,7 @@ func TestLoweredMaxStandbysPerSender(t *testing.T) {
 
 func TestKeeperRemoval(t *testing.T) {
 	t.Parallel()
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1496,7 +1496,7 @@ func TestKeeperRemoval(t *testing.T) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby1 := standbys[0]
@@ -1578,8 +1578,8 @@ func TestKeeperRemoval(t *testing.T) {
 	}
 }
 
-func testKeeperRemovalStolonCtl(t *testing.T, syncRepl bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+func testKeeperRemovalOrionCLI(t *testing.T, syncRepl bool) {
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1603,7 +1603,7 @@ func testKeeperRemovalStolonCtl(t *testing.T, syncRepl bool) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 
@@ -1651,7 +1651,7 @@ func testKeeperRemovalStolonCtl(t *testing.T, syncRepl bool) {
 	}
 
 	// remove master from the cluster data, must fail
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "removekeeper", master.uid)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "removekeeper", master.uid)
 	if err == nil {
 		t.Fatalf("expected err")
 	}
@@ -1661,7 +1661,7 @@ func testKeeperRemovalStolonCtl(t *testing.T, syncRepl bool) {
 	standbys[0].Stop()
 
 	// remove standby[0] from the cluster data
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "removekeeper", standbys[0].uid)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "removekeeper", standbys[0].uid)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1692,20 +1692,20 @@ func testKeeperRemovalStolonCtl(t *testing.T, syncRepl bool) {
 	}
 }
 
-func TestKeeperRemovalStolonCtl(t *testing.T) {
+func TestKeeperRemovalOrionCLI(t *testing.T) {
 	t.Parallel()
-	testKeeperRemovalStolonCtl(t, false)
+	testKeeperRemovalOrionCLI(t, false)
 }
 
-func TestKeeperRemovalStolonCtlSyncRepl(t *testing.T) {
+func TestKeeperRemovalOrionCLISyncRepl(t *testing.T) {
 	t.Parallel()
-	testKeeperRemovalStolonCtl(t, true)
+	testKeeperRemovalOrionCLI(t, true)
 }
 
 func TestStandbyCantSync(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1730,7 +1730,7 @@ func TestStandbyCantSync(t *testing.T) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 
@@ -1835,7 +1835,7 @@ func TestStandbyCantSync(t *testing.T) {
 func TestDisappearedKeeperData(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1847,7 +1847,7 @@ func TestDisappearedKeeperData(t *testing.T) {
 	defer shutdown(tks, tss, tp, tstore)
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -1916,7 +1916,7 @@ func TestDisappearedKeeperData(t *testing.T) {
 }
 
 func testForceFail(t *testing.T, syncRepl bool, standbyCluster bool) {
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -1941,7 +1941,7 @@ func testForceFail(t *testing.T, syncRepl bool, standbyCluster bool) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", tstore.listenAddress, tstore.port)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
@@ -1980,7 +1980,7 @@ func testForceFail(t *testing.T, syncRepl bool, standbyCluster bool) {
 	}
 
 	// mark master as failed
-	err = stolonCtl(t, clusterName, tstore.storeBackend, storeEndpoints, "failkeeper", master.uid)
+	err = orionCLi(t, clusterName, tstore.storeBackend, storeEndpoints, "failkeeper", master.uid)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -2032,7 +2032,7 @@ func TestForceFailSyncReplStandbyCluster(t *testing.T) {
 // defined synchronous standbys are in sync.
 func testSyncStandbyNotInSync(t *testing.T, minSync0 bool) {
 	t.Parallel()
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -2044,7 +2044,7 @@ func testSyncStandbyNotInSync(t *testing.T, minSync0 bool) {
 	tks, tss, tp, tstore := setupServers(t, clusterName, dir, 2, 1, true, false, nil, clusterOpts...)
 	defer shutdown(tks, tss, tp, tstore)
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	sm := store.NewKVBackedStore(tstore.store, storePath)
+	sm := consensus.NewKVBackedStore(tstore.store, storePath)
 	master, standbys := waitMasterStandbysReady(t, sm, tks)
 	standby := standbys[0]
 	if err := WaitClusterDataSynchronousStandbys([]string{standby.uid}, sm, 30*time.Second); err != nil {
@@ -2166,7 +2166,7 @@ func TestSyncStandbyNotInSync0(t *testing.T) {
 
 func TestFailoverWithCustomWalDir(t *testing.T) {
 	var uid uuid.UUID
-	dir, err := os.MkdirTemp("", "stolon")
+	dir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -2208,7 +2208,7 @@ func TestFailoverWithCustomWalDir(t *testing.T) {
 	}
 
 	// Set up first keeper
-	keeper1waldir, err := os.MkdirTemp("", "stolon")
+	keeper1waldir, err := os.MkdirTemp("", "orion")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -2260,7 +2260,7 @@ func TestFailoverWithCustomWalDir(t *testing.T) {
 	}
 
 	storePath := filepath.Join(common.StorePrefix, clusterName)
-	store := store.NewKVBackedStore(tstore.store, storePath)
+	store := consensus.NewKVBackedStore(tstore.store, storePath)
 
 	// Wait for keepers to become ready
 	if err := waitClusterPhase(store, cluster.Normal, 60*time.Second); err != nil {

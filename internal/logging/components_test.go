@@ -43,7 +43,7 @@ func TestNewComponentsFromStringMap(t *testing.T) {
 		}
 		warnComponents = []string{
 			"sentinel",
-			"stolon-cmd",
+			"orion-cli",
 		}
 		strMap = map[string]string{}
 	)

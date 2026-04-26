@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package common contains some common constants and structures for stolon
+// Package common contains some common constants and structures for orion
 package common
 
 import (
@@ -30,7 +30,7 @@ import (
 
 const (
 	// StorePrefix is a default for the store-prefix parameter
-	StorePrefix = "stolon/cluster"
+	StorePrefix = "orion/cluster"
 
 	// SentinelLeaderKey defines the key in the KeyValue store that is used for leader election of the sentinel
 	SentinelLeaderKey = "sentinel-leader"
@@ -70,22 +70,22 @@ func UUID() string {
 }
 
 const (
-	stolonPrefix = "stolon_"
+	prefix = "orion_"
 )
 
-// StolonName returns the prefixed name
-func StolonName(name string) string {
-	return stolonPrefix + name
+// OrionName returns the prefixed name
+func OrionName(name string) string {
+	return prefix + name
 }
 
-// NameFromStolonName returns the name without the prefix
-func NameFromStolonName(stolonName string) string {
-	return strings.TrimPrefix(stolonName, stolonPrefix)
+// NameFromOrionName returns the name without the prefix
+func NameFromOrionName(orionName string) string {
+	return strings.TrimPrefix(orionName, prefix)
 }
 
-// IsStolonName returns true if the passed value is prefixed
-func IsStolonName(name string) bool {
-	return strings.HasPrefix(name, stolonPrefix)
+// IsOrionName returns true if the passed value is prefixed
+func IsOrionName(name string) bool {
+	return strings.HasPrefix(name, prefix)
 }
 
 // Parameters is a map with PostgreSQL parameters

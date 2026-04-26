@@ -5,21 +5,23 @@ on:
       - published
 
 jobs:
-  proxy:
-    name: Push proxy image to ghcr.io
+  e2e-other-images:
+    name: Build and push rest of the images
     runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: write
+    strategy:
+      matrix:
+        image:
+          - proxy
+          - sentinel
+          - cli
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@8410ad0602e1e429cee44a835ae9f77f654a6694 # v4.0.0
 
       # https://github.com/docker/setup-qemu-action
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
-      # https://github.com/docker/setup-buildx-action
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
@@ -32,72 +34,25 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker meta
-        id: stolon-meta
+        id: meta
         uses: docker/metadata-action@v6
         with:
           images: |
-            name=ghcr.io/${{ github.repository_owner }}/stolon-proxy,enable=true
+            name=ghcr.io/${{ github.repository_owner }}/${{ github.repository }}/${{ matrix.image }},enable=true
           tags: |
             type=semver,pattern={{raw}}
             type=raw,value=latest
             type=sha
 
-      - name: Build and push stolon images
+      - name: Build and push images
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: ./Dockerfile.proxy
+          file: ./Dockerfile.${{ matrix.image }}
           push: true
           platforms: 'linux/amd64,linux/arm64'
-          tags: ${{ steps.stolon-meta.outputs.tags }}
-          labels: ${{ steps.stolon-meta.outputs.labels }}
-
-  sentinel:
-    name: Push sentinel image to ghcr.io
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # https://github.com/docker/setup-qemu-action
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      # https://github.com/docker/setup-buildx-action
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker meta
-        id: stolon-meta
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            name=ghcr.io/${{ github.repository_owner }}/stolon-sentinel,enable=true
-          tags: |
-            type=semver,pattern={{raw}}
-            type=raw,value=latest
-            type=sha
-
-      - name: Build and push stolon images
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile.sentinel
-          push: true
-          platforms: 'linux/amd64,linux/arm64'
-          tags: ${{ steps.stolon-meta.outputs.tags }}
-          labels: ${{ steps.stolon-meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   keeper:
     name: Push keeper images to ghcr.io
@@ -129,25 +84,25 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker meta
-        id: stolon-meta
+        id: meta
         uses: docker/metadata-action@v6
         with:
           images: |
-            name=ghcr.io/${{ github.repository_owner }}/stolon-keeper,enable=true
+            name=ghcr.io/${{ github.repository_owner }}/${{ github.repository }}/keeper,enable=true
           tags: |
             type=raw,value=${{ matrix.pgversion }}-latest
             type=raw,value=${{ matrix.pgversion }}-${github.ref_name}
             type=sha
 
-      - name: Build and push stolon images
+      - name: Build and push images
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.keeper
           push: true
           platforms: 'linux/amd64,linux/arm64'
-          tags: ${{ steps.stolon-meta.outputs.tags }}
-          labels: ${{ steps.stolon-meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ github.ref_name }}
         env:
           PGVERSION: ${{matrix.pgversion}}

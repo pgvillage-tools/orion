@@ -27,9 +27,9 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
-	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -38,9 +38,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// CmdProxy is the cobra command which defines running stolon-proxy
+// CmdProxy is the cobra command which defines running orion-proxy
 var CmdProxy = &cobra.Command{
-	Use:     "stolon-proxy",
+	Use:     "orion-proxy",
 	Run:     proxy,
 	Version: cmd.Version,
 }
@@ -115,7 +115,7 @@ type ClusterChecker struct {
 
 	listener         *net.TCPListener
 	pp               *pollon.Proxy
-	e                store.Store
+	e                consensus.Store
 	endPollonProxyCh chan error
 
 	pollonMutex sync.Mutex
@@ -207,7 +207,7 @@ func (c *ClusterChecker) sendPollonConfData(confData pollon.ConfData) {
 }
 
 // SetProxyInfo is function which sets the proxy-info
-func (c *ClusterChecker) SetProxyInfo(ctx context.Context, _ store.Store, generation int64,
+func (c *ClusterChecker) SetProxyInfo(ctx context.Context, _ consensus.Store, generation int64,
 	proxyTimeout time.Duration) error {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
 	proxyInfo := &cluster.ProxyInfo{
@@ -405,7 +405,7 @@ func (c *ClusterChecker) Start(ctx context.Context) error {
 // Execute is the main executor of the proxy
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.ProxyComponent)
-	if err := flagutil.SetFlagsFromEnv(CmdProxy.PersistentFlags(), "STPROXY"); err != nil {
+	if err := flagutil.SetFlagsFromEnv(CmdProxy.PersistentFlags(), "ORIONPROXY"); err != nil {
 		logger.Fatal().AnErr("err", err).Msg("")
 	}
 

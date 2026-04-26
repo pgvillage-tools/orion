@@ -23,21 +23,21 @@ CONTAINER_TOOL ?= docker
 all: build
 
 .PHONY: build
-build: sentinel keeper proxy stolonctl
+build: sentinel keeper proxy cli
 
-.PHONY: sentinel keeper proxy stolonctl docker
+.PHONY: sentinel keeper proxy cli docker
 
 keeper:
-	GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/stolon-keeper $(REPO_PATH)/cmd/keeper
+	GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-keeper $(REPO_PATH)/cmd/keeper
 
 sentinel:
-	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/stolon-sentinel $(REPO_PATH)/cmd/sentinel
+	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-sentinel $(REPO_PATH)/cmd/sentinel
 
 proxy:
-	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/stolon-proxy $(REPO_PATH)/cmd/proxy
+	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-proxy $(REPO_PATH)/cmd/proxy
 
-stolonctl:
-	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/stolonctl $(REPO_PATH)/cmd/stolonctl
+cli:
+	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion $(REPO_PATH)/cmd/cli
 
 .PHONY: docker
 docker:
@@ -69,7 +69,7 @@ check-coverage: install-go-test-coverage test
 .PHONY: build-images
 build-images: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t keeper-$(PGVERSION) --build-arg PGVERSION=$(PGVERSION) -f Dockerfile.keeper .
-	$(CONTAINER_TOOL) build -t stolonctl -f Dockerfile.stolonctl .
+	$(CONTAINER_TOOL) build -t cli -f Dockerfile.cli .
 	$(CONTAINER_TOOL) build -t proxy -f Dockerfile.proxy .
 	$(CONTAINER_TOOL) build -t sentinel -f Dockerfile.sentinel .
 

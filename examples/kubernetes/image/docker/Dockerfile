@@ -3,7 +3,7 @@ ARG PGVERSION
 # base build image
 FROM golang:1.16-buster AS build_base
 
-WORKDIR /stolon
+WORKDIR /orion
 
 # only copy go.mod and go.sum
 COPY go.mod .
@@ -12,7 +12,7 @@ COPY go.sum .
 RUN go mod download
 
 #######
-####### Build the stolon binaries
+####### Build the orion binaries
 #######
 FROM build_base AS builder
 
@@ -26,11 +26,11 @@ RUN make
 #######
 FROM postgres:$PGVERSION
 
-RUN useradd -ms /bin/bash stolon
+RUN useradd -ms /bin/bash orion
 
 EXPOSE 5432
 
-# copy the agola-web dist
-COPY --from=builder /stolon/bin/ /usr/local/bin
+# copy the binary
+COPY --from=builder /orion/bin/ /usr/local/bin
 
-RUN chmod +x /usr/local/bin/stolon-keeper /usr/local/bin/stolon-sentinel /usr/local/bin/stolon-proxy /usr/local/bin/stolonctl
+RUN chmod +x /usr/local/bin/orion-keeper /usr/local/bin/orion-sentinel /usr/local/bin/orion-proxy /usr/local/bin/orionctl

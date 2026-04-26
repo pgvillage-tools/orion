@@ -37,8 +37,8 @@ import (
 	"github.com/Masterminds/semver/v3"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
-	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 
 	"github.com/gofrs/uuid"
@@ -182,10 +182,10 @@ func waitReplicationSlots(q Querier, replSlots []string, timeout time.Duration) 
 }
 */
 
-func waitStolonReplicationSlots(q querier, replSlots []string, timeout time.Duration) error {
-	// prefix with stolon_
+func waitOrionReplicationSlots(q querier, replSlots []string, timeout time.Duration) error {
+	// prefix with orion_
 	for i, slot := range replSlots {
-		replSlots[i] = common.StolonName(slot)
+		replSlots[i] = common.OrionName(slot)
 	}
 	sort.Strings(replSlots)
 
@@ -199,7 +199,7 @@ func waitStolonReplicationSlots(q querier, replSlots []string, timeout time.Dura
 		}
 		curReplSlots = []string{}
 		for _, s := range allReplSlots {
-			if common.IsStolonName(s) {
+			if common.IsOrionName(s) {
 				curReplSlots = append(curReplSlots, s)
 			}
 		}
@@ -213,7 +213,7 @@ func waitStolonReplicationSlots(q querier, replSlots []string, timeout time.Dura
 	return fmt.Errorf("timeout waiting for replSlots %v, got: %v, last err: %v", replSlots, curReplSlots, err)
 }
 
-func waitNotStolonReplicationSlots(q querier, replSlots []string, timeout time.Duration) error {
+func waitNotOrionReplicationSlots(q querier, replSlots []string, timeout time.Duration) error {
 	sort.Strings(replSlots)
 
 	start := time.Now()
@@ -226,7 +226,7 @@ func waitNotStolonReplicationSlots(q querier, replSlots []string, timeout time.D
 		}
 		curReplSlots = []string{}
 		for _, s := range allReplSlots {
-			if !common.IsStolonName(s) {
+			if !common.IsOrionName(s) {
 				curReplSlots = append(curReplSlots, s)
 			}
 		}
@@ -345,7 +345,7 @@ type testKeeper struct {
 func newTestKeeperWithID(
 	t *testing.T,
 	dir, uid, clusterName, pgSUUsername, pgSUPassword, pgReplUsername, pgReplPassword string,
-	storeBackend store.BackendType,
+	storeBackend consensus.BackendType,
 	storeEndpoints string,
 	a ...string,
 ) (*testKeeper, error) {
@@ -407,9 +407,9 @@ func newTestKeeperWithID(
 		return nil, err
 	}
 
-	bin := os.Getenv("STKEEPER_BIN")
+	bin := os.Getenv("ORIONKEEPER_BIN")
 	if bin == "" {
-		return nil, errors.New("missing STKEEPER_BIN env")
+		return nil, errors.New("missing ORIONKEEPER_BIN env")
 	}
 	tk := &testKeeper{
 		t: t,
@@ -436,7 +436,7 @@ func newTestKeeperWithID(
 func newTestKeeper(
 	t *testing.T,
 	dir, clusterName, pgSUUsername, pgSUPassword, pgReplUsername, pgReplPassword string,
-	storeBackend store.BackendType,
+	storeBackend consensus.BackendType,
 	storeEndpoints string,
 	a ...string,
 ) (*testKeeper, error) {
@@ -731,7 +731,7 @@ func newTestSentinel(
 	t *testing.T,
 	_ string,
 	clusterName string,
-	storeBackend store.BackendType,
+	storeBackend consensus.BackendType,
 	storeEndpoints string,
 	a ...string,
 ) (*testSentinel, error) {
@@ -747,9 +747,9 @@ func newTestSentinel(
 	}
 	args = append(args, a...)
 
-	bin := os.Getenv("STSENTINEL_BIN")
+	bin := os.Getenv("ORIONSENTINEL_BIN")
 	if bin == "" {
-		return nil, errors.New("missing STSENTINEL_BIN env")
+		return nil, errors.New("missing ORIONSENTINEL_BIN env")
 	}
 	ts := &testSentinel{
 		t: t,
@@ -777,7 +777,7 @@ func newTestProxy(
 	t *testing.T,
 	_ string,
 	clusterName, pgSUUsername, pgSUPassword, pgReplUsername, pgReplPassword string,
-	storeBackend store.BackendType,
+	storeBackend consensus.BackendType,
 	storeEndpoints string,
 	a ...string,
 ) (*testProxy, error) {
@@ -831,9 +831,9 @@ func newTestProxy(
 		return nil, err
 	}
 
-	bin := os.Getenv("STPROXY_BIN")
+	bin := os.Getenv("ORIONPROXY_BIN")
 	if bin == "" {
-		return nil, errors.New("missing STPROXY_BIN env")
+		return nil, errors.New("missing ORIONPROXY_BIN env")
 	}
 	tp := &testProxy{
 		t: t,
@@ -917,10 +917,10 @@ func (tp *testProxy) WaitRightMaster(tk *testKeeper, timeout time.Duration) erro
 	return tk.WaitPGParameter(waitParam, tk.pgPort, timeout)
 }
 
-func stolonCtl(
+func orionCLi(
 	t *testing.T,
 	clusterName string,
-	storeBackend store.BackendType,
+	storeBackend consensus.BackendType,
 	storeEndpoints string,
 	a ...string,
 ) error {
@@ -930,11 +930,11 @@ func stolonCtl(
 	args = append(args, fmt.Sprintf("--store-endpoints=%s", storeEndpoints))
 	args = append(args, a...)
 
-	t.Logf("executing stolonctl, args: %s", args)
+	t.Logf("executing orion-cli, args: %s", args)
 
-	bin := os.Getenv("STCTL_BIN")
+	bin := os.Getenv("ORIONCLI_BIN")
 	if bin == "" {
-		return errors.New("missing STCTL_BIN env")
+		return errors.New("missing ORIONCLI_BIN env")
 	}
 	cmd := exec.Command(bin, args...)
 	pr, pw, err := os.Pipe()
@@ -946,7 +946,7 @@ func stolonCtl(
 	go func() {
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
-			t.Logf("[%s]: %s", "stolonctl", scanner.Text())
+			t.Logf("[%s]: %s", "orion-cli", scanner.Text())
 		}
 	}()
 
@@ -958,12 +958,12 @@ type testStore struct {
 	process
 	listenAddress string
 	port          string
-	store         store.KVStore
-	storeBackend  store.BackendType
+	store         consensus.KVStore
+	storeBackend  consensus.BackendType
 }
 
 func newTestStore(t *testing.T, dir string, a ...string) (*testStore, error) {
-	storeBackend := store.BackendType(os.Getenv("STOLON_TEST_STORE_BACKEND"))
+	storeBackend := consensus.BackendType(os.Getenv("ORION_TEST_STORE_BACKEND"))
 	switch storeBackend {
 	case "consul":
 		return newTestConsul(t, dir, a...)
@@ -976,7 +976,7 @@ func newTestStore(t *testing.T, dir string, a ...string) (*testStore, error) {
 	return nil, errors.New("wrong store backend")
 }
 
-func newTestEtcd(t *testing.T, dir string, backend store.BackendType, a ...string) (*testStore, error) {
+func newTestEtcd(t *testing.T, dir string, backend consensus.BackendType, a ...string) (*testStore, error) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	u := uuid.Must(uuid.NewV4())
@@ -1005,12 +1005,12 @@ func newTestEtcd(t *testing.T, dir string, backend store.BackendType, a ...strin
 
 	storeEndpoints := fmt.Sprintf("%s:%s", listenAddress, port)
 
-	storeConfig := store.Config{
-		Backend:   store.BackendType(backend),
+	storeConfig := consensus.Config{
+		Backend:   consensus.BackendType(backend),
 		Endpoints: storeEndpoints,
 		Timeout:   defaultStoreTimeout,
 	}
-	kvstore, err := store.NewKVStore(ctx, storeConfig)
+	kvstore, err := consensus.NewKVStore(ctx, storeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create store: %v", err)
 	}
@@ -1091,12 +1091,12 @@ func newTestConsul(t *testing.T, dir string, a ...string) (*testStore, error) {
 
 	storeEndpoints := fmt.Sprintf("%s:%s", listenAddress, portHTTP)
 
-	storeConfig := store.Config{
-		Backend:   store.CONSUL,
+	storeConfig := consensus.Config{
+		Backend:   consensus.CONSUL,
 		Endpoints: storeEndpoints,
 		Timeout:   defaultStoreTimeout,
 	}
-	kvstore, err := store.NewKVStore(ctx, storeConfig)
+	kvstore, err := consensus.NewKVStore(ctx, storeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create store: %v", err)
 	}
@@ -1117,7 +1117,7 @@ func newTestConsul(t *testing.T, dir string, a ...string) (*testStore, error) {
 		listenAddress: listenAddress,
 		port:          portHTTP,
 		store:         kvstore,
-		storeBackend:  store.CONSUL,
+		storeBackend:  consensus.CONSUL,
 	}
 	return ts, nil
 }
@@ -1129,7 +1129,7 @@ func (ts *testStore) WaitUp(timeout time.Duration) error {
 		_, err := ts.store.Get(ctx, "anykey")
 		cancel()
 		ts.t.Logf("err: %v", err)
-		if err != nil && err == store.ErrKeyNotFound {
+		if err != nil && err == consensus.ErrKeyNotFound {
 			return nil
 		}
 		if err == nil {
@@ -1147,7 +1147,7 @@ func (ts *testStore) WaitDown(timeout time.Duration) error {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultStoreTimeout)
 		_, err := ts.store.Get(ctx, "anykey")
 		cancel()
-		if err != nil && err != store.ErrKeyNotFound {
+		if err != nil && err != consensus.ErrKeyNotFound {
 			return nil
 		}
 		time.Sleep(sleepInterval)
@@ -1156,7 +1156,7 @@ func (ts *testStore) WaitDown(timeout time.Duration) error {
 	return errTimeout
 }
 
-func waitClusterDataUpdated(e *store.KVBackedStore, timeout time.Duration) error {
+func waitClusterDataUpdated(e *consensus.KVBackedStore, timeout time.Duration) error {
 	icd, _, err := e.GetClusterData(context.TODO())
 	if err != nil {
 		return fmt.Errorf("unexpected err: %v", err)
@@ -1176,7 +1176,7 @@ func waitClusterDataUpdated(e *store.KVBackedStore, timeout time.Duration) error
 	return errTimeout
 }
 
-func waitClusterDataWithMaster(e *store.KVBackedStore, timeout time.Duration) (string, error) {
+func waitClusterDataWithMaster(e *consensus.KVBackedStore, timeout time.Duration) (string, error) {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1192,7 +1192,7 @@ func waitClusterDataWithMaster(e *store.KVBackedStore, timeout time.Duration) (s
 	return "", errTimeout
 }
 
-func waitClusterDataMaster(master string, e *store.KVBackedStore, timeout time.Duration) error {
+func waitClusterDataMaster(master string, e *consensus.KVBackedStore, timeout time.Duration) error {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1210,7 +1210,7 @@ func waitClusterDataMaster(master string, e *store.KVBackedStore, timeout time.D
 	return errTimeout
 }
 
-func waitClusterDataKeeperInitialized(keeperUID string, e *store.KVBackedStore, timeout time.Duration) error {
+func waitClusterDataKeeperInitialized(keeperUID string, e *consensus.KVBackedStore, timeout time.Duration) error {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1234,7 +1234,7 @@ func waitClusterDataKeeperInitialized(keeperUID string, e *store.KVBackedStore, 
 // WaitClusterDataSynchronousStandbys waits for:
 // * synchronous standby defined in masterdb spec
 // * synchronous standby reported from masterdb status
-func WaitClusterDataSynchronousStandbys(synchronousStandbys []string, e *store.KVBackedStore,
+func WaitClusterDataSynchronousStandbys(synchronousStandbys []string, e *consensus.KVBackedStore,
 	timeout time.Duration) error {
 	sort.Strings(synchronousStandbys)
 	start := time.Now()
@@ -1278,7 +1278,7 @@ func WaitClusterDataSynchronousStandbys(synchronousStandbys []string, e *store.K
 	return errTimeout
 }
 
-func waitClusterPhase(e *store.KVBackedStore, phase cluster.Phase, timeout time.Duration) error {
+func waitClusterPhase(e *consensus.KVBackedStore, phase cluster.Phase, timeout time.Duration) error {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1294,7 +1294,7 @@ func waitClusterPhase(e *store.KVBackedStore, phase cluster.Phase, timeout time.
 	return errTimeout
 }
 
-func waitNumDBs(e *store.KVBackedStore, n int, timeout time.Duration) error {
+func waitNumDBs(e *consensus.KVBackedStore, n int, timeout time.Duration) error {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1310,7 +1310,7 @@ func waitNumDBs(e *store.KVBackedStore, n int, timeout time.Duration) error {
 	return errTimeout
 }
 
-func waitStandbyKeeper(e *store.KVBackedStore, keeperUID string, timeout time.Duration) error {
+func waitStandbyKeeper(e *consensus.KVBackedStore, keeperUID string, timeout time.Duration) error {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1332,7 +1332,7 @@ func waitStandbyKeeper(e *store.KVBackedStore, keeperUID string, timeout time.Du
 	return errTimeout
 }
 
-func waitClusterDataKeepers(keepersUIDs []string, e *store.KVBackedStore, timeout time.Duration) error {
+func waitClusterDataKeepers(keepersUIDs []string, e *consensus.KVBackedStore, timeout time.Duration) error {
 	start := time.Now()
 	for time.Now().Add(-timeout).Before(start) {
 		cd, _, err := e.GetClusterData(context.TODO())
@@ -1357,7 +1357,7 @@ func waitClusterDataKeepers(keepersUIDs []string, e *store.KVBackedStore, timeou
 
 // WaitClusterSyncedXLogPos waits for all the specified keepers to have the same
 // reported XLogPos and that it's >= than master XLogPos
-func WaitClusterSyncedXLogPos(keepers []*testKeeper, xLogPos uint64, e *store.KVBackedStore,
+func WaitClusterSyncedXLogPos(keepers []*testKeeper, xLogPos uint64, e *consensus.KVBackedStore,
 	timeout time.Duration) error {
 	keepersUIDs := []string{}
 	for _, sk := range keepers {
@@ -1404,7 +1404,7 @@ func WaitClusterSyncedXLogPos(keepers []*testKeeper, xLogPos uint64, e *store.KV
 	return errTimeout
 }
 
-func waitClusterDataEnabledProxiesNum(e *store.KVBackedStore, n int, timeout time.Duration) error {
+func waitClusterDataEnabledProxiesNum(e *consensus.KVBackedStore, n int, timeout time.Duration) error {
 	// TODO(sgotti) find a way to retrieve the proxies internally generated uids
 	// and check for them instead of relying only on the number of proxies
 	start := time.Now()

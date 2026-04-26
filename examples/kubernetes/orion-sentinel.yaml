@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orion-sentinel
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      component: orion-sentinel
+      orion-cluster: kube-orion
+  template:
+    metadata:
+      labels:
+        component: orion-sentinel
+        orion-cluster: kube-orion
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: orion-sentinel
+          image: ghcr.io/pgvillage-tools/orion-keeper:17-latest
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              exec gosu orion orion-sentinel
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ORIONSENTINEL_CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['orion-cluster']
+            - name: ORIONSENTINEL_STORE_BACKEND
+              value: "kubernetes"
+            - name: ORIONSENTINEL_KUBE_RESOURCE_KIND
+              value: "configmap"
+            - name: ORIONSENTINEL_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+            ## Uncomment this to enable debug logs
+            #- name: ORIONSENTINEL_DEBUG
+            #  value: "true"
+          ports:
+            - containerPort: 8080

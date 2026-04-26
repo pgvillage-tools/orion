@@ -21,25 +21,25 @@ COPY internal/ internal/
 # was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -a -ldflags="-X 'cmd.Version=$VERSION'" -o stolon-keeper ./cmd/keeper
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -a -ldflags="-X 'github.com/pgvillage-tools/orion/cmd.Version=$VERSION'" -o orion-keeper ./cmd/keeper
 
 FROM docker.io/postgres:${PGVERSION}
 ARG PGVERSION=18
 
 LABEL MAINTAINER=Nibble-IT
 WORKDIR /
-COPY --from=builder /workspace/stolon-keeper ./
+COPY --from=builder /workspace/orion-keeper ./
 
 RUN mkdir /pgdata /pgwal && chown postgres: /pgdata /pgwal
 
-ENV STKEEPER_PG_BIN_PATH=/usr/lib/postgresql/${PGVERSION}/bin \
-    STKEEPER_CLUSTER_NAME=stolon \
-    STKEEPER_STORE_BACKEND=etcdv3 \
-    STKEEPER_DATA_DIR=/pgdata \
-    STKEEPER_PGDATA_DIR=/pgdata/pgdata \
-    STKEEPER_WAL_DIR=/pgwal/pgwal \
-    STKEEPER_PG_PORT=5432 \
-    STKEEPER_PG_REPL_USERNAME=postgres
+ENV ORIONKEEPER_PG_BIN_PATH=/usr/lib/postgresql/${PGVERSION}/bin \
+    ORIONKEEPER_CLUSTER_NAME=orion \
+    ORIONKEEPER_STORE_BACKEND=etcdv3 \
+    ORIONKEEPER_DATA_DIR=/pgdata \
+    ORIONKEEPER_PGDATA_DIR=/pgdata/pgdata \
+    ORIONKEEPER_WAL_DIR=/pgwal/pgwal \
+    ORIONKEEPER_PG_PORT=5432 \
+    ORIONKEEPER_PG_REPL_USERNAME=postgres
 
-ENTRYPOINT ["/stolon-keeper"]
+ENTRYPOINT ["/orion-keeper"]
 USER postgres

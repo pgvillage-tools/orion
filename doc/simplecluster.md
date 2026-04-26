@@ -2,25 +2,25 @@
 
 These are the steps to setup and test a simple cluster.
 
-This example assumes a running etcd 3.x server on localhost. We'll use the etcd v3 api to store stolon data inside etcd.
+This example assumes a running etcd 3.x server on localhost. We'll use the etcd v3 api to store orion data inside etcd.
 
-Note: under ubuntu the `initdb` command is not provided in the path. You should updated the exported `PATH` env variable or provide the `--pg-bin-path` command line option to the `stolon-keeper` command.
+Note: under ubuntu the `initdb` command is not provided in the path. You should updated the exported `PATH` env variable or provide the `--pg-bin-path` command line option to the `orion-keeper` command.
 
 ### Initialize the cluster
 
 The first step is to initialize a cluster with a cluster specification. For now we'll just initialize a cluster without providing a cluster specification but using a default one that will just start with an empty database cluster.
 
 ```
-./bin/stolonctl --cluster-name stolon-cluster --store-backend=etcdv3 init
+./bin/orion --cluster-name orion-cluster --store-backend=etcdv3 init
 ```
 
 If you want to automate this step you can just pass an initial cluster specification to the sentinels with the `--initial-cluster-spec` option.
 
 ### Start a sentinel
 
-The sentinel will become the sentinels leader for the cluster named `stolon-cluster`.
+The sentinel will become the sentinels leader for the cluster named `orion-cluster`.
 ```
-./bin/stolon-sentinel --cluster-name stolon-cluster --store-backend=etcdv3
+./bin/orion-sentinel --cluster-name orion-cluster --store-backend=etcdv3
 ```
 
 ```
@@ -32,10 +32,10 @@ sentinel leadership acquired
 ### Launch first keeper
 
 ```
-./bin/stolon-keeper --cluster-name stolon-cluster --store-backend=etcdv3 --uid postgres0 --data-dir data/postgres0 --pg-su-password=supassword --pg-repl-username=repluser --pg-repl-password=replpassword --pg-listen-address=127.0.0.1
+./bin/orion-keeper --cluster-name orion-cluster --store-backend=etcdv3 --uid postgres0 --data-dir data/postgres0 --pg-su-password=supassword --pg-repl-username=repluser --pg-repl-password=replpassword --pg-listen-address=127.0.0.1
 ```
 
-This will start a stolon keeper with id `postgres0` listening by default on localhost:5431, it will setup and initialize a postgres instance inside `data/postgres0/postgres/`
+This will start a orion keeper with id `postgres0` listening by default on localhost:5431, it will setup and initialize a postgres instance inside `data/postgres0/postgres/`
 
 ```
 exclusive lock on data dir taken
@@ -78,7 +78,7 @@ db initialized db=2a87ea79 keeper=postgres0
 Now we can start the proxy
 
 ```
-./bin/stolon-proxy --cluster-name stolon-cluster --store-backend=etcdv3 --port 25432
+./bin/orion-proxy --cluster-name orion-cluster --store-backend=etcdv3 --port 25432
 ```
 
 ```
@@ -119,7 +119,7 @@ postgres=# select * from test;
 ### Start another keeper:
 
 ```
-./bin/stolon-keeper --cluster-name stolon-cluster --store-backend=etcdv3 --uid postgres1 --data-dir data/postgres1 --pg-su-password=supassword --pg-repl-username=repluser --pg-repl-password=replpassword --pg-listen-address=127.0.0.1 --pg-port 5435
+./bin/orion-keeper --cluster-name orion-cluster --store-backend=etcdv3 --uid postgres1 --data-dir data/postgres1 --pg-su-password=supassword --pg-repl-username=repluser --pg-repl-password=replpassword --pg-listen-address=127.0.0.1 --pg-port 5435
 ```
 
 This instance will start replicating from the master (postgres0)

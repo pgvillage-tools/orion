@@ -5061,7 +5061,7 @@ func TestUpdateCluster(t *testing.T) {
 							Role:                        common.RolePrimary,
 							Followers:                   []string{d2},
 							SynchronousStandbys:         []string{},
-							ExternalSynchronousStandbys: []string{"stolonfakestandby"},
+							ExternalSynchronousStandbys: []string{"orionfakestandby"},
 						},
 						Status: cluster.DBStatus{
 							Healthy:                true,
@@ -5155,7 +5155,7 @@ func TestUpdateCluster(t *testing.T) {
 							Role:                        common.RolePrimary,
 							Followers:                   []string{d2},
 							SynchronousStandbys:         []string{},
-							ExternalSynchronousStandbys: []string{"stolonfakestandby"},
+							ExternalSynchronousStandbys: []string{"orionfakestandby"},
 						},
 						Status: cluster.DBStatus{
 							Healthy:                true,
@@ -6006,7 +6006,7 @@ func TestUpdateCluster(t *testing.T) {
 							Role:                        common.RolePrimary,
 							Followers:                   []string{d2},
 							SynchronousStandbys:         []string{},
-							ExternalSynchronousStandbys: []string{"stolonfakestandby"},
+							ExternalSynchronousStandbys: []string{"orionfakestandby"},
 						},
 						Status: cluster.DBStatus{
 							Healthy:                true,

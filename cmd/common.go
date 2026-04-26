@@ -27,7 +27,7 @@ import (
 	"github.com/mattn/go-isatty"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
@@ -36,7 +36,7 @@ import (
 
 // CommonConfig is a struct specifying if certain objects are strings or booleans for example
 type CommonConfig struct {
-	IsStolonCtl bool
+	IsCLI bool
 
 	StoreBackend         string
 	StoreEndpoints       string
@@ -125,9 +125,9 @@ func AddCommonFlags(cmd *cobra.Command, cfg *CommonConfig) {
 		"kube-resource-kind",
 		"",
 		// revive:disable-next-line
-		`the k8s resource kind to be used to store stolon clusterdata and do sentinel leader election (only "configmap" is currently supported)`)
+		`the k8s resource kind to be used to store orion clusterdata and do sentinel leader election (only "configmap" is currently supported)`)
 
-	if !cfg.IsStolonCtl {
+	if !cfg.IsCLI {
 		cmd.PersistentFlags().BoolVar(
 			&cfg.LogColor,
 			"log-color",
@@ -140,7 +140,7 @@ func AddCommonFlags(cmd *cobra.Command, cfg *CommonConfig) {
 			"debug, info (default), warn or error")
 	}
 
-	if cfg.IsStolonCtl {
+	if cfg.IsCLI {
 		cmd.PersistentFlags().StringVar(
 			&cfg.LogLevel,
 			"log-level",
@@ -165,12 +165,12 @@ func AddCommonFlags(cmd *cobra.Command, cfg *CommonConfig) {
 
 var (
 	// clusterIdentifier provides a Prometheus metric that should uniquely identify the
-	// cluster that any stolon component is associated with. Users can then join between
+	// cluster that any orion component is associated with. Users can then join between
 	// various metric series for the same cluster without making assumptions about service
 	// discovery labels.
 	clusterIdentifier = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "stolon_cluster_identifier",
+			Name: "orion_cluster_identifier",
 			Help: "Set to 1, is labelled with the cluster_name and component",
 		},
 		[]string{"cluster_name", "component"},
@@ -211,7 +211,7 @@ func CheckCommonConfig(cfg *CommonConfig) error {
 	return nil
 }
 
-// SetMetrics should be called by any stolon component that outputs application metrics.
+// SetMetrics should be called by any orion component that outputs application metrics.
 // It sets the clusterIdentifier metric, which is key to joining across all the other
 // metric series.
 func SetMetrics(cfg *CommonConfig, component string) {
@@ -227,11 +227,11 @@ func IsColorLoggerEnable(cmd *cobra.Command, cfg *CommonConfig) bool {
 }
 
 // NewKVStore returns a new KVStore function object
-func NewKVStore(ctx context.Context, cfg *CommonConfig) (store.KVStore, error) {
-	return store.NewKVStore(
+func NewKVStore(ctx context.Context, cfg *CommonConfig) (consensus.KVStore, error) {
+	return consensus.NewKVStore(
 		ctx,
-		store.Config{
-			Backend:       store.BackendType(cfg.StoreBackend),
+		consensus.Config{
+			Backend:       consensus.BackendType(cfg.StoreBackend),
 			Endpoints:     cfg.StoreEndpoints,
 			Timeout:       cfg.StoreTimeout,
 			CertFile:      cfg.StoreCertFile,
@@ -242,8 +242,8 @@ func NewKVStore(ctx context.Context, cfg *CommonConfig) (store.KVStore, error) {
 }
 
 // NewStore is function that returns a new store object
-func NewStore(ctx context.Context, cfg *CommonConfig) (store.Store, error) {
-	var s store.Store
+func NewStore(ctx context.Context, cfg *CommonConfig) (consensus.Store, error) {
+	var s consensus.Store
 
 	switch cfg.StoreBackend {
 	case "consul":
@@ -257,13 +257,13 @@ func NewStore(ctx context.Context, cfg *CommonConfig) (store.Store, error) {
 		if err != nil {
 			return nil, fmt.Errorf("NewStore: cannot create etcdv3 store: %v", err)
 		}
-		s = store.NewKVBackedStore(kvstore, storePath)
+		s = consensus.NewKVBackedStore(kvstore, storePath)
 	case "kubernetes":
 		kubecli, podName, namespace, err := getKubeValues(cfg)
 		if err != nil {
 			return nil, err
 		}
-		s, err = store.NewKubeStore(kubecli, podName, namespace, cfg.ClusterName)
+		s, err = consensus.NewKubeStore(kubecli, podName, namespace, cfg.ClusterName)
 		if err != nil {
 			return nil, fmt.Errorf("NewStore: cannot create k8s store: %v", err)
 		}
@@ -273,8 +273,8 @@ func NewStore(ctx context.Context, cfg *CommonConfig) (store.Store, error) {
 }
 
 // NewElection is  function that returns a new election object
-func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (store.Election, error) {
-	var election store.Election
+func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.Election, error) {
+	var election consensus.Election
 
 	switch cfg.StoreBackend {
 	case "consul":
@@ -288,7 +288,7 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (store.Elec
 		if err != nil {
 			return nil, fmt.Errorf("NewElection: cannot create kv store: %v", err)
 		}
-		election = store.NewKVBackedElection(
+		election = consensus.NewKVBackedElection(
 			kvstore,
 			filepath.Join(storePath,
 				common.SentinelLeaderKey),
@@ -299,7 +299,7 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (store.Elec
 		if err != nil {
 			return nil, err
 		}
-		election, err = store.NewKubeElection(kubecli, podName, namespace, cfg.ClusterName, uid)
+		election, err = consensus.NewKubeElection(kubecli, podName, namespace, cfg.ClusterName, uid)
 		if err != nil {
 			return nil, err
 		}
@@ -320,7 +320,7 @@ func getKubeValues(cfg *CommonConfig) (*kubernetes.Clientset, string, string, er
 		return nil, "", "", fmt.Errorf("cannot create kubernetes client: %v", err)
 	}
 	var podName string
-	if !cfg.IsStolonCtl {
+	if !cfg.IsCLI {
 		podName, err = util.PodName()
 		if err != nil {
 			return nil, "", "", err
