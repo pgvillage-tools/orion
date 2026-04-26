@@ -31,9 +31,9 @@ import (
 	"github.com/kvtools/etcdv2"
 	"github.com/kvtools/etcdv3"
 	"github.com/kvtools/valkeyrie"
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/logging"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
 // BackendType represents a type of KV Store BackendType

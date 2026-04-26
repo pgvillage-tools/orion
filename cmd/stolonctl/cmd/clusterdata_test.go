@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	mockstore "github.com/pgvillage-tools/stolon/internal/mock/store"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	mockstore "github.com/pgvillage-tools/orion/internal/mock/store"
 )
 
 func TestWriteClusterdata(t *testing.T) {

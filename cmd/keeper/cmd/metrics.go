@@ -17,7 +17,7 @@
 package cmd
 
 import (
-	"github.com/pgvillage-tools/stolon/internal/common"
+	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

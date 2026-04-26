@@ -17,7 +17,7 @@
 package main
 
 import (
-	"github.com/pgvillage-tools/stolon/cmd/sentinel/cmd"
+	"github.com/pgvillage-tools/orion/cmd/sentinel/cmd"
 )
 
 func main() {

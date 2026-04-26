@@ -9,7 +9,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	postgresql "github.com/pgvillage-tools/stolon/internal/postgresql"
+	postgresql "github.com/pgvillage-tools/orion/internal/postgresql"
 )
 
 // MockPGManager is a mock of PGManager interface

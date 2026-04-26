@@ -20,8 +20,8 @@ import (
 	"context"
 	"errors"
 
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	stolonstore "github.com/pgvillage-tools/stolon/internal/store"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	stolonstore "github.com/pgvillage-tools/orion/internal/store"
 )
 
 // Cluster type exposes necessary methods to find master and slave

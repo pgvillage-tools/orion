@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pgvillage-tools/stolon/internal/util"
+	"github.com/pgvillage-tools/orion/internal/util"
 )
 
 const (

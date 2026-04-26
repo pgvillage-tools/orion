@@ -19,13 +19,13 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	mockregister "github.com/pgvillage-tools/stolon/cmd/stolonctl/cmd/internal/mock/register"
-	mockstore "github.com/pgvillage-tools/stolon/internal/mock/store"
-	"github.com/pgvillage-tools/stolon/internal/store"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	mockregister "github.com/pgvillage-tools/orion/cmd/stolonctl/cmd/internal/mock/register"
+	mockstore "github.com/pgvillage-tools/orion/internal/mock/store"
+	"github.com/pgvillage-tools/orion/internal/store"
 
-	"github.com/pgvillage-tools/stolon/cmd"
-	"github.com/pgvillage-tools/stolon/cmd/stolonctl/cmd/register"
+	"github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/cmd/stolonctl/cmd/register"
 )
 
 func TestCheckConfig(t *testing.T) {

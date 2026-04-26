@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	pg "github.com/pgvillage-tools/stolon/internal/postgresql"
-	"github.com/pgvillage-tools/stolon/internal/store"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/common"
+	pg "github.com/pgvillage-tools/orion/internal/postgresql"
+	"github.com/pgvillage-tools/orion/internal/store"
 
 	"github.com/gofrs/uuid"
 )

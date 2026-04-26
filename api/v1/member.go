@@ -18,8 +18,8 @@ package v1
 import (
 	"time"
 
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/util"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/util"
 )
 
 // PostgresTimelinesHistory stores all PostgreSQL timelines belonging to this cluster

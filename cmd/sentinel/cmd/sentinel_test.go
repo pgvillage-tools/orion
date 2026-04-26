@@ -25,10 +25,10 @@ import (
 	"testing"
 	"time"
 
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	"github.com/pgvillage-tools/stolon/internal/common"
-	"github.com/pgvillage-tools/stolon/internal/timer"
-	"github.com/pgvillage-tools/stolon/internal/util"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/timer"
+	"github.com/pgvillage-tools/orion/internal/util"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"

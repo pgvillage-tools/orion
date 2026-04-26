@@ -18,7 +18,7 @@ package postgresql
 import (
 	"reflect"
 
-	"github.com/pgvillage-tools/stolon/internal/common"
+	"github.com/pgvillage-tools/orion/internal/common"
 
 	"github.com/mitchellh/copystructure"
 )

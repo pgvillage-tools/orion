@@ -19,8 +19,8 @@ import (
 	"context"
 	"encoding/json"
 
-	cluster "github.com/pgvillage-tools/stolon/api/v1"
-	cmdcommon "github.com/pgvillage-tools/stolon/cmd"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+	cmdcommon "github.com/pgvillage-tools/orion/cmd"
 
 	"github.com/spf13/cobra"
 )

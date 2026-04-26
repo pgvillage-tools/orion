@@ -21,10 +21,10 @@ import (
 	"log"
 	"os"
 
-	keepercmd "github.com/pgvillage-tools/stolon/cmd/keeper/cmd"
-	proxycmd "github.com/pgvillage-tools/stolon/cmd/proxy/cmd"
-	sentinelcmd "github.com/pgvillage-tools/stolon/cmd/sentinel/cmd"
-	stolonctlcmd "github.com/pgvillage-tools/stolon/cmd/stolonctl/cmd"
+	keepercmd "github.com/pgvillage-tools/orion/cmd/keeper/cmd"
+	proxycmd "github.com/pgvillage-tools/orion/cmd/proxy/cmd"
+	sentinelcmd "github.com/pgvillage-tools/orion/cmd/sentinel/cmd"
+	stolonctlcmd "github.com/pgvillage-tools/orion/cmd/stolonctl/cmd"
 
 	"github.com/spf13/cobra/doc"
 )
