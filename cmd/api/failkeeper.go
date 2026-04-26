@@ -28,7 +28,7 @@ func (h *Handlers) FailKeeperRoutes() []Route {
 
 // PutFailKeeperHandlerHandler endpoint
 func (h *Handlers) PutFailKeeperHandlerHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	keeperID := r.PathValue("id")
@@ -36,15 +36,19 @@ func (h *Handlers) PutFailKeeperHandlerHandler(w http.ResponseWriter, r *http.Re
 	cd, pair, err := h.client.GetClusterData(ctx)
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
+		return
 	} else if cd.Cluster == nil {
 		handleError(ctx, err, w, "cluster is not set")
+		return
 	} else if cd.Cluster.Spec == nil {
 		handleError(ctx, err, w, "cluster spec is not set")
+		return
 	}
 	newCd := cd.DeepCopy()
 	keeperInfo := newCd.Keepers[keeperID]
 	if keeperInfo == nil {
 		handleError(ctx, err, w, "keeper doesn't exist")
+		return
 	}
 
 	keeperInfo.Status.ForceFail = true
@@ -52,6 +56,7 @@ func (h *Handlers) PutFailKeeperHandlerHandler(w http.ResponseWriter, r *http.Re
 	_, err = h.client.AtomicPutClusterData(ctx, newCd, pair)
 	if err != nil {
 		handleError(ctx, err, w, "failed to store cluster data")
+		return
 	}
 	w.WriteHeader(http.StatusAccepted)
 }

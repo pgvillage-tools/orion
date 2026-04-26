@@ -23,7 +23,7 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 )
 
-//go:generate mockgen -destination=../mock/store/store.go -source=$GOFILE
+//go:generate mockgen -destination=../mock/consensus/store.go -source=$GOFILE
 
 var (
 	// ErrKeyNotFound is thrown when the key is not found in the store during a Get operation

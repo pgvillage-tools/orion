@@ -34,7 +34,7 @@ func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 		msg    = []byte("OK")
 	)
-	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	if err := h.client.Healthy(ctx); err != nil {
@@ -47,7 +47,7 @@ func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := context.TODO()
+	ctx := r.Context()
 	if !h.Ready.Load() {
 		handleError(ctx, errors.New("Service not ready yet"), w, "Not Ready")
 		return

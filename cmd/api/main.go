@@ -116,16 +116,14 @@ func main() {
 }
 
 func handleError(ctx context.Context, err error, w http.ResponseWriter, msg string) {
-	if err == nil {
-		return
+	_, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	if err != nil {
+		logger.Error().AnErr("error", err).Msg(msg)
 	}
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-	logger.Error().AnErr("error", err).Msg(msg)
-	if w == nil {
-		return
+	if w != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, err := w.Write([]byte("ERROR")); err != nil {
+			logger.Error().AnErr("error", err).Msg("unable to return ERROR")
+		}
 	}
-	if _, err := w.Write([]byte("ERROR")); err != nil {
-		logger.Error().AnErr("error", err).Msg("unable to return ERROR")
-	}
-	w.WriteHeader(http.StatusInternalServerError)
 }

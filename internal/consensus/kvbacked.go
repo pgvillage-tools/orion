@@ -287,36 +287,38 @@ func NewKVBackedStore(kvStore KVStore, path string) *KVBackedStore {
 	}
 }
 
-// Healthy stores keeper info to a kv store
+// Healthy verifies the KV backend is reachable and consistent by writing,
+// reading back, and deleting a short-lived marker. It returns a non-nil
+// error if any step fails or the round-tripped value does not match.
 func (s *KVBackedStore) Healthy(ctx context.Context) error {
-	var (
-		healthMsg = uuid.NewString()
-		err       error
-		pair      *KVPair
-	)
 	ctx, logger := logging.GetLogComponent(ctx, logging.StoreComponent)
-	id, ctx := logging.GetID(ctx)
-	if err = s.store.Put(ctx, id, []byte(healthMsg), &WriteOptions{TTL: minTTL}); err != nil {
-		logger.Debug().
-			AnErr("error", err).
-			Msg("Error occurred while asserting if the store is healthy")
+	healthMsg := uuid.NewString()
+	key := filepath.Join(s.clusterPath, "health", healthMsg)
+
+	if err := s.store.Put(ctx, key, []byte(healthMsg), &WriteOptions{TTL: minTTL}); err != nil {
+		logger.Debug().AnErr("error", err).Msg("health check: put failed")
 		return err
-	} else if pair, err = s.store.Get(ctx, id); err != nil {
-		logger.Debug().
-			AnErr("error", err).
-			Msg("Error occurred while asserting if the store is healthy")
-	} else if string(pair.Value) != healthMsg {
-		logger.Debug().
-			Bytes("msg", pair.Value).
-			Bytes("expected", []byte(healthMsg)).
-			Msg("Error occurred while asserting if the store is healthy")
-	} else if err = s.store.Delete(ctx, id); err != nil {
-		logger.Debug().
-			Bytes("msg", pair.Value).
-			Bytes("expected", []byte(healthMsg)).
-			Msg("Error occurred while asserting if the store is healthy")
 	}
-	return err
+	// Best-effort cleanup regardless of subsequent outcome.
+	defer func() {
+		if err := s.store.Delete(ctx, key); err != nil {
+			logger.Debug().AnErr("error", err).Msg("health check: cleanup delete failed")
+		}
+	}()
+
+	pair, err := s.store.Get(ctx, key)
+	if err != nil {
+		logger.Debug().AnErr("error", err).Msg("health check: get failed")
+		return err
+	}
+	if string(pair.Value) != healthMsg {
+		logger.Debug().
+			Bytes("got", pair.Value).
+			Str("expected", healthMsg).
+			Msg("health check: value mismatch")
+		return errors.New("kv store health check value mismatch")
+	}
+	return nil
 }
 
 // AtomicPutClusterData is an atomic way to store CLusterData to a kv store

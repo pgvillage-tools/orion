@@ -22,7 +22,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/mock/consensus_mock"
+	mocked_consensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 )
 
 func TestWriteClusterdata(t *testing.T) {
@@ -33,7 +33,7 @@ func TestWriteClusterdata(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		store := consensus_mock.NewMockStore(ctrl)
+		store := mocked_consensus.NewMockStore(ctrl)
 		reader := strings.Reader{}
 		err := writeClusterdata(&reader, store)
 
@@ -53,7 +53,7 @@ func TestWriteClusterdata(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		store := consensus_mock.NewMockStore(ctrl)
+		store := mocked_consensus.NewMockStore(ctrl)
 		reader := strings.NewReader("{a}")
 		err := writeClusterdata(reader, store)
 
@@ -74,7 +74,7 @@ func TestWriteClusterdata(t *testing.T) {
 		defer ctrl.Finish()
 
 		reader := strings.NewReader("{}")
-		store := consensus_mock.NewMockStore(ctrl)
+		store := mocked_consensus.NewMockStore(ctrl)
 
 		store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, errors.New("Error in getting cluster data"))
 
@@ -97,7 +97,7 @@ func TestWriteClusterdata(t *testing.T) {
 		defer ctrl.Finish()
 
 		reader := strings.NewReader("{}")
-		store := consensus_mock.NewMockStore(ctrl)
+		store := mocked_consensus.NewMockStore(ctrl)
 		store.EXPECT().GetClusterData(gomock.Any()).Return(&cluster.Data{}, nil, nil)
 
 		err := writeClusterdata(reader, store)
@@ -120,7 +120,7 @@ func TestWriteClusterdata(t *testing.T) {
 		defer ctrl.Finish()
 
 		reader := strings.NewReader("{}")
-		store := consensus_mock.NewMockStore(ctrl)
+		store := mocked_consensus.NewMockStore(ctrl)
 		cd := &cluster.Data{}
 		store.EXPECT().GetClusterData(gomock.Any()).Return(cd, nil, nil)
 		store.EXPECT().PutClusterData(gomock.Any(), cd).Return(errors.New("error while uploading the cluster data"))
@@ -145,7 +145,7 @@ func TestWriteClusterdata(t *testing.T) {
 		defer ctrl.Finish()
 
 		reader := strings.NewReader("{}")
-		store := consensus_mock.NewMockStore(ctrl)
+		store := mocked_consensus.NewMockStore(ctrl)
 		cd := &cluster.Data{}
 		store.EXPECT().GetClusterData(gomock.Any()).Return(cd, nil, nil)
 		store.EXPECT().PutClusterData(gomock.Any(), cd).Return(nil)

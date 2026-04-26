@@ -36,11 +36,11 @@ func (h *Handlers) StatusRoutes() []Route {
 
 // ProxyStatusHandler endpoint
 func (h *Handlers) ProxyStatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	if proxiesInfo, err := h.client.GetProxiesInfo(ctx); err != nil {
-		handleError(ctx, err, w, "failed to get cluster data")
+		handleError(ctx, err, w, "failed to get proxy info")
 	} else {
 		h.writeJSON(ctx, w, proxiesInfo)
 	}
@@ -48,11 +48,11 @@ func (h *Handlers) ProxyStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 // SentinelStatusHandler endpoint
 func (h *Handlers) SentinelStatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	if sentinelsInfo, err := h.client.GetSentinelsInfo(ctx); err != nil {
-		handleError(ctx, err, w, "failed to get cluster data")
+		handleError(ctx, err, w, "failed to get sentinel status")
 	} else {
 		h.writeJSON(ctx, w, sentinelsInfo)
 	}
@@ -60,7 +60,7 @@ func (h *Handlers) SentinelStatusHandler(w http.ResponseWriter, r *http.Request)
 
 func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, err error) {
 	var ssi apiv1.SentinelsInfo
-	election, err := cmdcommon.NewElection(context.TODO(), &cfg.CommonConfig, "")
+	election, err := cmdcommon.NewElection(ctx, &cfg.CommonConfig, "")
 	if err != nil {
 		handleError(ctx, err, nil, "failed to get election info")
 		return nil, err
@@ -85,9 +85,9 @@ func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, er
 }
 
 func (h *Handlers) proxyInfo(ctx context.Context) (ip apiv1.InfoProxies, err error) {
-	proxiesInfo, err := h.client.GetProxiesInfo(context.TODO())
+	proxiesInfo, err := h.client.GetProxiesInfo(ctx)
 	if err != nil {
-		handleError(ctx, err, nil, "failed to get proxies info")
+		handleError(ctx, err, nil, "failed to get proxy info")
 		return nil, err
 	}
 	proxiesInfoSlice := proxiesInfo.ToSlice()
@@ -176,7 +176,7 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 }
 
 func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	ic, err := h.clusterInfo(ctx)

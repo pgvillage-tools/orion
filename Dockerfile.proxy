@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -a -l
 
 FROM docker.io/debian:bookworm-slim
 
-LABEL MAINTAINER=mannemsolutions
+LABEL MAINTAINER=Nibble-IT
 WORKDIR /
 COPY --from=builder /workspace/orion-proxy ./
 

@@ -49,6 +49,7 @@ func (h *Handlers) Routes() []Route {
 	routes = append(routes, h.StatusRoutes()...)
 	routes = append(routes, h.UpdateRoutes()...)
 	routes = append(routes, h.ClusterDataRoutes()...)
+	routes = append(routes, h.FailKeeperRoutes()...)
 	return routes
 }
 

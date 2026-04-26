@@ -39,7 +39,7 @@ func (h *Handlers) UpdateRoutes() []Route {
 
 // clusterSpecGetHandler endpoint
 func (h *Handlers) clusterSpecGetHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
 
@@ -64,7 +64,7 @@ func (h *Handlers) clusterSpecGetHandler(w http.ResponseWriter, r *http.Request)
 
 // clusterSpecPatchHandler endpoint
 func (h *Handlers) clusterSpecPatchHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
 
@@ -93,7 +93,7 @@ func (h *Handlers) clusterSpecPatchHandler(w http.ResponseWriter, r *http.Reques
 
 // clusterSpecPutHandler endpoint
 func (h *Handlers) clusterSpecPutHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
 
@@ -137,7 +137,7 @@ func patchClusterSpec(cs *apiv1.Spec, p []byte) (*apiv1.Spec, error) {
 }
 
 func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, replace bool) error {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	logger.Debug().Str("patch", string(patch)).Bool("update", replace).Msg("")
 	cd, pair, err := client.GetClusterData(ctx)
 	if err != nil {
@@ -155,6 +155,9 @@ func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, re
 	if replace {
 		if err = json.Unmarshal(patch, &newcs); err != nil {
 			return fmt.Errorf("failed to unmarshal cluster spec: %v", err)
+		}
+		if newcs == nil {
+			return errors.New("cluster spec cannot be null")
 		}
 		logger.Debug().Any("new cluster spec", newcs).Msg("replaced")
 	} else {
@@ -181,7 +184,7 @@ func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, re
 func updateSpecRetries(ctx context.Context, client consensus.Store, patch []byte, update bool) error {
 	const maxRetries = 3
 	var errs []error
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	for i := 0; i < maxRetries; i++ {
 		logger.Debug().Int("try", i).Msg("trying")
 		err := tryUpdateSpec(ctx, client, patch, update)

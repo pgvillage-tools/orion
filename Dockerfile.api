@@ -5,6 +5,10 @@ ARG VERSION=v0.0.0-devel
 
 FROM docker.io/golang:bookworm AS builder
 
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION
+
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod
@@ -20,15 +24,20 @@ COPY internal/ internal/
 # was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -a -ldflags="-X 'cmd.Version=$VERSION'" -o stolon-api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -v -a \
+    -ldflags="-X 'github.com/pgvillage-tools/orion/cmd.Version=$VERSION'" -o orion-api ./cmd/api
 
 FROM docker.io/debian:bookworm-slim
 
-LABEL MAINTAINER=mannemsolutions
+LABEL MAINTAINER=Nibble-IT
 WORKDIR /
-COPY --from=builder /workspace/stolon-api ./
+COPY --from=builder /workspace/orion-api ./
 
-ENV STAPI_CLUSTER_NAME=stolon \
+ENV STAPI_CLUSTER_NAME=orion \
     STAPI_STORE_BACKEND=etcdv3
 
-ENTRYPOINT ["/stolon-api"]
+RUN useradd orion
+USER orion
+
+ENTRYPOINT ["/orion-api"]

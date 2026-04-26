@@ -33,7 +33,7 @@ func (h *Handlers) InitRoutes() []Route {
 
 // PostInitHandler endpoint
 func (h *Handlers) PostInitHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(context.TODO(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	cd, _, err := h.client.GetClusterData(ctx)
