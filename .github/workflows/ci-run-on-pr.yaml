@@ -305,6 +305,26 @@ jobs:
           PGVERSION: ${{ matrix.pgversion }}
           STOLON_TEST_STORE_BACKEND: etcdv3
 
+  check-e2e-status:
+    runs-on: ubuntu-latest
+    needs: e2e-test
+    if: always() # Cruciaal: moet altijd draaien
+    steps:
+      - name: Evaluate e2e status
+        run: |
+          RESULT="${{ needs.e2e-test.result }}"
+          
+          echo "E2E result: $RESULT"
+
+          if [ "$RESULT" = "failure" ]; then
+            exit 1
+          elif [ "$RESULT" = "success" ] || [ "$RESULT" = "skipped" ]; then
+            exit 0
+          else
+            echo "Tests were cancelled."
+            exit 1
+          fi
+
   license-header-test:
     name: License header test
     runs-on: ubuntu-22.04
