@@ -5,7 +5,7 @@ on:
 
 env:
   # Golang version to use across CI steps
-  GOLANG_VERSION: '1.25' # As we have go toolchain 1.25 specified in go.mod
+  GOLANG_VERSION: '1.26' # Updated to match go.mod requirement (go 1.26.0)
   DOWNLOAD_URL: https://github.com/etcd-io/etcd/releases/download
   ETCD_VER: v3.6.8
   ETCD_PATH: /usr/local/bin/
@@ -75,7 +75,7 @@ jobs:
         with:
           go-version: ${{ env.GOLANG_VERSION }}
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           args: --verbose --timeout=10m
 
