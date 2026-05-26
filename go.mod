@@ -30,7 +30,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/etcd v0.42.0
 	go.etcd.io/etcd/api/v3 v3.6.11
 	go.etcd.io/etcd/client/v3 v3.6.11
-	k8s.io/api v0.35.1
+	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.35.1
 )
