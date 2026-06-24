@@ -34,10 +34,12 @@ LABEL MAINTAINER=Nibble-IT
 WORKDIR /
 COPY --from=builder /workspace/orion-api ./
 
-ENV STAPI_CLUSTER_NAME=orion \
-    STAPI_STORE_BACKEND=etcdv3
+ENV ORIONAPI_CLUSTER_NAME=orion \
+    ORIONAPI_STORE_BACKEND=etcdv3
 
 RUN useradd orion
 USER orion
+
+EXPOSE 8080
 
 ENTRYPOINT ["/orion-api"]

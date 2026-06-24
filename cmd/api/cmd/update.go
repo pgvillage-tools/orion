@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"context"
@@ -29,34 +29,38 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
+const (
+	UpdateEndPoint EndPoint = "cluster/spec"
+)
+
 func (h *Handlers) UpdateRoutes() []Route {
 	return []Route{
-		{"GET /cluster/spec", h.clusterSpecGetHandler},
-		{"PATCH /cluster/spec", h.clusterSpecPatchHandler},
-		{"PUT /cluster/spec", h.clusterSpecPutHandler},
+		{UpdateEndPoint.route(methodGet), h.clusterSpecGetHandler},
+		{UpdateEndPoint.route(methodPatch), h.clusterSpecPatchHandler},
+		{UpdateEndPoint.route(methodPut), h.clusterSpecPutHandler},
 	}
 }
 
 // clusterSpecGetHandler endpoint
 func (h *Handlers) clusterSpecGetHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
 	cd, _, err := h.client.GetClusterData(ctx)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to get cluster")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		handleError(ctx, err, w, "failed to get cluster")
+		return
+	}
+	if cd == nil {
+		handleError(ctx, err, w, "no clusterdata")
 		return
 	}
 	if cd.Cluster == nil {
-		logger.Error().Msg("no cluster available")
-		http.Error(w, "no cluster available", http.StatusInternalServerError)
+		handleError(ctx, err, w, "no cluster available")
 		return
 	}
 	if cd.Cluster.Spec == nil {
-		logger.Error().Msg("no cluster spec available")
-		http.Error(w, "no cluster spec available", http.StatusInternalServerError)
+		handleError(ctx, err, w, "no cluster spec available")
 		return
 	}
 	h.writeJSON(ctx, w, cd.Cluster.Spec)
@@ -82,11 +86,7 @@ func (h *Handlers) clusterSpecPatchHandler(w http.ResponseWriter, r *http.Reques
 
 	err = updateSpecRetries(ctx, h.client, patch, false)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to patch cluster spec")
-		if _, err := w.Write([]byte("ERROR")); err != nil {
-			logger.Error().AnErr("error", err).Msg("unable to return cluster data")
-		}
-		w.WriteHeader(http.StatusInternalServerError)
+		handleError(ctx, err, w, "failed to patch cluster spec")
 		return
 	}
 }
@@ -110,11 +110,7 @@ func (h *Handlers) clusterSpecPutHandler(w http.ResponseWriter, r *http.Request)
 
 	err = updateSpecRetries(ctx, h.client, patch, true)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("failed to put cluster spec")
-		if _, err := w.Write([]byte("ERROR")); err != nil {
-			logger.Error().AnErr("error", err).Msg("unable to return cluster data")
-		}
-		w.WriteHeader(http.StatusInternalServerError)
+		handleError(ctx, err, w, "failed to put cluster spec")
 		return
 	}
 }
@@ -142,6 +138,9 @@ func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, re
 	cd, pair, err := client.GetClusterData(ctx)
 	if err != nil {
 		return err
+	}
+	if cd == nil {
+		return errors.New("no cluster data available")
 	}
 	if cd.Cluster == nil {
 		return errors.New("no cluster available")

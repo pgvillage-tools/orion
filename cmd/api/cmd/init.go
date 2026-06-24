@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"context"
@@ -23,11 +23,16 @@ import (
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/logging"
+)
+
+const (
+	InitEndPoint EndPoint = "clusterdata/spec"
 )
 
 func (h *Handlers) InitRoutes() []Route {
 	return []Route{
-		{"POST /clusterdata/spec", h.PostInitHandler},
+		{InitEndPoint.route(methodPost), h.PostInitHandler},
 	}
 }
 
@@ -39,6 +44,9 @@ func (h *Handlers) PostInitHandler(w http.ResponseWriter, r *http.Request) {
 	cd, _, err := h.client.GetClusterData(ctx)
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
+	} else if cd == nil {
+		_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+		logger.Debug().Msg("clusterdata is nil")
 	} else if cd.Cluster != nil {
 		handleError(ctx, err, w, "cluster is already set")
 	}

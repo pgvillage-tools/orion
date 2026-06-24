@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"context"
@@ -45,11 +45,12 @@ func NewHandlers(client consensus.Store, ready *atomic.Bool) *Handlers {
 
 func (h *Handlers) Routes() []Route {
 	var routes []Route
-	routes = append(routes, h.HealthRoutes()...)
-	routes = append(routes, h.StatusRoutes()...)
-	routes = append(routes, h.UpdateRoutes()...)
 	routes = append(routes, h.ClusterDataRoutes()...)
 	routes = append(routes, h.FailKeeperRoutes()...)
+	routes = append(routes, h.HealthRoutes()...)
+	routes = append(routes, h.InitRoutes()...)
+	routes = append(routes, h.StatusRoutes()...)
+	routes = append(routes, h.UpdateRoutes()...)
 	return routes
 }
 
