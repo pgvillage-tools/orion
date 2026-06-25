@@ -21,14 +21,22 @@ import (
 	"time"
 )
 
+const (
+	// HealthEndPoint defines the endpoint to check on health (including consensus)
+	HealthEndPoint EndPoint = "healthz"
+	// ReadyEndPoint defines the endpoint to check on ready (only that we are serving)
+	ReadyEndPoint EndPoint = "readyz"
+)
+
+// HealthRoutes collect and return all health routes
 func (h *Handlers) HealthRoutes() []Route {
 	return []Route{
-		{"GET /healthz", h.HealthzHandler},
-		{"GET /readyz", h.ReadyzHandler},
+		{HealthEndPoint.Route(MethodGet), h.HealthzHandler},
+		{ReadyEndPoint.Route(MethodGet), h.ReadyzHandler},
 	}
 }
 
-// Health endpoints
+// HealthzHandler handles Health requests (incl consensus roundtrip)
 func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	var (
 		status = http.StatusOK
@@ -46,6 +54,7 @@ func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ReadyzHandler handles ready requests (excl consensus roundtrip)
 func (h *Handlers) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if !h.Ready.Load() {

@@ -15,26 +15,29 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"sync/atomic"
 
 	"github.com/pgvillage-tools/orion/internal/consensus"
-	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
+// Route defines a combination of a pattern and the func to handle the request
 type Route struct {
 	Pattern string
 	Handler http.HandlerFunc
 }
 
+// Handlers is a convenience struct for all required to handle api calls
 type Handlers struct {
 	client consensus.Store
 	Ready  *atomic.Bool
 	nextID int
 }
 
+// NewHandlers returns a new Handlers object
 func NewHandlers(client consensus.Store, ready *atomic.Bool) *Handlers {
 	return &Handlers{
 		client: client,
@@ -43,6 +46,7 @@ func NewHandlers(client consensus.Store, ready *atomic.Bool) *Handlers {
 	}
 }
 
+// Routes collects and returns all routes for this handler
 func (h *Handlers) Routes() []Route {
 	var routes []Route
 	routes = append(routes, h.ClusterDataRoutes()...)
@@ -56,9 +60,12 @@ func (h *Handlers) Routes() []Route {
 
 // Helper method
 func (h *Handlers) writeJSON(ctx context.Context, w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-		logger.Error().AnErr("err", err).Msg("error while writing json")
+	var buf bytes.Buffer
+
+	if err := json.NewEncoder(w).Encode(buf); err != nil {
+		handleError(ctx, err, w, "error while writing json")
+		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	data = buf.Bytes()
 }

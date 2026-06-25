@@ -18,8 +18,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
-	"os"
 	"sync/atomic"
 
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
@@ -95,17 +95,26 @@ func api(c *cobra.Command, _ []string) {
 	}
 
 	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Msg("starting server")
-	ready.Store(true)
-	logger.Info().Bool("ready", ready.Load()).Msg("server ready")
-	err = http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.baseURL, cfg.port), mux)
+	addr := fmt.Sprintf("%s:%d", cfg.baseURL, cfg.port)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("server failing")
-		os.Exit(-1)
+		logger.Fatal().AnErr("error", err).Msg("binding failed")
+	}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	ready.Store(true)
+	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Msg("server ready")
+	err = srv.Serve(ln)
+	if err != nil {
+		logger.Fatal().AnErr("error", err).Msg("server failing")
 	}
 }
 
+// Execute can be used to start and run the API
 func Execute() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
+	_, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdWebApi.PersistentFlags(), "ORIONAPI"); err != nil {
 		logger.Fatal().AnErr("err", err).Msg("")
 	}

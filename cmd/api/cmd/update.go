@@ -30,14 +30,16 @@ import (
 )
 
 const (
+	// UpdateEndPoint is the endpoint for handling Update requests
 	UpdateEndPoint EndPoint = "cluster/spec"
 )
 
+// UpdateRoutes collects and returns all Update routes
 func (h *Handlers) UpdateRoutes() []Route {
 	return []Route{
-		{UpdateEndPoint.route(methodGet), h.clusterSpecGetHandler},
-		{UpdateEndPoint.route(methodPatch), h.clusterSpecPatchHandler},
-		{UpdateEndPoint.route(methodPut), h.clusterSpecPutHandler},
+		{UpdateEndPoint.Route(MethodGet), h.clusterSpecGetHandler},
+		{UpdateEndPoint.Route(MethodPatch), h.clusterSpecPatchHandler},
+		{UpdateEndPoint.Route(MethodPut), h.clusterSpecPutHandler},
 	}
 }
 
@@ -167,14 +169,14 @@ func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, re
 		logger.Debug().Any("patched cluster spec", newcs).Msg("patched")
 	}
 	if err = cd.Cluster.UpdateSpec(newcs); err != nil {
-		return fmt.Errorf("Cannot update cluster spec: %v", err)
+		return fmt.Errorf("cannot update cluster spec: %v", err)
 	}
 	logger.Debug().Any("new cluster data", cd).Msg("updated")
 
 	// retry if cd has been modified between reading and writing
 	_, err = client.AtomicPutClusterData(ctx, cd, pair)
 	if err != nil {
-		return fmt.Errorf("Cannot store updated cluster spec: %v", err)
+		return fmt.Errorf("cannot store updated cluster spec: %v", err)
 	}
 	logger.Debug().Msg("stored")
 	return nil

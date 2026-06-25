@@ -37,10 +37,6 @@ override:
   # (default is 80, as configured above in this example).
   #- path: ^pkg/lib/foo$
   #  threshold: 100
-  - path: ^cmd
-
-  - path: ^internal/mock/consensus/store.go
-    threshold: 19
   - path: ^internal/postgresql/main.go
     threshold: 25
   - path: ^internal/postgresql/manager.go
@@ -80,6 +76,7 @@ exclude:
   paths:
     - cmd
     - e2e
+    - internal/mock
 
 # File name of go-test-coverage breakdown file, which can be used to
 # analyze coverage difference.

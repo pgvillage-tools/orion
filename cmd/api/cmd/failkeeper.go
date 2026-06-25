@@ -21,14 +21,18 @@ import (
 	"time"
 )
 
+// FailKeeperEndPoint is the config for the failkeeper endpoint
+const FailKeeperEndPoint EndPoint = "clusterdata"
+
+// FailKeeperRoutes returns the routes to be added for the FailKeeper code
 func (h *Handlers) FailKeeperRoutes() []Route {
 	return []Route{
-		{"PUT /clusterdata/keepers/{id}", h.PutFailKeeperHandlerHandler},
+		{FailKeeperEndPoint.Route(MethodPut, "id"), h.PutFailKeeperHandler},
 	}
 }
 
-// PutFailKeeperHandlerHandler endpoint
-func (h *Handlers) PutFailKeeperHandlerHandler(w http.ResponseWriter, r *http.Request) {
+// PutFailKeeperHandler endpoint
+func (h *Handlers) PutFailKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 

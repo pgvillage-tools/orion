@@ -27,12 +27,14 @@ import (
 )
 
 const (
+	// InitEndPoint defines the endpoint for initialization
 	InitEndPoint EndPoint = "clusterdata/spec"
 )
 
+// InitRoutes collect and return all Init Routes
 func (h *Handlers) InitRoutes() []Route {
 	return []Route{
-		{InitEndPoint.route(methodPost), h.PostInitHandler},
+		{InitEndPoint.Route(MethodPost), h.PostInitHandler},
 	}
 }
 

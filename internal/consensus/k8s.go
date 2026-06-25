@@ -77,7 +77,7 @@ func NewKubeStore(kubecli *kubernetes.Clientset, podName, namespace, clusterName
 	}, nil
 }
 
-// Healthy stores keeper info to a kv store
+// Healthy returns an error when not healthy and nil when healthy
 func (s *KubeStore) Healthy(ctx context.Context) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.StoreComponent)
 	discoveryClient := s.client.Discovery()

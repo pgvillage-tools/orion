@@ -26,11 +26,21 @@ import (
 	"github.com/pgvillage-tools/orion/internal/consensus"
 )
 
+const (
+	// StatusEndPoint configures how to handle status requests
+	StatusEndPoint EndPoint = "status"
+	// ProxyStatusEndPoint configures how to handle proxy status requests
+	ProxyStatusEndPoint EndPoint = "proxy/status"
+	// SentinelStatusEndPoint configures how to handle sentinel status requests
+	SentinelStatusEndPoint EndPoint = "sentinel/status"
+)
+
+// StatusRoutes collects and returns all Status routes
 func (h *Handlers) StatusRoutes() []Route {
 	return []Route{
-		{"GET /status", h.StatusHandler},
-		{"GET /proxy/status", h.ProxyStatusHandler},
-		{"GET /sentinel/status", h.SentinelStatusHandler},
+		{StatusEndPoint.Route(MethodGet), h.StatusHandler},
+		{ProxyStatusEndPoint.Route(MethodGet), h.ProxyStatusHandler},
+		{SentinelStatusEndPoint.Route(MethodGet), h.SentinelStatusHandler},
 	}
 }
 
@@ -175,6 +185,7 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 	}, nil
 }
 
+// StatusHandler handles a status request
 func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()

@@ -24,18 +24,23 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
-const readMaxBytes int64 = 1 << 30
+const (
+	readMaxBytes int64 = 1 << 30
+	// ClusterDataEndPoint is the endpoint config for clusterdata
+	ClusterDataEndPoint EndPoint = "clusterdata"
+)
 
+// ClusterDataRoutes adds all ClusterData routes to the list of all routes
 func (h *Handlers) ClusterDataRoutes() []Route {
 	return []Route{
-		{"GET /clusterdata", h.GetClusterDataHandler},
-		{"PUT /clusterdata", h.PutClusterDataHandler},
+		{ClusterDataEndPoint.Route(MethodGet), h.GetClusterDataHandler},
+		{ClusterDataEndPoint.Route(MethodPut), h.PutClusterDataHandler},
 	}
 }
 
 // GetClusterDataHandler endpoint
 func (h *Handlers) GetClusterDataHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	if cd, _, err := h.client.GetClusterData(ctx); err != nil {
@@ -48,7 +53,7 @@ func (h *Handlers) GetClusterDataHandler(w http.ResponseWriter, r *http.Request)
 // PutClusterDataHandler endpoint
 func (h *Handlers) PutClusterDataHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	reader := http.MaxBytesReader(w, r.Body, readMaxBytes)

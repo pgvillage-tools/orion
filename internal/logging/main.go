@@ -121,11 +121,12 @@ func GetID(inCtx context.Context) (id string, outCtx context.Context) {
 
 // GetLogComponent gets the logger for a component from a context.
 func GetLogComponent(ctx context.Context, comp Component) (context.Context, *zerolog.Logger) {
+	var id string
 	logger := log.Ctx(ctx)
 	level := getComponentLevel(comp)
 
 	if logger.GetLevel() != level {
-		id, ctx := GetID(ctx)
+		id, ctx = GetID(ctx)
 		ll := logger.
 			Output(output).
 			Level(level).
