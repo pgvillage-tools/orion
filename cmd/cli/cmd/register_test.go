@@ -22,7 +22,7 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	mockregister "github.com/pgvillage-tools/orion/cmd/cli/cmd/internal/mock/register"
 	"github.com/pgvillage-tools/orion/internal/consensus"
-	"github.com/pgvillage-tools/orion/internal/mock/consensus_mock"
+	mocked_consensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/cmd/cli/cmd/register"
@@ -76,7 +76,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockStore := consensus_mock.NewMockStore(ctrl)
+		mockStore := mocked_consensus.NewMockStore(ctrl)
 		mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 		clusterName := "test-cluster"
@@ -103,7 +103,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockStore := consensus_mock.NewMockStore(ctrl)
+		mockStore := mocked_consensus.NewMockStore(ctrl)
 		mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 		clusterName := "test-cluster"
@@ -149,7 +149,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"
@@ -187,7 +187,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"
@@ -221,7 +221,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"
@@ -249,7 +249,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"
@@ -276,7 +276,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"
@@ -310,7 +310,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"
@@ -333,7 +333,7 @@ func TestCheckAndRegisterMasterAndSlaves(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mockStore := consensus_mock.NewMockStore(ctrl)
+			mockStore := mocked_consensus.NewMockStore(ctrl)
 			mockServiceDiscovery := mockregister.NewMockServiceDiscovery(ctrl)
 
 			clusterName := "test-cluster"

@@ -105,7 +105,7 @@ func initCluster(_ *cobra.Command, args []string) {
 		os.Exit(0)
 	}
 
-	_, _, err = e.GetClusterData(context.TODO())
+	_, _, err = e.GetClusterData(ctx)
 	if err != nil {
 		die("cannot get cluster data: %v", err)
 	}
@@ -130,7 +130,7 @@ func initCluster(_ *cobra.Command, args []string) {
 	cd = cluster.NewClusterData(c)
 
 	// We ignore if cd has been modified between reading and writing
-	if err := e.PutClusterData(context.TODO(), cd); err != nil {
+	if err := e.PutClusterData(ctx, cd); err != nil {
 		die("cannot update cluster data: %v", err)
 	}
 }

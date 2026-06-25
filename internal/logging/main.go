@@ -102,17 +102,36 @@ func getComponentLevel(name Component) zerolog.Level {
 	return dynamicLevel
 }
 
+// GetID can be used to get the ID (uuid) from the context.
+// If there is no ID, it will be generated and added
+func GetID(inCtx context.Context) (id string, outCtx context.Context) {
+	var oCtxId = inCtx.Value("ID")
+	if oCtxId == nil {
+		id = uuid.NewString()
+		outCtx = context.WithValue(inCtx, "ID", id)
+	} else if sCtxId, ok := oCtxId.(string); ok {
+		id = sCtxId
+		outCtx = inCtx
+	} else {
+		id = uuid.NewString()
+		outCtx = context.WithValue(inCtx, "ID", id)
+	}
+	return id, outCtx
+}
+
 // GetLogComponent gets the logger for a component from a context.
 func GetLogComponent(ctx context.Context, comp Component) (context.Context, *zerolog.Logger) {
+	var id string
 	logger := log.Ctx(ctx)
 	level := getComponentLevel(comp)
 
 	if logger.GetLevel() != level {
+		id, ctx = GetID(ctx)
 		ll := logger.
 			Output(output).
 			Level(level).
 			With().
-			Str("ID", uuid.NewString()).
+			Str("ID", id).
 			Str("component", componentToString(comp)).
 			Logger()
 		logger = &ll

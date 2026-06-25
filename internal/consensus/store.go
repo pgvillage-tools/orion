@@ -23,7 +23,7 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 )
 
-//go:generate mockgen -destination=../mock/store/store.go -source=$GOFILE
+//go:generate mockgen -destination=../mock/consensus/store.go -source=$GOFILE
 
 var (
 	// ErrKeyNotFound is thrown when the key is not found in the store during a Get operation
@@ -45,6 +45,7 @@ type Store interface {
 	GetSentinelsInfo(ctx context.Context) (cluster.SentinelsInfo, error)
 	SetProxyInfo(ctx context.Context, pi *cluster.ProxyInfo, ttl time.Duration) error
 	GetProxiesInfo(ctx context.Context) (cluster.ProxiesInfo, error)
+	Healthy(ctx context.Context) error
 }
 
 // Election takes care of the election proces with a kv backend

@@ -21,7 +21,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/mock/consensus_mock"
+	mocked_consensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 )
 
 func TestNewCluster(t *testing.T) {
@@ -29,7 +29,7 @@ func TestNewCluster(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockStore := consensus_mock.NewMockStore(ctrl)
+		mockStore := mocked_consensus.NewMockStore(ctrl)
 		mockStore.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, errors.New("unable to fetch cluster data"))
 
 		_, err := NewCluster("test", Config{}, mockStore)
@@ -43,7 +43,7 @@ func TestNewCluster(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockStore := consensus_mock.NewMockStore(ctrl)
+		mockStore := mocked_consensus.NewMockStore(ctrl)
 		mockStore.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, nil)
 
 		_, err := NewCluster("test", Config{}, mockStore)
@@ -58,7 +58,7 @@ func TestNewCluster(t *testing.T) {
 		defer ctrl.Finish()
 		cd := &cluster.Data{}
 
-		mockStore := consensus_mock.NewMockStore(ctrl)
+		mockStore := mocked_consensus.NewMockStore(ctrl)
 		mockStore.EXPECT().GetClusterData(gomock.Any()).Return(cd, nil, nil)
 
 		expected := Cluster{name: "test", cd: cd}

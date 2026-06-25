@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	etcdImage  = "quay.io/coreos/etcd:v3.6.7"
-	proxyPort  = 25432
-	keeperPort = 5432
-	pgUser     = "postgres"
-	pgDatabase = "postgres"
+	etcdImage          = "quay.io/coreos/etcd:v3.6.7"
+	apiInternalPort    = 8080
+	proxyInternalPort  = 25432
+	keeperInternalPort = 5432
+	pgUser             = "postgres"
+	pgDatabase         = "postgres"
 )
 
 func runEtcd(
@@ -146,6 +147,32 @@ func runProxy(
 				NetworkAliases: aliasses,
 				WaitingFor: wait.ForLog(
 					"proxying to master address"),
+				// WaitingFor: wait.ForListeningPort(
+				//     nat.Port(fmt.Sprintf("%d/tcp", proxyPort))),
+			},
+			Started: true,
+		})
+}
+
+func runAPI(
+	ctx context.Context,
+	etcdEndpoints string,
+	nw *testcontainers.DockerNetwork,
+	aliasses map[string][]string,
+) (testcontainers.Container, error) {
+	envSettings := map[string]string{
+		"ORIONAPI_STORE_ENDPOINTS": etcdEndpoints,
+		"ORIONAPI_LOG_LEVEL":       "debug",
+	}
+	return testcontainers.GenericContainer(
+		ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Env:            envSettings,
+				Image:          "api",
+				Networks:       []string{nw.Name},
+				NetworkAliases: aliasses,
+				WaitingFor: wait.ForLog(
+					"server ready"),
 				// WaitingFor: wait.ForListeningPort(
 				//     nat.Port(fmt.Sprintf("%d/tcp", proxyPort))),
 			},

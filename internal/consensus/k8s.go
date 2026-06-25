@@ -24,6 +24,7 @@ import (
 	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/util"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -74,6 +75,19 @@ func NewKubeStore(kubecli *kubernetes.Clientset, podName, namespace, clusterName
 		clusterName:  clusterName,
 		resourceName: fmt.Sprintf("%s-%s", util.KubeResourcePrefix, clusterName),
 	}, nil
+}
+
+// Healthy returns an error when not healthy and nil when healthy
+func (s *KubeStore) Healthy(ctx context.Context) error {
+	ctx, logger := logging.GetLogComponent(ctx, logging.StoreComponent)
+	discoveryClient := s.client.Discovery()
+	version, err := discoveryClient.ServerVersion()
+	if err != nil {
+		logger.Error().AnErr("error", err).Msg("Error while connecting to k8s")
+		return err
+	}
+	logger.Debug().Str("k8s version", version.GitVersion).Msg("")
+	return nil
 }
 
 func (s *KubeStore) labelSelector(componentLabel ComponentLabelValue) labels.Selector {

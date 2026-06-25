@@ -9,7 +9,7 @@ profile: cover.out
 
 # (optional; but recommended to set)
 # When specified reported file paths will not contain local prefix in the output.
-local-prefix: 'github.com/pgvillage-tools/stolon'
+local-prefix: 'github.com/pgvillage-tools/orion'
 
 # Holds coverage thresholds percentages, values should be in range [0-100].
 threshold:
@@ -37,10 +37,6 @@ override:
   # (default is 80, as configured above in this example).
   #- path: ^pkg/lib/foo$
   #  threshold: 100
-  - path: ^cmd
-
-  - path: ^internal/mock/consensus_mock/store.go	
-    threshold: 22
   - path: ^internal/postgresql/main.go
     threshold: 25
   - path: ^internal/postgresql/manager.go
@@ -62,7 +58,7 @@ override:
   - path: scripts/gen_commands_doc.go
     threshold: 0
 
-  - path: ^internal/mock/consensus_mock$
+  - path: ^internal/mock/consensus$
     threshold: 22
   - path: ^internal/postgresql$
     threshold: 13.9
@@ -80,6 +76,7 @@ exclude:
   paths:
     - cmd
     - e2e
+    - internal/mock
 
 # File name of go-test-coverage breakdown file, which can be used to
 # analyze coverage difference.
