@@ -304,7 +304,6 @@ jobs:
         run: make e2e-test
         env:
           PGVERSION: ${{ matrix.pgversion }}
-          STOLON_TEST_STORE_BACKEND: etcdv3
 
   check-e2e-status:
     runs-on: ubuntu-latest
