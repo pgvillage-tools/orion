@@ -62,10 +62,12 @@ func (h *Handlers) Routes() []Route {
 func (h *Handlers) writeJSON(ctx context.Context, w http.ResponseWriter, data interface{}) {
 	var buf bytes.Buffer
 
-	if err := json.NewEncoder(w).Encode(buf); err != nil {
-		handleError(ctx, err, w, "error while writing json")
+	if err := json.NewEncoder(&buf).Encode(data); err != nil {
+		handleError(ctx, err, w, "error while encoding json")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	data = buf.Bytes()
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		handleError(ctx, err, w, "error while writing json")
+	}
 }

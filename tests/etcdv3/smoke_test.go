@@ -182,4 +182,21 @@ var _ = Describe("Smoke", Ordered, func() {
 			Ω(isReadyErr).NotTo(HaveOccurred())
 		})
 	})
+
+	Context("when using api", func() {
+		It("status return expected result", func() {
+			statusUrl := apiCmd.StatusEndPoint.URL(apiCmd.HTTP, localHost, apiPort)
+			statusResp, statusErr := http.Get(statusUrl)
+			defer func() { statusResp.Body.Close() }()
+
+			Ω(statusErr).NotTo(HaveOccurred())
+			Ω(statusResp.StatusCode).To(Equal(http.StatusOK))
+
+			var myStatus apiv1.InfoCluster
+			Ω(json.NewDecoder(statusResp.Body).Decode(&myStatus)).NotTo(HaveOccurred())
+			Ω(myStatus.Keepers).To(HaveLen(3))
+			Ω(myStatus.Sentinels).To(HaveLen(1))
+			Ω(myStatus.Proxies).To(HaveLen(1))
+		})
+	})
 })
