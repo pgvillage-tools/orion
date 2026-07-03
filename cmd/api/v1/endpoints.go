@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
 // See the License for the specific lang
 
-package cmd
+package v1
 
 import (
 	"fmt"
@@ -27,6 +27,8 @@ const (
 	HTTPS Protocol = "https"
 	// HTTP is used to specify the http protocol
 	HTTP Protocol = "http"
+	// APIVersion specifies the pi version prefixed to the endpoints
+	APIVersion = "v1"
 )
 
 // Method defines the HTTP
@@ -49,7 +51,7 @@ const (
 type EndPoint string
 
 func (ep EndPoint) clean() string {
-	return strings.Trim(string(ep), "/")
+	return APIVersion + "/" + strings.Trim(string(ep), "/")
 }
 
 // URL can be used to retrieve the URL to use this endpoint
