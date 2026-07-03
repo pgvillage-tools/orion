@@ -24,7 +24,6 @@ import (
 var _ = Describe("Smoke", Ordered, func() {
 	const (
 		numEtcd    = 1
-		autoRemove = true
 		numKeepers = 3
 		localHost  = "127.0.0.1"
 
@@ -50,6 +49,7 @@ var _ = Describe("Smoke", Ordered, func() {
 			"password": pgPassword,
 			"dbname":   pgDatabase,
 		}
+		autoRemove = (os.Getenv("ORION_TEST_KEEP") != "true")
 	)
 
 	BeforeAll(func() {
