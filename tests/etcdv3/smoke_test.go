@@ -92,7 +92,7 @@ var _ = Describe("Smoke", Ordered, func() {
 		}
 		jsonData, encodingErr := json.Marshal(initialCD)
 		Ω(encodingErr).NotTo(HaveOccurred())
-		initUrl := cmdv1.InitEndPoint.URL(cmdv1.HTTP, localHost, apiPort)
+		initUrl := cmdv1.ClusterEndPoint.URL(cmdv1.HTTP, localHost, apiPort)
 		initResp, initErr := http.Post(initUrl, "application/json", bytes.NewBuffer(jsonData))
 		/*
 			// If you want to something else then POST or GET:

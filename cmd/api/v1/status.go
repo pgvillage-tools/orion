@@ -28,11 +28,11 @@ import (
 
 const (
 	// StatusEndPoint configures how to handle status requests
-	StatusEndPoint EndPoint = "status"
+	StatusEndPoint EndPoint = "cluster/status"
 	// ProxyStatusEndPoint configures how to handle proxy status requests
-	ProxyStatusEndPoint EndPoint = "proxy/status"
+	ProxyStatusEndPoint EndPoint = "cluster/proxies/status"
 	// SentinelStatusEndPoint configures how to handle sentinel status requests
-	SentinelStatusEndPoint EndPoint = "sentinel/status"
+	SentinelStatusEndPoint EndPoint = "cluster/sentinels/status"
 )
 
 // StatusRoutes collects and returns all Status routes

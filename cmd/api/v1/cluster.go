@@ -27,19 +27,59 @@ import (
 )
 
 const (
-	// InitEndPoint defines the endpoint for initialization
-	InitEndPoint EndPoint = "clusterdata/spec"
+	readMaxBytes int64 = 1 << 30
+	// ClusterEndPoint is the endpoint config for Cluster
+	ClusterEndPoint EndPoint = "cluster"
 )
 
-// InitRoutes collect and return all Init Routes
-func (h *Handlers) InitRoutes() []Route {
+// ClusterRoutes adds all Cluster routes to the list of all routes
+func (h *Handlers) ClusterRoutes() []Route {
 	return []Route{
-		{InitEndPoint.Route(MethodPost), h.PostInitHandler},
+		{ClusterEndPoint.Route(MethodGet), h.GetClusterHandler},
+		{ClusterEndPoint.Route(MethodPut), h.PutClusterHandler},
+		// Init
+		{ClusterEndPoint.Route(MethodPost), h.PostClusterHandler},
 	}
 }
 
-// PostInitHandler endpoint
-func (h *Handlers) PostInitHandler(w http.ResponseWriter, r *http.Request) {
+// GetClusterHandler endpoint
+func (h *Handlers) GetClusterHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	defer cancelFunc()
+
+	if cd, _, err := h.client.GetClusterData(ctx); err != nil {
+		handleError(ctx, err, w, "failed to get cluster data")
+	} else {
+		h.writeJSON(ctx, w, cd)
+	}
+}
+
+// PutClusterHandler endpoint
+func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
+	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(cfg.StoreTimeout))
+	defer cancelFunc()
+
+	reader := http.MaxBytesReader(w, r.Body, readMaxBytes)
+	defer func() {
+		if err := reader.Close(); err != nil {
+			logger.Error().AnErr("error", err).Msg("Failed to close Body")
+		}
+	}()
+	var newCD apiv1.Data
+	err := json.NewDecoder(reader).Decode(&newCD)
+	if err != nil {
+		handleError(ctx, err, w, "failed to parse new cluster data definition")
+		return
+	}
+	_, err = h.client.AtomicPutClusterData(ctx, &newCD, nil)
+	if err != nil {
+		handleError(ctx, err, w, "failed to write new cluster data definition")
+	}
+}
+
+// PostClusterHandler endpoint
+func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
@@ -48,7 +88,7 @@ func (h *Handlers) PostInitHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "failed to get cluster data")
 	} else if cd == nil {
 		_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-		logger.Debug().Msg("clusterdata is nil")
+		logger.Debug().Msg("Cluster is nil")
 	} else if cd.Cluster != nil {
 		handleError(ctx, err, w, "cluster is already set")
 	}

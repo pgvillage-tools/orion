@@ -24,18 +24,18 @@ import (
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
-// PromoteReplicaSetEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
-const PromoteReplicaSetEndPoint EndPoint = "cluster/promote"
+// DeleteKeeperEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
+const DeleteKeeperEndPoint EndPoint = "cluster/keepers/{id}"
 
-// PromoteReplicaSetRoutes returns the routes to be added for the PromoteReplicaSet code
-func (h *Handlers) PromoteReplicaSetRoutes() []Route {
+// DeleteKeeperRoutes returns the routes to be added for the RemoveKeepers code
+func (h *Handlers) DeleteKeeperRoutes() []Route {
 	return []Route{
-		{PromoteReplicaSetEndPoint.Route(MethodPut), h.PutPromoteReplicaSetHandler},
+		{DeleteKeeperEndPoint.Route(MethodDelete), h.DeleteKeeperHandler},
 	}
 }
 
-// PutPromoteReplicaSetHandler endpoint
-func (h *Handlers) PutPromoteReplicaSetHandler(w http.ResponseWriter, r *http.Request) {
+// DeleteKeeperHandler endpoint
+func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 

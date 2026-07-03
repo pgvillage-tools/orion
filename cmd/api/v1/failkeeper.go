@@ -22,12 +22,12 @@ import (
 )
 
 // FailKeeperEndPoint is the config for the failkeeper endpoint
-const FailKeeperEndPoint EndPoint = "clusterdata"
+const FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/fail"
 
 // FailKeeperRoutes returns the routes to be added for the FailKeeper code
 func (h *Handlers) FailKeeperRoutes() []Route {
 	return []Route{
-		{FailKeeperEndPoint.Route(MethodPut, "id"), h.PutFailKeeperHandler},
+		{FailKeeperEndPoint.Route(MethodPut), h.PutFailKeeperHandler},
 	}
 }
 
