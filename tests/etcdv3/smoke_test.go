@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	apiCmd "github.com/pgvillage-tools/orion/cmd/api/cmd"
+	cmdv1 "github.com/pgvillage-tools/orion/cmd/api/v1"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
@@ -92,7 +92,7 @@ var _ = Describe("Smoke", Ordered, func() {
 		}
 		jsonData, encodingErr := json.Marshal(initialCD)
 		Ω(encodingErr).NotTo(HaveOccurred())
-		initUrl := apiCmd.InitEndPoint.URL(apiCmd.HTTP, localHost, apiPort)
+		initUrl := cmdv1.InitEndPoint.URL(cmdv1.HTTP, localHost, apiPort)
 		initResp, initErr := http.Post(initUrl, "application/json", bytes.NewBuffer(jsonData))
 		/*
 			// If you want to something else then POST or GET:
@@ -185,7 +185,7 @@ var _ = Describe("Smoke", Ordered, func() {
 
 	Context("when using api", func() {
 		It("status return expected result", func() {
-			statusUrl := apiCmd.StatusEndPoint.URL(apiCmd.HTTP, localHost, apiPort)
+			statusUrl := cmdv1.StatusEndPoint.URL(cmdv1.HTTP, localHost, apiPort)
 			statusResp, statusErr := http.Get(statusUrl)
 			defer func() { statusResp.Body.Close() }()
 

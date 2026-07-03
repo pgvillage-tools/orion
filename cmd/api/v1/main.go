@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package cmd holds all CLI code for the keeper
-package cmd
+package v1
 
 import (
 	"context"
