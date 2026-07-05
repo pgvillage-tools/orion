@@ -28,7 +28,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/etcd v0.43.0
-	go.etcd.io/etcd/api/v3 v3.6.12
+	go.etcd.io/etcd/api/v3 v3.6.13
 	go.etcd.io/etcd/client/v3 v3.6.12
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
