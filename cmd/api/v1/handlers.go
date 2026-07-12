@@ -50,12 +50,12 @@ func NewHandlers(client consensus.Store, ready *atomic.Bool) *Handlers {
 func (h *Handlers) Routes() []Route {
 	var routes []Route
 	routes = append(routes, h.ClusterRoutes()...)
-	routes = append(routes, h.DeleteKeeperRoutes()...)
+	routes = append(routes, h.ClusterSpecRoutes()...)
+	routes = append(routes, h.KeeperRoutes()...)
 	routes = append(routes, h.FailKeeperRoutes()...)
 	routes = append(routes, h.HealthRoutes()...)
 	routes = append(routes, h.PromoteReplicaSetRoutes()...)
 	routes = append(routes, h.StatusRoutes()...)
-	routes = append(routes, h.UpdateRoutes()...)
 	return routes
 }
 

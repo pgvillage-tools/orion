@@ -2,9 +2,7 @@
 package etcdv3_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
@@ -14,8 +12,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	cmdv1 "github.com/pgvillage-tools/orion/cmd/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/util"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
@@ -34,7 +33,7 @@ var _ = Describe("Smoke", Ordered, func() {
 		nw               *testcontainers.DockerNetwork
 		etcdContainer    *etcd.EtcdContainer
 		etcdEndpoints    string
-		apiPort          uint16
+		apiClient        client.Connection
 		sentinelCnt      testcontainers.Container
 		proxyCnt         testcontainers.Container
 		keeperContainers []testcontainers.Container
@@ -70,41 +69,29 @@ var _ = Describe("Smoke", Ordered, func() {
 
 		// run api to control orion from this test framework
 		aliases := map[string][]string{}
-		apiCnt, initErr := runAPI(
+		apiCnt, apiErr := runAPI(
 			ctx,
 			etcdEndpoints,
 			nw,
 			aliases,
 		)
-		Ω(initErr).NotTo(HaveOccurred())
+		Ω(apiErr).NotTo(HaveOccurred())
 		allContainers = append(allContainers, apiCnt)
 		port, err := apiCnt.MappedPort(ctx,
 			fmt.Sprintf("%d/tcp", apiInternalPort))
 		Ω(err).NotTo(HaveOccurred())
-		apiPort = port.Num()
-
-		initialCD := &apiv1.Spec{
+		apiClient = client.NewConnection(endpoints.HTTP, localHost, port.Num())
+		httpCode, initErr := apiClient.PostClusterSpec(&apiv1.Spec{
 			// DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessStrict),
 			DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
 			PGParameters:            apiv1.PGParameters{},
 			PGHBA:                   []string{},
 			InitMode:                util.ToPtr(apiv1.New),
-		}
-		jsonData, encodingErr := json.Marshal(initialCD)
-		Ω(encodingErr).NotTo(HaveOccurred())
-		initUrl := cmdv1.ClusterEndPoint.URL(cmdv1.HTTP, localHost, apiPort)
-		initResp, initErr := http.Post(initUrl, "application/json", bytes.NewBuffer(jsonData))
-		/*
-			// If you want to something else then POST or GET:
-			initReq, initReqErr := http.NewRequest("PATCH", initURL, bytes.NewBuffer(jsonData))
-			Ω(initReqErr).NotTo(HaveOccurred())
-			initReq.Header.Set("Content-Type", "application/json")
-			client := &http.Client{}
-			initResp, initRespErr := client.Do(initReq)
-		*/
+		},
+		)
+
+		Ω(httpCode).To(Equal(http.StatusOK))
 		Ω(initErr).NotTo(HaveOccurred())
-		defer initResp.Body.Close()
-		Ω(initResp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusCreated, http.StatusAccepted}))
 
 		// Start sentinel
 		var sentinelErr error
@@ -185,15 +172,10 @@ var _ = Describe("Smoke", Ordered, func() {
 
 	Context("when using api", func() {
 		It("status return expected result", func() {
-			statusUrl := cmdv1.StatusEndPoint.URL(cmdv1.HTTP, localHost, apiPort)
-			statusResp, statusErr := http.Get(statusUrl)
-			defer func() { statusResp.Body.Close() }()
-
+			myStatus, httpCode, statusErr := apiClient.GetStatus()
+			Ω(httpCode).To(Equal(http.StatusOK))
 			Ω(statusErr).NotTo(HaveOccurred())
-			Ω(statusResp.StatusCode).To(Equal(http.StatusOK))
 
-			var myStatus apiv1.InfoCluster
-			Ω(json.NewDecoder(statusResp.Body).Decode(&myStatus)).NotTo(HaveOccurred())
 			Ω(myStatus.Keepers).To(HaveLen(3))
 			Ω(myStatus.Sentinels).To(HaveLen(1))
 			Ω(myStatus.Proxies).To(HaveLen(1))

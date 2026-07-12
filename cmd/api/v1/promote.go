@@ -21,16 +21,14 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
-
-// PromoteReplicaSetEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
-const PromoteReplicaSetEndPoint EndPoint = "cluster/promote"
 
 // PromoteReplicaSetRoutes returns the routes to be added for the PromoteReplicaSet code
 func (h *Handlers) PromoteReplicaSetRoutes() []Route {
 	return []Route{
-		{PromoteReplicaSetEndPoint.Route(MethodPut), h.PutPromoteReplicaSetHandler},
+		{endpoints.PromoteReplicaSetEndPoint.Route(endpoints.MethodPut), h.PutPromoteReplicaSetHandler},
 	}
 }
 

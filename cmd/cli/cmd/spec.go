@@ -20,9 +20,12 @@ import (
 	"encoding/json"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var cmdSpec = &cobra.Command{
@@ -33,13 +36,23 @@ var cmdSpec = &cobra.Command{
 
 type specOptions struct {
 	defaults bool
+	Host     string `mapstructure:"host"`
+	Port     uint16 `mapstructure:"port"`
+	TLS      bool   `mapstructure:"tls"`
 }
 
 var specOpts specOptions
 
 func init() {
-	cmdSpec.PersistentFlags().BoolVar(&specOpts.defaults, "defaults", false, "also show default values")
+	cmdSpec.PersistentFlags().BoolVar(&specOpts.defaults, "defaults", false,
+		"also show default values")
 
+	cmdSpec.PersistentFlags().BoolVarP(&specOpts.TLS, "tls", "t", true, "use tls")
+	viper.BindPFlag("tls", cmdSpec.PersistentFlags().Lookup("tls"))
+	cmdSpec.PersistentFlags().Uint16VarP(&specOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
+	viper.BindPFlag("port", cmdSpec.PersistentFlags().Lookup("port"))
+	cmdSpec.PersistentFlags().StringVarP(&specOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
+	viper.BindPFlag("host", cmdSpec.PersistentFlags().Lookup("host"))
 	CmdCLI.AddCommand(cmdSpec)
 }
 
@@ -114,23 +127,23 @@ type ClusterSpecDefaults struct {
 func spec(_ *cobra.Command, _ []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
-	}
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 
-	cd, _, err := getClusterData(e)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !specOpts.TLS {
+		p = endpoints.HTTP
 	}
-	if cd.Cluster == nil {
-		die("no cluster spec available")
-	}
-	if cd.Cluster.Spec == nil {
-		die("no cluster spec available")
+	apiClient := client.NewConnection(p, specOpts.Host, specOpts.Port)
+	cd, httpCode, getClusterErr := apiClient.GetCluster()
+	if getClusterErr != nil {
+		logger.Fatal().
+			AnErr("error", getClusterErr).
+			Int("http return code", httpCode).
+			Msg("failed to get clusterdata")
 	}
 
 	var specj []byte
+	var err error
 	if specOpts.defaults {
 		cs := (*ClusterSpecDefaults)(cd.Cluster.DefSpec())
 		specj, err = json.MarshalIndent(cs, "", "\t")
@@ -139,7 +152,10 @@ func spec(_ *cobra.Command, _ []string) {
 		specj, err = json.MarshalIndent(cs, "", "\t")
 	}
 	if err != nil {
-		die("failed to marshall spec: %v", err)
+		logger.Fatal().
+			AnErr("error", getClusterErr).
+			Int("http return code", httpCode).
+			Msg("failed to marshall spec")
 	}
 
 	stdout("%s", specj)

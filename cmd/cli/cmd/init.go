@@ -19,12 +19,15 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 
-	cluster "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	"github.com/pgvillage-tools/orion/internal/common"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var cmdInit = &cobra.Command{
@@ -35,15 +38,22 @@ var cmdInit = &cobra.Command{
 
 // InitOptions is a struct which can contain initiation options
 type InitOptions struct {
-	file     string
-	forceYes bool
+	file string
+	Host string `mapstructure:"host"`
+	Port uint16 `mapstructure:"port"`
+	TLS  bool   `mapstructure:"tls"`
 }
 
 var initOpts InitOptions
 
 func init() {
-	cmdInit.PersistentFlags().StringVarP(&initOpts.file, "file", "f", "", "file contaning the new cluster spec")
-	cmdInit.PersistentFlags().BoolVarP(&initOpts.forceYes, "yes", "y", false, "don't ask for confirmation")
+	cmdInit.PersistentFlags().StringVarP(&initOpts.file, "file", "f", "-", "file to read as input, use - for stdin")
+	cmdInit.PersistentFlags().BoolVarP(&readClusterdataOpts.TLS, "tls", "t", true, "use tls")
+	viper.BindPFlag("tls", cmdInit.PersistentFlags().Lookup("tls"))
+	cmdInit.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
+	viper.BindPFlag("port", cmdInit.PersistentFlags().Lookup("port"))
+	cmdInit.PersistentFlags().StringVarP(&readClusterdataOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
+	viper.BindPFlag("host", cmdInit.PersistentFlags().Lookup("host"))
 
 	CmdCLI.AddCommand(cmdInit)
 }
@@ -51,86 +61,70 @@ func init() {
 func initCluster(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	if len(args) > 1 {
 		die("too many arguments")
 	}
 
-	dataSupplied := false
-	data := []byte{}
+	initSpec := &apiv1.Spec{}
 	switch len(args) {
 	case 1:
-		dataSupplied = true
-		data = []byte(args[0])
+		encodingErr := json.Unmarshal([]byte(args[0]), initSpec)
+		if encodingErr != nil {
+			logger.Fatal().
+				AnErr("error", encodingErr).
+				Str("input", "argument").
+				Str("spec", args[0]).
+				Msg("invalid cluster data spec")
+		}
 	case 0:
 		if initOpts.file != "" {
-			dataSupplied = true
-			var err error
+			var readErr error
+			var data []byte
 			if initOpts.file == "-" {
-				data, err = io.ReadAll(os.Stdin)
-				if err != nil {
-					die("cannot read from stdin: %v", err)
-				}
+				data, readErr = io.ReadAll(os.Stdin)
 			} else {
-				data, err = os.ReadFile(initOpts.file)
-				if err != nil {
-					die("cannot read file: %v", err)
-				}
+				data, readErr = os.ReadFile(initOpts.file)
+			}
+			if readErr != nil {
+				logger.Fatal().
+					AnErr("error", readErr).
+					Str("source", initOpts.file).
+					Msg("cannot read from stdin")
+			}
+			if encodingErr := json.Unmarshal(data, initSpec); encodingErr != nil {
+				logger.Fatal().
+					AnErr("error", encodingErr).
+					Str("source", initOpts.file).
+					Str("spec", string(data)).
+					Msg("invalid cluster data spec")
+
 			}
 		}
 	}
 
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !initOpts.TLS {
+		p = endpoints.HTTP
 	}
+	apiClient := client.NewConnection(p, initOpts.Host, initOpts.Port)
 
-	cd, _, err := e.GetClusterData(context.TODO())
-	if err != nil {
-		die("cannot get cluster data: %v", err)
-	}
-	if cd != nil {
-		stdout("WARNING: The current cluster data will be removed")
-	}
-	stdout("WARNING: The databases managed by the keepers will be overwritten depending on the provided cluster spec.")
-
-	accepted := true
-	if !initOpts.forceYes {
-		accepted, err = askConfirmation("Are you sure you want to continue? [yes/no] ")
-		if err != nil {
-			die("%v", err)
+	_, httpCode, getClusterErr := apiClient.GetCluster()
+	if httpCode != http.StatusNotFound {
+		if getClusterErr != nil {
+			logger.Fatal().
+				AnErr("error", getClusterErr).
+				Str("source", initOpts.file).
+				Msg("failed to get clusterdata")
 		}
+		logger.Fatal().Msg("cannot initialize an already existing cluster")
 	}
-	if !accepted {
-		stdout("exiting")
-		os.Exit(0)
-	}
-
-	_, _, err = e.GetClusterData(ctx)
-	if err != nil {
-		die("cannot get cluster data: %v", err)
-	}
-
-	var cs *cluster.Spec
-	if dataSupplied {
-		if err := json.Unmarshal(data, &cs); err != nil {
-			die("failed to unmarshal cluster spec: %v", err)
-		}
-	} else {
-		// Define a new cluster spec with initMode "new"
-		cs = &cluster.Spec{}
-		newCluster := cluster.New
-		cs.InitMode = &newCluster
-	}
-
-	if err := cs.Validate(); err != nil {
-		die("invalid cluster spec: %v", err)
-	}
-
-	c := cluster.NewCluster(common.UID(), cs)
-	cd = cluster.NewClusterData(c)
-
-	// We ignore if cd has been modified between reading and writing
-	if err := e.PutClusterData(ctx, cd); err != nil {
-		die("cannot update cluster data: %v", err)
+	if httpCode, initErr := apiClient.PostClusterSpec(initSpec); initErr != nil {
+		logger.Fatal().
+			AnErr("error", initErr).
+			Int("http_code", httpCode).
+			Str("source", initOpts.file).
+			Any("spec", initSpec).
+			Msg("init failed")
 	}
 }

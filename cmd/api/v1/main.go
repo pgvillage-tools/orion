@@ -29,6 +29,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	readMaxBytes int64 = 1 << 30
+)
+
 type config struct {
 	cmdcommon.CommonConfig
 

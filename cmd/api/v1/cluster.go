@@ -22,23 +22,17 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/logging"
-)
-
-const (
-	readMaxBytes int64 = 1 << 30
-	// ClusterEndPoint is the endpoint config for Cluster
-	ClusterEndPoint EndPoint = "cluster"
 )
 
 // ClusterRoutes adds all Cluster routes to the list of all routes
 func (h *Handlers) ClusterRoutes() []Route {
 	return []Route{
-		{ClusterEndPoint.Route(MethodGet), h.GetClusterHandler},
-		{ClusterEndPoint.Route(MethodPut), h.PutClusterHandler},
-		// Init
-		{ClusterEndPoint.Route(MethodPost), h.PostClusterHandler},
+		{endpoints.ClusterEndPoint.Route(endpoints.MethodGet), h.GetClusterHandler},
+		{endpoints.ClusterEndPoint.Route(endpoints.MethodPut), h.PutClusterHandler},
+		{endpoints.ClusterEndPoint.Route(endpoints.MethodPost), h.PostClusterHandler},
 	}
 }
 
@@ -50,7 +44,11 @@ func (h *Handlers) GetClusterHandler(w http.ResponseWriter, r *http.Request) {
 	if cd, _, err := h.client.GetClusterData(ctx); err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 	} else {
-		h.writeJSON(ctx, w, cd)
+		if cd == nil {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			h.writeJSON(ctx, w, cd)
+		}
 	}
 }
 

@@ -19,15 +19,14 @@ import (
 	"errors"
 	"net/http"
 	"time"
-)
 
-// FailKeeperEndPoint is the config for the failkeeper endpoint
-const FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/fail"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+)
 
 // FailKeeperRoutes returns the routes to be added for the FailKeeper code
 func (h *Handlers) FailKeeperRoutes() []Route {
 	return []Route{
-		{FailKeeperEndPoint.Route(MethodPut), h.PutFailKeeperHandler},
+		{endpoints.FailKeeperEndPoint.Route(endpoints.MethodPut), h.PutFailKeeperHandler},
 	}
 }
 

@@ -18,9 +18,20 @@ package cmd
 import (
 	"context"
 
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type deleteKeeperOptions struct {
+	Host string `mapstructure:"host"`
+	Port uint16 `mapstructure:"port"`
+	TLS  bool   `mapstructure:"tls"`
+}
+
+var deleteKeeperOpts deleteKeeperOptions
 
 var removeKeeperCmd = &cobra.Command{
 	Use:   "removekeeper [keeper uid]",
@@ -29,11 +40,18 @@ var removeKeeperCmd = &cobra.Command{
 }
 
 func init() {
+	removeKeeperCmd.PersistentFlags().BoolVarP(&deleteKeeperOpts.TLS, "tls", "t", true, "use tls")
+	viper.BindPFlag("tls", removeKeeperCmd.PersistentFlags().Lookup("tls"))
+	removeKeeperCmd.PersistentFlags().Uint16VarP(&deleteKeeperOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
+	viper.BindPFlag("port", removeKeeperCmd.PersistentFlags().Lookup("port"))
+	removeKeeperCmd.PersistentFlags().StringVarP(&deleteKeeperOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
+	viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host"))
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
 
 func removeKeeper(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	defer cancelFunc()
 	if len(args) > 1 {
 		die("too many arguments")
@@ -45,46 +63,18 @@ func removeKeeper(_ *cobra.Command, args []string) {
 
 	keeperID := args[0]
 
-	store, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !deleteKeeperOpts.TLS {
+		p = endpoints.HTTP
 	}
+	apiClient := client.NewConnection(p, deleteKeeperOpts.Host, deleteKeeperOpts.Port)
 
-	cd, pair, err := getClusterData(store)
-	if err != nil {
-		die("cannot get cluster data: %v", err)
-	}
-	if cd.Cluster == nil {
-		die("no cluster spec available")
-	}
-	if cd.Cluster.Spec == nil {
-		die("no cluster spec available")
-	}
-
-	newCd := cd.DeepCopy()
-	keeperInfo := newCd.Keepers[keeperID]
-	if keeperInfo == nil {
-		die("keeper doesn't exist")
-	}
-
-	keeperDb := newCd.FindDB(keeperInfo)
-
-	if keeperDb != nil {
-		if newCd.Cluster.Status.Master == keeperDb.UID {
-			die("keeper assigned db is the current cluster master db.")
-		}
-	}
-
-	delete(newCd.Keepers, keeperID)
-	if keeperDb != nil {
-		delete(newCd.DBs, keeperDb.UID)
-	}
-
-	// NOTE: if the removed db is listed inside another db.Followers it'll will
-	// be cleaned by the sentinels
-
-	_, err = store.AtomicPutClusterData(context.TODO(), newCd, pair)
-	if err != nil {
-		die("cannot update cluster data: %v", err)
+	httpCode, deleteErr := apiClient.PutFailKeeper(keeperID)
+	if deleteErr != nil {
+		logger.Fatal().
+			AnErr("error", deleteErr).
+			Int("http_code", httpCode).
+			Str("source", initOpts.file).
+			Msg("failed to fail the keeper")
 	}
 }

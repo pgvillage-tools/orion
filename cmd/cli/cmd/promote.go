@@ -17,14 +17,21 @@ package cmd
 
 import (
 	"context"
-	"os"
 
-	cluster "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	"github.com/pgvillage-tools/orion/internal/consensus"
-
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type promoteOptions struct {
+	Host string `mapstructure:"host"`
+	Port uint16 `mapstructure:"port"`
+	TLS  bool   `mapstructure:"tls"`
+}
+
+var promoteOpts promoteOptions
 
 var cmdPromote = &cobra.Command{
 	Use:   "promote",
@@ -33,72 +40,36 @@ var cmdPromote = &cobra.Command{
 }
 
 func init() {
-	cmdPromote.PersistentFlags().BoolVarP(&initOpts.forceYes, "yes", "y", false, "don't ask for confirmation")
+	cmdPromote.PersistentFlags().BoolVarP(&promoteOpts.TLS, "tls", "t", true, "use tls")
+	viper.BindPFlag("tls", cmdPromote.PersistentFlags().Lookup("tls"))
+	cmdPromote.PersistentFlags().Uint16VarP(&promoteOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
+	viper.BindPFlag("port", cmdPromote.PersistentFlags().Lookup("port"))
+	cmdPromote.PersistentFlags().StringVarP(&promoteOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
+	viper.BindPFlag("host", cmdPromote.PersistentFlags().Lookup("host"))
 
 	CmdCLI.AddCommand(cmdPromote)
 }
 
 func promote(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	defer cancelFunc()
 	if len(args) > 0 {
-		die("too many arguments")
+		logger.Fatal().Msg("too many arguments")
 	}
 
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !promoteOpts.TLS {
+		p = endpoints.HTTP
 	}
+	apiClient := client.NewConnection(p, promoteOpts.Host, promoteOpts.Port)
 
-	accepted := true
-	if !initOpts.forceYes {
-		accepted, err = askConfirmation("Are you sure you want to continue? [yes/no] ")
-		if err != nil {
-			die("%v", err)
-		}
-	}
-	if !accepted {
-		stdout("exiting")
-		os.Exit(0)
-	}
-
-	retry := 0
-	for retry < maxRetries {
-		cd, pair, err := getClusterData(e)
-		if err != nil {
-			die("%v", err)
-		}
-		if cd.Cluster == nil {
-			die("no cluster spec available")
-		}
-		if cd.Cluster.Spec == nil {
-			die("no cluster spec available")
-		}
-
-		ds := cd.Cluster.DefSpec()
-		if *ds.Role == cluster.Primary {
-			stderr("cluster spec role already set to master")
-			os.Exit(0)
-		}
-		primaryRole := cluster.Primary
-		cd.Cluster.Spec.Role = &primaryRole
-
-		if err = cd.Cluster.UpdateSpec(cd.Cluster.Spec); err != nil {
-			die("Cannot update cluster spec: %v", err)
-		}
-
-		// retry if cd has been modified between reading and writing
-		_, err = e.AtomicPutClusterData(context.TODO(), cd, pair)
-		if err != nil {
-			if err == consensus.ErrKeyModified {
-				retry++
-				continue
-			}
-			die("cannot update cluster data: %v", err)
-		}
-		break
-	}
-	if retry == maxRetries {
-		die("failed to update cluster data after %d retries", maxRetries)
+	httpCode, putErr := apiClient.PutPromoteReplicaSet()
+	if putErr != nil {
+		logger.Fatal().
+			AnErr("error", putErr).
+			Int("http_code", httpCode).
+			Str("source", initOpts.file).
+			Msg("promote failed")
 	}
 }

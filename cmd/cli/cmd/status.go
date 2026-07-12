@@ -18,18 +18,17 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"text/tabwriter"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	"github.com/pgvillage-tools/orion/internal/consensus"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -44,10 +43,19 @@ var cmdStatus = &cobra.Command{
 
 var statusOpts struct {
 	Format string
+	Host   string `mapstructure:"host"`
+	Port   uint16 `mapstructure:"port"`
+	TLS    bool   `mapstructure:"tls"`
 }
 
 func init() {
 	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Format, "format", "f", "", "output format")
+	cmdStatus.PersistentFlags().BoolVarP(&statusOpts.TLS, "tls", "t", true, "use tls")
+	viper.BindPFlag("tls", cmdStatus.PersistentFlags().Lookup("tls"))
+	cmdStatus.PersistentFlags().Uint16VarP(&statusOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
+	viper.BindPFlag("port", cmdStatus.PersistentFlags().Lookup("port"))
+	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
+	viper.BindPFlag("host", cmdStatus.PersistentFlags().Lookup("host"))
 	CmdCLI.AddCommand(cmdStatus)
 }
 
@@ -91,20 +99,20 @@ type ClusterStatus struct {
 func status(_ *cobra.Command, _ []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
-	status, generateErr := generateStatus(ctx)
+	ic, generateErr := generateStatus(ctx)
 	switch statusOpts.Format {
 	case "json":
-		renderJSON(ctx, status, generateErr)
+		renderJSON(ctx, ic, generateErr)
 	case "text":
-		renderText(ctx, status, generateErr)
+		renderText(ctx, ic, generateErr)
 	case "":
-		renderText(ctx, status, generateErr)
+		renderText(ctx, ic, generateErr)
 	default:
 		die("unrecognised output format %s", statusOpts.Format)
 	}
 }
 
-func renderJSON(_ context.Context, status Status, generateErr error) {
+func renderJSON(_ context.Context, ic *cluster.InfoCluster, generateErr error) {
 	if generateErr != nil {
 		marshalJSON(generateErr)
 	} else {
@@ -133,7 +141,7 @@ func tabFlush(ctx context.Context, tw *tabwriter.Writer) {
 		logger.Fatal().AnErr("err", err).Msg("failed to flush tab writer")
 	}
 }
-func renderText(ctx context.Context, status Status, generateErr error) {
+func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error) {
 	if generateErr != nil {
 		die("%v", generateErr)
 	}
@@ -143,11 +151,11 @@ func renderText(ctx context.Context, status Status, generateErr error) {
 
 	stdout("=== Active sentinels ===")
 	stdout("")
-	if len(status.Sentinels) == 0 {
+	if len(ic.Sentinels) == 0 {
 		stdout("No active sentinels")
 	} else {
 		tabPrint(ctx, tabOut, "ID\tLEADER\n")
-		for _, s := range status.Sentinels {
+		for _, s := range ic.Sentinels {
 			tabPrint(ctx, tabOut, "%s\t%t\n", s.UID, s.Leader)
 			tabFlush(ctx, tabOut)
 		}
@@ -156,11 +164,11 @@ func renderText(ctx context.Context, status Status, generateErr error) {
 	stdout("")
 	stdout("=== Active proxies ===")
 	stdout("")
-	if len(status.Proxies) == 0 {
+	if len(ic.Proxies) == 0 {
 		stdout("No active proxies")
 	} else {
 		tabPrint(ctx, tabOut, "ID\n")
-		for _, p := range status.Proxies {
+		for _, p := range ic.Proxies {
 			tabPrint(ctx, tabOut, "%s\n", p.UID)
 			tabFlush(ctx, tabOut)
 		}
@@ -169,13 +177,13 @@ func renderText(ctx context.Context, status Status, generateErr error) {
 	stdout("")
 	stdout("=== Keepers ===")
 	stdout("")
-	if len(status.Keepers) == 0 {
+	if len(ic.Keepers) == 0 {
 		stdout("No keepers available")
 		stdout("")
 	} else {
 		tabPrint(ctx, tabOut,
 			"UID\tHEALTHY\tPG LISTENADDRESS\tPG HEALTHY\tPG WANTEDGENERATION\tPG CURRENTGENERATION\n")
-		for _, k := range status.Keepers {
+		for _, k := range ic.Keepers {
 			tabPrint(
 				ctx,
 				tabOut,
@@ -190,34 +198,38 @@ func renderText(ctx context.Context, status Status, generateErr error) {
 			tabFlush(ctx, tabOut)
 		}
 	}
-
-	if status.Cluster.MasterKeeperUID == "" {
+	primaryKeeper := ic.Status["primaryKeeper"]
+	if primaryKeeper == "" {
 		stdout("No cluster available")
 	} else {
 		stdout("")
 		stdout("=== Cluster Info ===")
 		stdout("")
-		if status.Cluster.MasterKeeperUID != "" {
-			stdout("Master Keeper: %s", status.Cluster.MasterKeeperUID)
+		if primaryKeeper != "" {
+			stdout("Master Keeper: %s", primaryKeeper)
 		} else {
 			stdout("Master Keeper: (none)")
 		}
 	}
 
-	// This tree data isn't currently available in the Status struct
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
+	p := endpoints.HTTPS
+	if !specOpts.TLS {
+		p = endpoints.HTTP
 	}
-	cd, _, err := getClusterData(e)
-	if err != nil {
-		die("%v", err)
+	apiClient := client.NewConnection(p, statusOpts.Host, statusOpts.Port)
+	cd, httpCode, getClusterErr := apiClient.GetCluster()
+	if getClusterErr != nil {
+		logger.Fatal().
+			AnErr("error", getClusterErr).
+			Int("http return code", httpCode).
+			Msg("failed to get clusterdata")
 	}
-	if status.Cluster.MasterDBUID != "" {
+	if primaryDB, ok := ic.Status["primaryDB"].(string); ok && primaryDB != "" {
 		stdout("")
 		stdout("===== Keepers/DB tree =====")
 		stdout("")
-		printTree(status.Cluster.MasterDBUID, cd, 0, "", true)
+		printTree(primaryDB, cd, 0, "", true)
 	}
 	stdout("")
 }
@@ -266,103 +278,19 @@ func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bo
 	}
 }
 
-func generateStatus(ctx context.Context) (Status, error) {
-	status := Status{}
-	tabOut := new(tabwriter.Writer)
-	tabOut.Init(os.Stdout, 0, tabWidth, 1, '\t', 0)
-
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		return status, err
+func generateStatus(ctx context.Context) (*cluster.InfoCluster, error) {
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
+	p := endpoints.HTTPS
+	if !specOpts.TLS {
+		p = endpoints.HTTP
 	}
-
-	election, err := cmdcommon.NewElection(ctx, &cfg.CommonConfig, "")
-	if err != nil {
-		return status, err
+	apiClient := client.NewConnection(p, statusOpts.Host, statusOpts.Port)
+	ic, httpCode, getClusterErr := apiClient.GetStatus()
+	if getClusterErr != nil {
+		logger.Fatal().
+			AnErr("error", getClusterErr).
+			Int("http return code", httpCode).
+			Msg("failed to get info on cluster")
 	}
-
-	lsid, err := election.Leader()
-	if err != nil && errors.Is(err, consensus.ErrElectionNoLeader) {
-		return status, err
-	}
-
-	sentinelsInfo, err := e.GetSentinelsInfo(context.TODO())
-	if err != nil {
-		return status, err
-	}
-
-	sentinels := []SentinelStatus{}
-	sort.Sort(sentinelsInfo)
-	for _, si := range sentinelsInfo {
-		leader := lsid != "" && si.UID == lsid
-		sentinels = append(sentinels, SentinelStatus{UID: si.UID, Leader: leader})
-	}
-	status.Sentinels = sentinels
-
-	proxiesInfo, err := e.GetProxiesInfo(context.TODO())
-	if err != nil {
-		return status, err
-	}
-	proxiesInfoSlice := proxiesInfo.ToSlice()
-
-	proxies := []ProxyStatus{}
-	sort.Sort(proxiesInfoSlice)
-	for _, pi := range proxiesInfoSlice {
-		proxies = append(proxies, ProxyStatus{UID: pi.UID, Generation: pi.Generation})
-	}
-	status.Proxies = proxies
-
-	cd, _, err := getClusterData(e)
-	if err != nil {
-		return status, err
-	}
-
-	keepers := []KeeperStatus{}
-	kssKeys := cd.Keepers.SortedKeys()
-	for _, kuid := range kssKeys {
-		k := cd.Keepers[kuid]
-		db := cd.FindDB(k)
-		dbListenAddress := "(no db assigned)"
-		var (
-			pgHealthy           bool
-			pgCurrentGeneration int64
-			pgWantedGeneration  int64
-		)
-		if db != nil {
-			pgHealthy = db.Status.Healthy
-			pgCurrentGeneration = db.Status.CurrentGeneration
-			pgWantedGeneration = db.Generation
-
-			dbListenAddress = "(unknown)"
-			if db.Status.ListenAddress != "" {
-				dbListenAddress = fmt.Sprintf("%s:%s", db.Status.ListenAddress, db.Status.Port)
-			}
-		}
-		keeper := KeeperStatus{
-			UID:                 kuid,
-			ListenAddress:       dbListenAddress,
-			Healthy:             k.Status.Healthy,
-			PgHealthy:           pgHealthy,
-			PgWantedGeneration:  pgWantedGeneration,
-			PgCurrentGeneration: pgCurrentGeneration,
-		}
-		keepers = append(keepers, keeper)
-	}
-	status.Keepers = keepers
-
-	clusterStatus := ClusterStatus{}
-	if cd.Cluster == nil || cd.DBs == nil {
-		clusterStatus.Available = false
-	} else {
-		master := cd.Cluster.Status.Master
-		clusterStatus.Available = true
-
-		if master != "" {
-			clusterStatus.MasterDBUID = cd.DBs[master].UID
-			clusterStatus.MasterKeeperUID = cd.Keepers[cd.DBs[master].Spec.KeeperUID].UID
-		}
-	}
-	status.Cluster = clusterStatus
-
-	return status, nil
+	return ic, nil
 }

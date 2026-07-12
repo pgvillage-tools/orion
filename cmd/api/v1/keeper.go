@@ -21,16 +21,14 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
-// DeleteKeeperEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
-const DeleteKeeperEndPoint EndPoint = "cluster/keepers/{id}"
-
-// DeleteKeeperRoutes returns the routes to be added for the RemoveKeepers code
-func (h *Handlers) DeleteKeeperRoutes() []Route {
+// KeeperRoutes returns the routes to be added for the RemoveKeepers code
+func (h *Handlers) KeeperRoutes() []Route {
 	return []Route{
-		{DeleteKeeperEndPoint.Route(MethodDelete), h.DeleteKeeperHandler},
+		{endpoints.KeeperEndPoint.Route(endpoints.MethodDelete), h.DeleteKeeperHandler},
 	}
 }
 

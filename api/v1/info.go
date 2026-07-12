@@ -56,5 +56,5 @@ type InfoProxy struct {
 	Status     InfoGenericStatus `json:"status"`
 }
 
-// InfoGenericStatus cn be used to add key value pairs to the results
+// InfoGenericStatus can be used to add key value pairs to the results
 type InfoGenericStatus map[string]any
