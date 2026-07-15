@@ -31,6 +31,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	flagPort = "port"
+	flagHost = "host"
+	flagTLS  = "tls"
+)
+
 var cmdClusterData = &cobra.Command{
 	Use:   "clusterdata",
 	Short: "Manage current cluster data",
@@ -67,23 +73,40 @@ var cmdWriteClusterData = &cobra.Command{
 }
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdReadClusterData.PersistentFlags().BoolVar(&readClusterdataOpts.pretty, "pretty", false, "pretty print")
-	cmdReadClusterData.PersistentFlags().BoolVarP(&readClusterdataOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdReadClusterData.PersistentFlags().Lookup("tls"))
-	cmdReadClusterData.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdReadClusterData.PersistentFlags().Lookup("port"))
-	cmdReadClusterData.PersistentFlags().StringVarP(&readClusterdataOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", cmdReadClusterData.PersistentFlags().Lookup("host"))
+	cmdReadClusterData.PersistentFlags().BoolVarP(&readClusterdataOpts.TLS, flagTLS, "t", true, "use tls")
+	if err := viper.BindPFlag(flagTLS, cmdReadClusterData.PersistentFlags().Lookup(flagTLS)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdReadClusterData.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, flagPort, "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag(flagPort, cmdReadClusterData.PersistentFlags().Lookup(flagPort)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdReadClusterData.PersistentFlags().StringVarP(&readClusterdataOpts.Host, flagHost, "H", "127.0.0.1",
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag(flagHost, cmdReadClusterData.PersistentFlags().Lookup(flagHost)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	cmdClusterData.AddCommand(cmdReadClusterData)
 
 	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.file, "file", "f", "",
 		"file containing the new cluster data")
-	cmdWriteClusterData.PersistentFlags().BoolVarP(&writeClusterdataOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdWriteClusterData.PersistentFlags().Lookup("tls"))
-	cmdWriteClusterData.PersistentFlags().Uint16VarP(&writeClusterdataOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdWriteClusterData.PersistentFlags().Lookup("port"))
-	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.file, "host", "H", "host", "host/ip for connecting to the api")
-	viper.BindPFlag("host", cmdWriteClusterData.PersistentFlags().Lookup("host"))
+	cmdWriteClusterData.PersistentFlags().BoolVarP(&writeClusterdataOpts.TLS, flagTLS, "t", true, "use tls")
+	if err := viper.BindPFlag(flagTLS, cmdWriteClusterData.PersistentFlags().Lookup(flagTLS)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdWriteClusterData.PersistentFlags().Uint16VarP(&writeClusterdataOpts.Port, flagPort, "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag(flagPort, cmdWriteClusterData.PersistentFlags().Lookup(flagPort)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.file, flagHost, "H", defaultAPIIP,
+		"host/ip for connecting to the api")
+	if err := viper.BindPFlag(flagHost, cmdWriteClusterData.PersistentFlags().Lookup(flagHost)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	cmdClusterData.AddCommand(cmdWriteClusterData)
 
 	CmdCLI.AddCommand(cmdClusterData)

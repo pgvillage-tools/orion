@@ -45,12 +45,21 @@ var failKeeperCmd = &cobra.Command{
 //revive:enable
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	failKeeperCmd.PersistentFlags().BoolVarP(&failKeeperOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", failKeeperCmd.PersistentFlags().Lookup("tls"))
-	failKeeperCmd.PersistentFlags().Uint16VarP(&failKeeperOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", failKeeperCmd.PersistentFlags().Lookup("port"))
-	failKeeperCmd.PersistentFlags().StringVarP(&failKeeperOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", failKeeperCmd.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", failKeeperCmd.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	failKeeperCmd.PersistentFlags().Uint16VarP(&failKeeperOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", failKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	failKeeperCmd.PersistentFlags().StringVarP(&failKeeperOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", failKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(failKeeperCmd)
 }
 

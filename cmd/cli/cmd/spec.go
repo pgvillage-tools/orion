@@ -44,15 +44,24 @@ type specOptions struct {
 var specOpts specOptions
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdSpec.PersistentFlags().BoolVar(&specOpts.defaults, "defaults", false,
 		"also show default values")
 
 	cmdSpec.PersistentFlags().BoolVarP(&specOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdSpec.PersistentFlags().Lookup("tls"))
-	cmdSpec.PersistentFlags().Uint16VarP(&specOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdSpec.PersistentFlags().Lookup("port"))
-	cmdSpec.PersistentFlags().StringVarP(&specOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", cmdSpec.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", cmdSpec.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdSpec.PersistentFlags().Uint16VarP(&specOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdSpec.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdSpec.PersistentFlags().StringVarP(&specOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdSpec.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(cmdSpec)
 }
 

@@ -23,8 +23,6 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 )
 
-const ()
-
 // HealthRoutes collect and return all health routes
 func (h *Handlers) HealthRoutes() []Route {
 	return []Route{

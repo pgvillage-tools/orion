@@ -40,12 +40,21 @@ var removeKeeperCmd = &cobra.Command{
 }
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	removeKeeperCmd.PersistentFlags().BoolVarP(&deleteKeeperOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", removeKeeperCmd.PersistentFlags().Lookup("tls"))
-	removeKeeperCmd.PersistentFlags().Uint16VarP(&deleteKeeperOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", removeKeeperCmd.PersistentFlags().Lookup("port"))
-	removeKeeperCmd.PersistentFlags().StringVarP(&deleteKeeperOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", removeKeeperCmd.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	removeKeeperCmd.PersistentFlags().Uint16VarP(&deleteKeeperOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", removeKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	removeKeeperCmd.PersistentFlags().StringVarP(&deleteKeeperOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
 

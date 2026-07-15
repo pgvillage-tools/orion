@@ -40,12 +40,21 @@ var cmdPromote = &cobra.Command{
 }
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdPromote.PersistentFlags().BoolVarP(&promoteOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdPromote.PersistentFlags().Lookup("tls"))
-	cmdPromote.PersistentFlags().Uint16VarP(&promoteOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdPromote.PersistentFlags().Lookup("port"))
-	cmdPromote.PersistentFlags().StringVarP(&promoteOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", cmdPromote.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", cmdPromote.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdPromote.PersistentFlags().Uint16VarP(&promoteOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdPromote.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdPromote.PersistentFlags().StringVarP(&promoteOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdPromote.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 
 	CmdCLI.AddCommand(cmdPromote)
 }

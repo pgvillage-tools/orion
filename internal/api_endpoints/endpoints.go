@@ -73,6 +73,7 @@ const (
 // EndPoint defines api endpoint configurations
 type EndPoint string
 
+// Specific returns a specific endpoint created from a generic endpoint and filled in vars
 func (ep EndPoint) Specific(vars map[string]string) (specific EndPoint, err error) {
 	strEP := string(ep)
 	for key, value := range vars {

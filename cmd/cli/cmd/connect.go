@@ -42,12 +42,21 @@ type connectOptions struct {
 var connOpts connectOptions
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdConnect.PersistentFlags().BoolVarP(&connOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdConnect.PersistentFlags().Lookup("tls"))
-	cmdConnect.PersistentFlags().Uint16VarP(&connOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdConnect.PersistentFlags().Lookup("port"))
-	cmdConnect.PersistentFlags().StringVarP(&connOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", cmdConnect.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", cmdConnect.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdConnect.PersistentFlags().Uint16VarP(&connOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdConnect.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdConnect.PersistentFlags().StringVarP(&connOpts.Host, "host", "H", "127.0.0.1",
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdConnect.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(cmdConnect)
 }
 
@@ -66,7 +75,7 @@ func connectCluster(_ *cobra.Command, args []string) {
 		logger.Fatal().
 			AnErr("error", healthErr).
 			Int("http_code", httpCode).
-			Str("url", apiClient.EndpointUrl(endpoints.HealthEndPoint)).
+			Str("url", apiClient.EndpointURL(endpoints.HealthEndPoint)).
 			Msg("connecting to the api failed")
 	}
 	if writeErr := viper.WriteConfig(); writeErr != nil {

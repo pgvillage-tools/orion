@@ -30,7 +30,10 @@ import (
 )
 
 const (
-	maxRetries = 3
+	maxRetries     = 3
+	readWrite      = 0755
+	defaultAPIPort = 8443
+	defaultAPIIP   = "127.0.0.1"
 )
 
 // CmdCLI defines a cobra command to execute when running orion

@@ -47,13 +47,22 @@ type InitOptions struct {
 var initOpts InitOptions
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdInit.PersistentFlags().StringVarP(&initOpts.file, "file", "f", "-", "file to read as input, use - for stdin")
 	cmdInit.PersistentFlags().BoolVarP(&readClusterdataOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdInit.PersistentFlags().Lookup("tls"))
-	cmdInit.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdInit.PersistentFlags().Lookup("port"))
-	cmdInit.PersistentFlags().StringVarP(&readClusterdataOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", cmdInit.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", cmdInit.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdInit.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdInit.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdInit.PersistentFlags().StringVarP(&readClusterdataOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdInit.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 
 	CmdCLI.AddCommand(cmdInit)
 }
@@ -98,7 +107,6 @@ func initCluster(_ *cobra.Command, args []string) {
 					Str("source", initOpts.file).
 					Str("spec", string(data)).
 					Msg("invalid cluster data spec")
-
 			}
 		}
 	}

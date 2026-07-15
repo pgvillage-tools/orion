@@ -27,8 +27,6 @@ import (
 	"github.com/pgvillage-tools/orion/internal/consensus"
 )
 
-const ()
-
 // StatusRoutes collects and returns all Status routes
 func (h *Handlers) StatusRoutes() []Route {
 	return []Route{

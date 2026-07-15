@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
-// ClusterRoutes adds all Cluster routes to the list of all routes
+// ClusterSpecRoutes adds all Cluster routes to the list of all routes
 func (h *Handlers) ClusterSpecRoutes() []Route {
 	return []Route{
 		{endpoints.ClusterEndPoint.Route(endpoints.MethodPost), h.PostClusterSpecHandler},
@@ -83,7 +83,7 @@ func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 }
 */
 
-// PostClusterHandler endpoint is used by init
+// PostClusterSpecHandler endpoint is used by init
 func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()

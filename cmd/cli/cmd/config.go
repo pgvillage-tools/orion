@@ -22,21 +22,21 @@ func initConfig() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yml")
 
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, readWrite); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("failed to create config dir")
 	}
 	configFile := filepath.Join(configDir, "config.yml")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		viper.Set("host", "127.0.0.1")
-		viper.Set("port", 8443)
+		viper.Set("host", defaultAPIIP)
+		viper.Set("port", defaultAPIPort)
 		viper.Set("tls", true)
 		if err := viper.SafeWriteConfig(); err != nil {
 			logger.Fatal().AnErr("error", err).Msg("failed to create config file")
 		}
 	}
 
-	viper.SetDefault("host", "127.0.0.1")
-	viper.SetDefault("port", 8443)
+	viper.SetDefault("host", defaultAPIIP)
+	viper.SetDefault("port", defaultAPIPort)
 	viper.SetDefault("tls", true)
 
 	viper.SetEnvPrefix("ORION")

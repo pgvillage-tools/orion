@@ -49,17 +49,26 @@ type updateOptions struct {
 var updateOpts updateOptions
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, "patch", "p", false,
 		"patch the current cluster specification instead of replacing it")
 	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, "file", "f", "",
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
 	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.TLS, "tls", "t", true, "use tls")
-	viper.BindPFlag("tls", cmdUpdate.PersistentFlags().Lookup("tls"))
-	cmdUpdate.PersistentFlags().Uint16VarP(&updateOpts.Port, "port", "p", 8443, "protocol for connecting to the api")
-	viper.BindPFlag("port", cmdUpdate.PersistentFlags().Lookup("port"))
-	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.Host, "host", "H", "127.0.0.1", "hostname or ip for connecting to the api")
-	viper.BindPFlag("host", cmdUpdate.PersistentFlags().Lookup("host"))
+	if err := viper.BindPFlag("tls", cmdUpdate.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdUpdate.PersistentFlags().Uint16VarP(&updateOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdUpdate.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdUpdate.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(cmdUpdate)
 }
 
