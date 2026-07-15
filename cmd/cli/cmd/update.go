@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
@@ -39,20 +40,21 @@ var cmdUpdate = &cobra.Command{
 }
 
 type updateOptions struct {
-	patch bool
-	file  string
-	Host  string `mapstructure:"host"`
-	Port  uint16 `mapstructure:"port"`
-	TLS   bool   `mapstructure:"tls"`
+	patch   bool
+	file    string
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 var updateOpts updateOptions
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, "patch", "p", false,
+	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, flagPatch, "P", false,
 		"patch the current cluster specification instead of replacing it")
-	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, "file", "f", "",
+	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, flagFile, "f", "",
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
 	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.TLS, "tls", "t", true, "use tls")
@@ -67,6 +69,11 @@ func init() {
 	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdUpdate.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdUpdate.PersistentFlags().DurationVarP(&updateOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdUpdate.PersistentFlags().Lookup(flagTimeout)); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdUpdate)
@@ -122,20 +129,21 @@ func update(_ *cobra.Command, args []string) {
 	}
 
 	p := endpoints.HTTPS
-	if !specOpts.TLS {
+	if !viper.GetBool(flagTLS) {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, specOpts.Host, specOpts.Port)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 	var httpCode int
 	var updateErr error
 	if updateOpts.patch {
 		httpCode, updateErr = apiClient.PatchClusterSpec(patch)
 	} else {
-		var cd *cluster.Spec
+		cd := &cluster.Spec{}
 		if encodingErr := json.Unmarshal(patch, cd); encodingErr != nil {
 			logger.Fatal().
 				AnErr("error", encodingErr).
-				Str("source", initOpts.file).
+				Str("source", updateOpts.file).
 				Str("spec", string(patch)).
 				Msg("invalid cluster data spec")
 		}

@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
@@ -30,10 +31,10 @@ import (
 )
 
 const (
-	maxRetries     = 3
 	readWrite      = 0755
 	defaultAPIPort = 8443
 	defaultAPIIP   = "127.0.0.1"
+	defaultTimeout = time.Second * 30
 )
 
 // CmdCLI defines a cobra command to execute when running orion

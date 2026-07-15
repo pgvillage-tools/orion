@@ -42,15 +42,15 @@ func (h *Handlers) PutPromoteReplicaSetHandler(w http.ResponseWriter, r *http.Re
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
 	} else if cd.Cluster == nil {
-		handleError(ctx, errors.New(""), w, "cluster is not set")
+		handleError(ctx, errors.New("cluster is nil"), w, "cluster is not set")
 		return
 	} else if cd.Cluster.Spec == nil {
-		handleError(ctx, err, w, "cluster spec is not set")
+		handleError(ctx, errors.New("cluster spec is nil"), w, "cluster spec is not set")
 		return
 	}
 	newCd := cd.DeepCopy()
 
-	if *newCd.Cluster.Spec.Role == apiv1.Primary {
+	if newCd.Cluster.Spec.Role != nil && *newCd.Cluster.Spec.Role == apiv1.Primary {
 		return
 	}
 

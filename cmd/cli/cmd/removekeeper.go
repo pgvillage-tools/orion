@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"time"
 
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
@@ -26,9 +27,10 @@ import (
 )
 
 type deleteKeeperOptions struct {
-	Host string `mapstructure:"host"`
-	Port uint16 `mapstructure:"port"`
-	TLS  bool   `mapstructure:"tls"`
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 var deleteKeeperOpts deleteKeeperOptions
@@ -55,6 +57,11 @@ func init() {
 	if err := viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
+	removeKeeperCmd.PersistentFlags().DurationVarP(&deleteKeeperOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, removeKeeperCmd.PersistentFlags().Lookup(flagTimeout)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
 
@@ -73,17 +80,17 @@ func removeKeeper(_ *cobra.Command, args []string) {
 	keeperID := args[0]
 
 	p := endpoints.HTTPS
-	if !deleteKeeperOpts.TLS {
+	if !viper.GetBool(flagTLS) {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, deleteKeeperOpts.Host, deleteKeeperOpts.Port)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 
 	httpCode, deleteErr := apiClient.PutFailKeeper(keeperID)
 	if deleteErr != nil {
 		logger.Fatal().
 			AnErr("error", deleteErr).
 			Int("http_code", httpCode).
-			Str("source", initOpts.file).
 			Msg("failed to fail the keeper")
 	}
 }

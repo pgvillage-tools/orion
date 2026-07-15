@@ -30,6 +30,7 @@ func initConfig() {
 		viper.Set("host", defaultAPIIP)
 		viper.Set("port", defaultAPIPort)
 		viper.Set("tls", true)
+		viper.Set("timeout", defaultTimeout)
 		if err := viper.SafeWriteConfig(); err != nil {
 			logger.Fatal().AnErr("error", err).Msg("failed to create config file")
 		}
@@ -38,6 +39,7 @@ func initConfig() {
 	viper.SetDefault("host", defaultAPIIP)
 	viper.SetDefault("port", defaultAPIPort)
 	viper.SetDefault("tls", true)
+	viper.SetDefault("timeout", defaultTimeout)
 
 	viper.SetEnvPrefix("ORION")
 	viper.AutomaticEnv()

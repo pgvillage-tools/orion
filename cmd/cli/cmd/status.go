@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
@@ -42,10 +43,11 @@ var cmdStatus = &cobra.Command{
 }
 
 var statusOpts struct {
-	Format string
-	Host   string `mapstructure:"host"`
-	Port   uint16 `mapstructure:"port"`
-	TLS    bool   `mapstructure:"tls"`
+	Format  string
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 func init() {
@@ -63,6 +65,11 @@ func init() {
 	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdStatus.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdStatus.PersistentFlags().DurationVarP(&statusOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdStatus.PersistentFlags().Lookup(flagTimeout)); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdStatus)
@@ -223,10 +230,11 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	p := endpoints.HTTPS
-	if !specOpts.TLS {
+	if !viper.GetBool(flagTLS) {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, statusOpts.Host, statusOpts.Port)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 	cd, httpCode, getClusterErr := apiClient.GetCluster()
 	if getClusterErr != nil {
 		logger.Fatal().
@@ -290,10 +298,11 @@ func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bo
 func generateStatus(ctx context.Context) (*cluster.InfoCluster, error) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	p := endpoints.HTTPS
-	if !specOpts.TLS {
+	if !statusOpts.TLS {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, statusOpts.Host, statusOpts.Port)
+	apiClient := client.NewConnection(p, statusOpts.Host, statusOpts.Port,
+		viper.GetDuration(flagTimeout))
 	ic, httpCode, getClusterErr := apiClient.GetStatus()
 	if getClusterErr != nil {
 		logger.Fatal().

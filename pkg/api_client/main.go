@@ -1,3 +1,6 @@
 package api_client
 
-const httpClientError = -1
+const (
+	httpClientNoError = 0
+	httpClientError   = -1
+)

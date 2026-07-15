@@ -18,6 +18,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
@@ -36,9 +37,10 @@ var cmdSpec = &cobra.Command{
 
 type specOptions struct {
 	defaults bool
-	Host     string `mapstructure:"host"`
-	Port     uint16 `mapstructure:"port"`
-	TLS      bool   `mapstructure:"tls"`
+	Host     string        `mapstructure:"host"`
+	Port     uint16        `mapstructure:"port"`
+	TLS      bool          `mapstructure:"tls"`
+	Timeout  time.Duration `mapstructure:"timeout"`
 }
 
 var specOpts specOptions
@@ -60,6 +62,11 @@ func init() {
 	cmdSpec.PersistentFlags().StringVarP(&specOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdSpec.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdSpec.PersistentFlags().DurationVarP(&specOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdSpec.PersistentFlags().Lookup(flagTimeout)); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdSpec)
@@ -139,10 +146,11 @@ func spec(_ *cobra.Command, _ []string) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 
 	p := endpoints.HTTPS
-	if !specOpts.TLS {
+	if !viper.GetBool(flagTLS) {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, specOpts.Host, specOpts.Port)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 	cd, httpCode, getClusterErr := apiClient.GetCluster()
 	if getClusterErr != nil {
 		logger.Fatal().
@@ -152,18 +160,20 @@ func spec(_ *cobra.Command, _ []string) {
 	}
 
 	var specj []byte
-	var err error
+	var marshalErr error
+	if cd.Cluster == nil {
+		logger.Fatal().Msg("cluster data does not include a cluster")
+	}
 	if specOpts.defaults {
 		cs := (*ClusterSpecDefaults)(cd.Cluster.DefSpec())
-		specj, err = json.MarshalIndent(cs, "", "\t")
+		specj, marshalErr = json.MarshalIndent(cs, "", "\t")
 	} else {
 		cs := (*ClusterSpecNoDefaults)(cd.Cluster.Spec)
-		specj, err = json.MarshalIndent(cs, "", "\t")
+		specj, marshalErr = json.MarshalIndent(cs, "", "\t")
 	}
-	if err != nil {
+	if marshalErr != nil {
 		logger.Fatal().
-			AnErr("error", getClusterErr).
-			Int("http return code", httpCode).
+			AnErr("error", marshalErr).
 			Msg("failed to marshall spec")
 	}
 

@@ -17,7 +17,6 @@ package v1
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"time"
 
@@ -91,20 +90,20 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "cluster is already set")
 	}
 
-	var cs *apiv1.Spec
+	cs := &apiv1.Spec{}
 
-	newCSBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		handleError(ctx, err, w, "failed to get spec definition")
-		return
-	}
+	newCSReader := http.MaxBytesReader(w, r.Body, readMaxBytes)
 	defer func() {
 		if err := r.Body.Close(); err != nil {
 			handleError(ctx, err, w, "Failed to close Body")
 		}
 	}()
-	if len(newCSBytes) == 0 {
-		cs = &apiv1.Spec{}
+	newCSBytes := []byte{}
+	n, err := newCSReader.Read(newCSBytes)
+	if err != nil {
+		handleError(ctx, err, w, "Failed to read Body")
+	}
+	if n == 0 {
 		newCluster := apiv1.New
 		cs.InitMode = &newCluster
 	} else {

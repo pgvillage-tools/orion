@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"time"
 
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
@@ -33,10 +34,11 @@ var cmdConnect = &cobra.Command{
 
 // InitOptions is a struct which can contain initiation options
 type connectOptions struct {
-	file string
-	Host string `mapstructure:"host"`
-	Port uint16 `mapstructure:"port"`
-	TLS  bool   `mapstructure:"tls"`
+	file    string
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 var connOpts connectOptions
@@ -52,9 +54,14 @@ func init() {
 	if err := viper.BindPFlag("port", cmdConnect.PersistentFlags().Lookup("port")); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
-	cmdConnect.PersistentFlags().StringVarP(&connOpts.Host, "host", "H", "127.0.0.1",
+	cmdConnect.PersistentFlags().StringVarP(&connOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdConnect.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdConnect.PersistentFlags().DurationVarP(&connOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdConnect.PersistentFlags().Lookup(flagTimeout)); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdConnect)
@@ -66,10 +73,11 @@ func connectCluster(_ *cobra.Command, args []string) {
 	defer cancelFunc()
 
 	p := endpoints.HTTPS
-	if !connOpts.TLS {
+	if !viper.GetBool(flagTLS) {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, connOpts.Host, connOpts.Port)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 
 	if httpCode, healthErr := apiClient.Healthy(); healthErr != nil {
 		logger.Fatal().

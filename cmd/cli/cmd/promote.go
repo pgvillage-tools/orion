@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"time"
 
 	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
@@ -26,9 +27,10 @@ import (
 )
 
 type promoteOptions struct {
-	Host string `mapstructure:"host"`
-	Port uint16 `mapstructure:"port"`
-	TLS  bool   `mapstructure:"tls"`
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 var promoteOpts promoteOptions
@@ -55,6 +57,11 @@ func init() {
 	if err := viper.BindPFlag("host", cmdPromote.PersistentFlags().Lookup("host")); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
+	cmdPromote.PersistentFlags().DurationVarP(&promoteOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdPromote.PersistentFlags().Lookup(flagTimeout)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 
 	CmdCLI.AddCommand(cmdPromote)
 }
@@ -68,17 +75,17 @@ func promote(_ *cobra.Command, args []string) {
 	}
 
 	p := endpoints.HTTPS
-	if !promoteOpts.TLS {
+	if !viper.GetBool(flagTLS) {
 		p = endpoints.HTTP
 	}
-	apiClient := client.NewConnection(p, promoteOpts.Host, promoteOpts.Port)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 
 	httpCode, putErr := apiClient.PutPromoteReplicaSet()
 	if putErr != nil {
 		logger.Fatal().
 			AnErr("error", putErr).
 			Int("http_code", httpCode).
-			Str("source", initOpts.file).
 			Msg("promote failed")
 	}
 }

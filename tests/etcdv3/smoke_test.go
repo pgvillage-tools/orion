@@ -80,7 +80,7 @@ var _ = Describe("Smoke", Ordered, func() {
 		port, err := apiCnt.MappedPort(ctx,
 			fmt.Sprintf("%d/tcp", apiInternalPort))
 		Ω(err).NotTo(HaveOccurred())
-		apiClient = client.NewConnection(endpoints.HTTP, localHost, port.Num())
+		apiClient = client.NewConnection(endpoints.HTTP, localHost, port.Num(), time.Second)
 		httpCode, initErr := apiClient.PostClusterSpec(&apiv1.Spec{
 			// DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessStrict),
 			DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
@@ -90,8 +90,8 @@ var _ = Describe("Smoke", Ordered, func() {
 		},
 		)
 
-		Ω(httpCode).To(Equal(http.StatusOK))
 		Ω(initErr).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusAccepted))
 
 		// Start sentinel
 		var sentinelErr error
@@ -165,7 +165,7 @@ var _ = Describe("Smoke", Ordered, func() {
 			isReadyCtx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second*10))
 			defer cancelFunc()
 			// every 100 miliseconds
-			isReadyErr := isReady(isReadyCtx, proxyConnSettings, time.Millisecond*100)
+			isReadyErr := isReady(isReadyCtx, proxyConnSettings, time.Second)
 			Ω(isReadyErr).NotTo(HaveOccurred())
 		})
 	})
@@ -173,8 +173,8 @@ var _ = Describe("Smoke", Ordered, func() {
 	Context("when using api", func() {
 		It("status return expected result", func() {
 			myStatus, httpCode, statusErr := apiClient.GetStatus()
-			Ω(httpCode).To(Equal(http.StatusOK))
 			Ω(statusErr).NotTo(HaveOccurred())
+			Ω(httpCode).To(Equal(http.StatusOK))
 
 			Ω(myStatus.Keepers).To(HaveLen(3))
 			Ω(myStatus.Sentinels).To(HaveLen(1))

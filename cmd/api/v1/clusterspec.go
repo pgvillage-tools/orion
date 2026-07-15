@@ -34,54 +34,12 @@ import (
 // ClusterSpecRoutes adds all Cluster routes to the list of all routes
 func (h *Handlers) ClusterSpecRoutes() []Route {
 	return []Route{
-		{endpoints.ClusterEndPoint.Route(endpoints.MethodPost), h.PostClusterSpecHandler},
+		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPost), h.PostClusterSpecHandler},
 		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodGet), h.GetClusterSpecHandler},
 		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPatch), h.PatchClusterSpecHandler},
 		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPut), h.PutClusterSpecHandler},
 	}
 }
-
-/*
-// GetClusterHandler endpoint
-func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
-	defer cancelFunc()
-
-	if cd, _, err := h.client.GetClusterData(ctx); err != nil {
-		handleError(ctx, err, w, "failed to get cluster data")
-	} else {
-		if cd == nil {
-			w.WriteHeader(http.StatusNotFound)
-		} else {
-			h.writeJSON(ctx, w, cd)
-		}
-	}
-}
-
-// PutClusterHandler endpoint
-func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(cfg.StoreTimeout))
-	defer cancelFunc()
-
-	reader := http.MaxBytesReader(w, r.Body, readMaxBytes)
-	defer func() {
-		if err := reader.Close(); err != nil {
-			logger.Error().AnErr("error", err).Msg("Failed to close Body")
-		}
-	}()
-	var newCD apiv1.Data
-	err := json.NewDecoder(reader).Decode(&newCD)
-	if err != nil {
-		handleError(ctx, err, w, "failed to parse new cluster data definition")
-		return
-	}
-	_, err = h.client.AtomicPutClusterData(ctx, &newCD, nil)
-	if err != nil {
-		handleError(ctx, err, w, "failed to write new cluster data definition")
-	}
-}
-*/
 
 // PostClusterSpecHandler endpoint is used by init
 func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
@@ -98,11 +56,12 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 		logger.Debug().Msg("Cluster is nil")
 	} else if cd.Cluster.Spec != nil {
 		handleError(ctx, err, w, "cluster spec is already set")
+		return
 	}
 
 	var cs *apiv1.Spec
 
-	newCSBytes, err := io.ReadAll(r.Body)
+	newCSBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
 	if err != nil {
 		handleError(ctx, err, w, "failed to get spec definition")
 		return

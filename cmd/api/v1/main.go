@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	readMaxBytes int64 = 1 << 30
+	readMaxBytes int64 = 1 << 20
 )
 
 type config struct {

@@ -81,10 +81,10 @@ func (ep EndPoint) Specific(vars map[string]string) (specific EndPoint, err erro
 		if !strings.Contains(strEP, placeholder) {
 			return EndPoint(""), fmt.Errorf("ep %s has no placeholder %s", ep, placeholder)
 		}
-		strings.ReplaceAll(strEP, placeholder, value)
+		strEP = strings.ReplaceAll(strEP, placeholder, value)
 	}
 	if strings.Contains(strEP, "{") {
-		return EndPoint(""), fmt.Errorf("not all placeholders in %s where replaced", strEP)
+		return EndPoint(""), fmt.Errorf("not all placeholders in %s were replaced", strEP)
 	}
 	return EndPoint(strEP), nil
 }
