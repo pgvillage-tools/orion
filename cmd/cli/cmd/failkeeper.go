@@ -17,10 +17,23 @@ package cmd
 
 import (
 	"context"
+	"time"
 
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type failKeeperOptions struct {
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+var failKeeperOpts failKeeperOptions
 
 // revive:disable
 
@@ -34,48 +47,53 @@ var failKeeperCmd = &cobra.Command{
 //revive:enable
 
 func init() {
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
+	failKeeperCmd.PersistentFlags().BoolVarP(&failKeeperOpts.TLS, "tls", "t", true, "use tls")
+	if err := viper.BindPFlag("tls", failKeeperCmd.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	failKeeperCmd.PersistentFlags().Uint16VarP(&failKeeperOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", failKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	failKeeperCmd.PersistentFlags().StringVarP(&failKeeperOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", failKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	failKeeperCmd.PersistentFlags().DurationVarP(&failKeeperOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, failKeeperCmd.PersistentFlags().Lookup(flagTimeout)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(failKeeperCmd)
 }
 
 func failKeeper(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	defer cancelFunc()
 	if len(args) > 1 {
-		die("too many arguments")
+		logger.Fatal().Msg("too many arguments")
 	}
-
 	if len(args) == 0 {
-		die("keeper uid required")
+		logger.Fatal().Msg("keeper uid required")
 	}
-
 	keeperID := args[0]
 
-	store, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !viper.GetBool(flagTLS) {
+		p = endpoints.HTTP
 	}
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 
-	cd, pair, err := getClusterData(store)
-	if err != nil {
-		die("cannot get cluster data: %v", err)
-	}
-	if cd.Cluster == nil {
-		die("no cluster spec available")
-	}
-	if cd.Cluster.Spec == nil {
-		die("no cluster spec available")
-	}
-
-	newCd := cd.DeepCopy()
-	keeperInfo := newCd.Keepers[keeperID]
-	if keeperInfo == nil {
-		die("keeper doesn't exist")
-	}
-
-	keeperInfo.Status.ForceFail = true
-
-	_, err = store.AtomicPutClusterData(context.TODO(), newCd, pair)
-	if err != nil {
-		die("cannot update cluster data: %v", err)
+	httpCode, putErr := apiClient.PutFailKeeper(keeperID)
+	if putErr != nil {
+		logger.Fatal().
+			AnErr("error", putErr).
+			Int("http_code", httpCode).
+			Msg("failed to fail the keeper")
 	}
 }

@@ -16,16 +16,14 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
 	"os"
 	"strings"
+	"time"
 
-	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/cmd"
-	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 
@@ -33,7 +31,10 @@ import (
 )
 
 const (
-	maxRetries = 3
+	readWrite      = 0755
+	defaultAPIPort = 8443
+	defaultAPIIP   = "127.0.0.1"
+	defaultTimeout = time.Second * 30
 )
 
 // CmdCLI defines a cobra command to execute when running orion
@@ -44,9 +45,11 @@ var CmdCLI = &cobra.Command{
 	PersistentPreRun: func(c *cobra.Command, _ []string) {
 		if c.Name() != "orion" && c.Name() != "version" {
 			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-				die("%s", err.Error())
+				_, logger := logging.GetLogComponent(c.Context(), logging.CmdComponent)
+				logger.Fatal().AnErr("err", err).Msg("")
 			}
 		}
+		initConfig()
 	},
 	// just defined to make --version work
 	Run: func(c *cobra.Command, _ []string) { _ = c.Help() },
@@ -101,42 +104,4 @@ func stdout(format string, a ...any) {
 func die(format string, a ...any) {
 	stderr(format, a...)
 	os.Exit(1)
-}
-
-func getClusterData(e consensus.Store) (*cluster.Data, *consensus.KVPair, error) {
-	cd, pair, err := e.GetClusterData(context.TODO())
-	if err != nil {
-		return nil, nil, fmt.Errorf("cannot get cluster data: %v", err)
-	}
-	if cd == nil {
-		return nil, nil, fmt.Errorf("nil cluster data: %v", err)
-	}
-	if cd.FormatVersion != cluster.CurrentCDFormatVersion {
-		return nil, nil, fmt.Errorf("unsupported cluster data format version %d", cd.FormatVersion)
-	}
-	if err := cd.Cluster.Spec.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("clusterdata validation failed: %v", err)
-	}
-	return cd, pair, nil
-}
-
-func askConfirmation(message string) (bool, error) {
-	in := bufio.NewReader(os.Stdin)
-	for {
-		if _, err := fmt.Fprint(os.Stdout, message); err != nil {
-			log.Fatalf("failed to print to stdout: %v", err)
-		}
-		input, err := in.ReadString('\n')
-		if err != nil {
-			return false, fmt.Errorf("error reading input: %v", err)
-		}
-		switch input {
-		case "yes\n":
-			return true, nil
-		case "no\n":
-			return false, nil
-		default:
-			stdout("Please enter 'yes' or 'no'")
-		}
-	}
 }

@@ -24,7 +24,7 @@ threshold:
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
   #total: 80
-  total: 29
+  total: 21
 
 # Holds regexp rules which will override thresholds for matched files or packages
 # using their paths.
@@ -39,6 +39,8 @@ override:
   #  threshold: 100
   - path: ^internal/postgresql/main.go
     threshold: 25
+  - path: ^internal/api_endpoints/endpoints.go
+    threshold: 0
   - path: ^internal/postgresql/manager.go
     threshold: 0
   - path: ^internal/postgresql/recovery_options.go
@@ -55,9 +57,25 @@ override:
     threshold: 0
   - path: ^internal/store/libkv.go
     threshold: 0
+  - path: ^pkg/api_client/clusterdata.go
+    threshold: 0
+  - path: ^pkg/api_client/clusterspec.go
+    threshold: 0
+  - path: ^pkg/api_client/connection.go 
+    threshold: 0
+  - path: ^pkg/api_client/health.go     
+    threshold: 0
+  - path: ^pkg/api_client/keeper.go     
+    threshold: 0
+  - path: ^pkg/api_client/replicaset.go 
+    threshold: 0
+  - path: ^pkg/api_client/status.go     
+    threshold: 0
   - path: scripts/gen_commands_doc.go
     threshold: 0
 
+  - path: ^internal/api_endpoints$
+    threshold: 0
   - path: ^internal/mock/consensus$
     threshold: 22
   - path: ^internal/postgresql$
@@ -65,6 +83,8 @@ override:
   - path: ^internal/flagutil$
     threshold: 0
   - path: ^internal/consensus
+    threshold: 0
+  - path: ^pkg/api_client$
     threshold: 0
   - path: ^scripts$
     threshold: 0

@@ -37,7 +37,6 @@ orion [flags]
 * [orion failkeeper](orioncli_failkeeper.md)	 - Force keeper as "temporarily" failed. The sentinel will compute a new clusterdata considering it as failed and then restore its state to the real one.
 * [orion init](orioncli_init.md)	 - Initialize a new cluster
 * [orion promote](orioncli_promote.md)	 - Promotes a standby cluster to a primary cluster
-* [orion register](orioncli_register.md)	 - Register orion keepers for service discovery
 * [orion removekeeper](orioncli_removekeeper.md)	 - Removes keeper from cluster data
 * [orion spec](orioncli_spec.md)	 - Retrieve the current cluster specification
 * [orion status](orioncli_status.md)	 - Display the current cluster status

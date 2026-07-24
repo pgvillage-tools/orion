@@ -23,24 +23,16 @@ import (
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/consensus"
-)
-
-const (
-	// StatusEndPoint configures how to handle status requests
-	StatusEndPoint EndPoint = "status"
-	// ProxyStatusEndPoint configures how to handle proxy status requests
-	ProxyStatusEndPoint EndPoint = "proxy/status"
-	// SentinelStatusEndPoint configures how to handle sentinel status requests
-	SentinelStatusEndPoint EndPoint = "sentinel/status"
 )
 
 // StatusRoutes collects and returns all Status routes
 func (h *Handlers) StatusRoutes() []Route {
 	return []Route{
-		{StatusEndPoint.Route(MethodGet), h.StatusHandler},
-		{ProxyStatusEndPoint.Route(MethodGet), h.ProxyStatusHandler},
-		{SentinelStatusEndPoint.Route(MethodGet), h.SentinelStatusHandler},
+		{endpoints.StatusEndPoint.Route(endpoints.MethodGet), h.StatusHandler},
+		{endpoints.ProxyStatusEndPoint.Route(endpoints.MethodGet), h.ProxyStatusHandler},
+		{endpoints.SentinelStatusEndPoint.Route(endpoints.MethodGet), h.SentinelStatusHandler},
 	}
 }
 
@@ -151,6 +143,9 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 		err error
 	)
 	cd, _, err = h.client.GetClusterData(ctx)
+	if err != nil {
+		return apiv1.InfoCluster{}, err
+	}
 	k, err = h.keepersInfo(ctx, cd)
 	if err != nil {
 		return apiv1.InfoCluster{}, err

@@ -9,7 +9,19 @@
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// See the License for the specific lang
 
-package v1
+package api_client
+
+import (
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+)
+
+// Healthy checks the API to be in healthy state (includes and etcd roundtrip)
+func (c Connection) Healthy() (httpCode int, err error) {
+	httpCode, err = c.Get(endpoints.HealthEndPoint, nil)
+	if err != nil {
+		return httpCode, err
+	}
+	return httpClientNoError, nil
+}

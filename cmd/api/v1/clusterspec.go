@@ -24,27 +24,89 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
-const (
-	// UpdateEndPoint is the endpoint for handling Update requests
-	UpdateEndPoint EndPoint = "cluster/spec"
-)
-
-// UpdateRoutes collects and returns all Update routes
-func (h *Handlers) UpdateRoutes() []Route {
+// ClusterSpecRoutes adds all Cluster routes to the list of all routes
+func (h *Handlers) ClusterSpecRoutes() []Route {
 	return []Route{
-		{UpdateEndPoint.Route(MethodGet), h.clusterSpecGetHandler},
-		{UpdateEndPoint.Route(MethodPatch), h.clusterSpecPatchHandler},
-		{UpdateEndPoint.Route(MethodPut), h.clusterSpecPutHandler},
+		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPost), h.PostClusterSpecHandler},
+		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodGet), h.GetClusterSpecHandler},
+		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPatch), h.PatchClusterSpecHandler},
+		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPut), h.PutClusterSpecHandler},
 	}
 }
 
-// clusterSpecGetHandler endpoint
-func (h *Handlers) clusterSpecGetHandler(w http.ResponseWriter, r *http.Request) {
+// PostClusterSpecHandler endpoint is used by init
+func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	defer cancelFunc()
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+
+	cd, _, err := h.client.GetClusterData(ctx)
+	if err != nil {
+		handleError(ctx, err, w, "failed to get cluster data")
+	} else if cd == nil {
+		logger.Debug().Msg("Clusterdata is nil")
+	} else if cd.Cluster == nil {
+		logger.Debug().Msg("Cluster is nil")
+	} else if cd.Cluster.Spec != nil {
+		handleError(ctx, err, w, "cluster spec is already set")
+		return
+	}
+
+	var cs *apiv1.Spec
+
+	newCSBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
+	if err != nil {
+		handleError(ctx, err, w, "failed to get spec definition")
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			handleError(ctx, err, w, "Failed to close Body")
+		}
+	}()
+	if len(newCSBytes) == 0 {
+		cs = &apiv1.Spec{}
+		newCluster := apiv1.New
+		cs.InitMode = &newCluster
+	} else {
+		err = json.Unmarshal(newCSBytes, &cs)
+		if err != nil {
+			handleError(ctx, err, w, "failed to parse spec definition")
+			return
+		}
+	}
+
+	if err := cs.Validate(); err != nil {
+		handleError(ctx, err, w, "invalid spec")
+		return
+	}
+
+	if cd == nil {
+		c := apiv1.NewCluster(common.UID(), cs)
+		cd = apiv1.NewClusterData(c)
+	} else if cd.Cluster == nil {
+		cd.Cluster = apiv1.NewCluster(common.UID(), cs)
+	} else {
+		cd.Cluster.Spec = cs
+	}
+
+	// We ignore if cd has been modified between reading and writing
+	if err := h.client.PutClusterData(ctx, cd); err != nil {
+		handleError(ctx, err, w, "cannot update spec")
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// GetClusterSpecHandler endpoint
+func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
@@ -68,8 +130,8 @@ func (h *Handlers) clusterSpecGetHandler(w http.ResponseWriter, r *http.Request)
 	h.writeJSON(ctx, w, cd.Cluster.Spec)
 }
 
-// clusterSpecPatchHandler endpoint
-func (h *Handlers) clusterSpecPatchHandler(w http.ResponseWriter, r *http.Request) {
+// PatchClusterSpecHandler endpoint
+func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
@@ -93,8 +155,8 @@ func (h *Handlers) clusterSpecPatchHandler(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// clusterSpecPutHandler endpoint
-func (h *Handlers) clusterSpecPutHandler(w http.ResponseWriter, r *http.Request) {
+// PutClusterSpecHandler endpoint
+func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()

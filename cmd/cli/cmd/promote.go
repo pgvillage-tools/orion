@@ -17,14 +17,23 @@ package cmd
 
 import (
 	"context"
-	"os"
+	"time"
 
-	cluster "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	"github.com/pgvillage-tools/orion/internal/consensus"
-
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+type promoteOptions struct {
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+var promoteOpts promoteOptions
 
 var cmdPromote = &cobra.Command{
 	Use:   "promote",
@@ -33,72 +42,50 @@ var cmdPromote = &cobra.Command{
 }
 
 func init() {
-	cmdPromote.PersistentFlags().BoolVarP(&initOpts.forceYes, "yes", "y", false, "don't ask for confirmation")
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
+	cmdPromote.PersistentFlags().BoolVarP(&promoteOpts.TLS, "tls", "t", true, "use tls")
+	if err := viper.BindPFlag("tls", cmdPromote.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdPromote.PersistentFlags().Uint16VarP(&promoteOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdPromote.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdPromote.PersistentFlags().StringVarP(&promoteOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdPromote.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdPromote.PersistentFlags().DurationVarP(&promoteOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdPromote.PersistentFlags().Lookup(flagTimeout)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 
 	CmdCLI.AddCommand(cmdPromote)
 }
 
 func promote(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	defer cancelFunc()
 	if len(args) > 0 {
-		die("too many arguments")
+		logger.Fatal().Msg("too many arguments")
 	}
 
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !viper.GetBool(flagTLS) {
+		p = endpoints.HTTP
 	}
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
 
-	accepted := true
-	if !initOpts.forceYes {
-		accepted, err = askConfirmation("Are you sure you want to continue? [yes/no] ")
-		if err != nil {
-			die("%v", err)
-		}
-	}
-	if !accepted {
-		stdout("exiting")
-		os.Exit(0)
-	}
-
-	retry := 0
-	for retry < maxRetries {
-		cd, pair, err := getClusterData(e)
-		if err != nil {
-			die("%v", err)
-		}
-		if cd.Cluster == nil {
-			die("no cluster spec available")
-		}
-		if cd.Cluster.Spec == nil {
-			die("no cluster spec available")
-		}
-
-		ds := cd.Cluster.DefSpec()
-		if *ds.Role == cluster.Primary {
-			stderr("cluster spec role already set to master")
-			os.Exit(0)
-		}
-		primaryRole := cluster.Primary
-		cd.Cluster.Spec.Role = &primaryRole
-
-		if err = cd.Cluster.UpdateSpec(cd.Cluster.Spec); err != nil {
-			die("Cannot update cluster spec: %v", err)
-		}
-
-		// retry if cd has been modified between reading and writing
-		_, err = e.AtomicPutClusterData(context.TODO(), cd, pair)
-		if err != nil {
-			if err == consensus.ErrKeyModified {
-				retry++
-				continue
-			}
-			die("cannot update cluster data: %v", err)
-		}
-		break
-	}
-	if retry == maxRetries {
-		die("failed to update cluster data after %d retries", maxRetries)
+	httpCode, putErr := apiClient.PutPromoteReplicaSet()
+	if putErr != nil {
+		logger.Fatal().
+			AnErr("error", putErr).
+			Int("http_code", httpCode).
+			Msg("promote failed")
 	}
 }

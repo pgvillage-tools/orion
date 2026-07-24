@@ -17,3 +17,5 @@ bin/
 
 .idea
 cover.out
+
+.vscode

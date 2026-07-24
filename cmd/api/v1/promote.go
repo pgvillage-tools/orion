@@ -13,3 +13,52 @@
 // limitations under the License.
 
 package v1
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"time"
+
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/util"
+)
+
+// PromoteReplicaSetRoutes returns the routes to be added for the PromoteReplicaSet code
+func (h *Handlers) PromoteReplicaSetRoutes() []Route {
+	return []Route{
+		{endpoints.PromoteReplicaSetEndPoint.Route(endpoints.MethodPut), h.PutPromoteReplicaSetHandler},
+	}
+}
+
+// PutPromoteReplicaSetHandler endpoint
+func (h *Handlers) PutPromoteReplicaSetHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	defer cancelFunc()
+
+	cd, pair, err := h.client.GetClusterData(ctx)
+	if err != nil {
+		handleError(ctx, err, w, "failed to get cluster data")
+		return
+	} else if cd.Cluster == nil {
+		handleError(ctx, errors.New("cluster is nil"), w, "cluster is not set")
+		return
+	} else if cd.Cluster.Spec == nil {
+		handleError(ctx, errors.New("cluster spec is nil"), w, "cluster spec is not set")
+		return
+	}
+	newCd := cd.DeepCopy()
+
+	if newCd.Cluster.Spec.Role != nil && *newCd.Cluster.Spec.Role == apiv1.Primary {
+		return
+	}
+
+	newCd.Cluster.Spec.Role = util.ToPtr(apiv1.Primary)
+	_, err = h.client.AtomicPutClusterData(ctx, newCd, pair)
+	if err != nil {
+		handleError(ctx, err, w, "failed to promote this replicaset")
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}

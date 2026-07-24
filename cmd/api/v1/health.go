@@ -19,20 +19,15 @@ import (
 	"errors"
 	"net/http"
 	"time"
-)
 
-const (
-	// HealthEndPoint defines the endpoint to check on health (including consensus)
-	HealthEndPoint EndPoint = "healthz"
-	// ReadyEndPoint defines the endpoint to check on ready (only that we are serving)
-	ReadyEndPoint EndPoint = "readyz"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 )
 
 // HealthRoutes collect and return all health routes
 func (h *Handlers) HealthRoutes() []Route {
 	return []Route{
-		{HealthEndPoint.Route(MethodGet), h.HealthzHandler},
-		{ReadyEndPoint.Route(MethodGet), h.ReadyzHandler},
+		{endpoints.HealthEndPoint.Route(endpoints.MethodGet), h.HealthzHandler},
+		{endpoints.ReadyEndPoint.Route(endpoints.MethodGet), h.ReadyzHandler},
 	}
 }
 

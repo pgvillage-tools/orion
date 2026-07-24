@@ -11,12 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
 // See the License for the specific lang
 
-package v1
+package api_endpoints
 
 import (
 	"fmt"
 	"net/http"
 	"strings"
+)
+
+const (
+	// KeeperEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
+	KeeperEndPoint EndPoint = "cluster/keepers/{id}"
+	// ClusterEndPoint is the endpoint config for Cluster
+	ClusterEndPoint EndPoint = "cluster"
+	// ClusterSpecEndPoint is the endpoint config for Cluster spec
+	ClusterSpecEndPoint EndPoint = "cluster/spec"
+	// FailKeeperEndPoint is the config for the failkeeper endpoint
+	FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/fail"
+	// HealthEndPoint defines the endpoint to check on health (including consensus)
+	HealthEndPoint EndPoint = "healthz"
+	// ReadyEndPoint defines the endpoint to check on ready (only that we are serving)
+	ReadyEndPoint EndPoint = "readyz"
+	// PromoteReplicaSetEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
+	PromoteReplicaSetEndPoint EndPoint = "cluster/promote"
+	// StatusEndPoint configures how to handle status requests
+	StatusEndPoint EndPoint = "cluster/status"
+	// ProxyStatusEndPoint configures how to handle proxy status requests
+	ProxyStatusEndPoint EndPoint = "cluster/proxies/status"
+	// SentinelStatusEndPoint configures how to handle sentinel status requests
+	SentinelStatusEndPoint EndPoint = "cluster/sentinels/status"
 )
 
 // Protocol defines a protocol (basically either http or https in our case)
@@ -49,6 +72,22 @@ const (
 
 // EndPoint defines api endpoint configurations
 type EndPoint string
+
+// Specific returns a specific endpoint created from a generic endpoint and filled in vars
+func (ep EndPoint) Specific(vars map[string]string) (specific EndPoint, err error) {
+	strEP := string(ep)
+	for key, value := range vars {
+		placeholder := fmt.Sprintf("{%s}", key)
+		if !strings.Contains(strEP, placeholder) {
+			return EndPoint(""), fmt.Errorf("ep %s has no placeholder %s", ep, placeholder)
+		}
+		strEP = strings.ReplaceAll(strEP, placeholder, value)
+	}
+	if strings.Contains(strEP, "{") {
+		return EndPoint(""), fmt.Errorf("not all placeholders in %s were replaced", strEP)
+	}
+	return EndPoint(strEP), nil
+}
 
 func (ep EndPoint) clean() string {
 	return APIVersion + "/" + strings.Trim(string(ep), "/")

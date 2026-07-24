@@ -21,12 +21,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	"github.com/pgvillage-tools/orion/internal/consensus"
+	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
@@ -37,18 +40,42 @@ var cmdUpdate = &cobra.Command{
 }
 
 type updateOptions struct {
-	patch bool
-	file  string
+	patch   bool
+	file    string
+	Host    string        `mapstructure:"host"`
+	Port    uint16        `mapstructure:"port"`
+	TLS     bool          `mapstructure:"tls"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 var updateOpts updateOptions
 
 func init() {
-	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, "patch", "p", false,
+	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
+	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, flagPatch, "P", false,
 		"patch the current cluster specification instead of replacing it")
-	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, "file", "f", "",
+	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, flagFile, "f", "",
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
+	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.TLS, "tls", "t", true, "use tls")
+	if err := viper.BindPFlag("tls", cmdUpdate.PersistentFlags().Lookup("tls")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdUpdate.PersistentFlags().Uint16VarP(&updateOpts.Port, "port", "p", defaultAPIPort,
+		"protocol for connecting to the api")
+	if err := viper.BindPFlag("port", cmdUpdate.PersistentFlags().Lookup("port")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.Host, "host", "H", defaultAPIIP,
+		"hostname or ip for connecting to the api")
+	if err := viper.BindPFlag("host", cmdUpdate.PersistentFlags().Lookup("host")); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
+	cmdUpdate.PersistentFlags().DurationVarP(&updateOpts.Timeout, flagTimeout, "T", defaultTimeout,
+		"connection timeout for api endpoint")
+	if err := viper.BindPFlag(flagTimeout, cmdUpdate.PersistentFlags().Lookup(flagTimeout)); err != nil {
+		logger.Fatal().AnErr("error", err).Msg("")
+	}
 	CmdCLI.AddCommand(cmdUpdate)
 }
 
@@ -72,6 +99,7 @@ func patchClusterSpec(cs *cluster.Spec, p []byte) (*cluster.Spec, error) {
 func update(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
+	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	if len(args) > 1 {
 		die("too many arguments")
 	}
@@ -82,69 +110,49 @@ func update(_ *cobra.Command, args []string) {
 		die("only one of cluster spec provided as argument or file must provided (--file/-f option)")
 	}
 
-	var data []byte
+	var patch []byte
 	if len(args) == 1 {
-		data = []byte(args[0])
+		patch = []byte(args[0])
 	} else {
 		var err error
 		if updateOpts.file == "-" {
-			data, err = io.ReadAll(os.Stdin)
+			patch, err = io.ReadAll(os.Stdin)
 			if err != nil {
 				die("cannot read from stdin: %v", err)
 			}
 		} else {
-			data, err = os.ReadFile(updateOpts.file)
+			patch, err = os.ReadFile(updateOpts.file)
 			if err != nil {
 				die("cannot read file: %v", err)
 			}
 		}
 	}
 
-	e, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
-	if err != nil {
-		die("%v", err)
+	p := endpoints.HTTPS
+	if !viper.GetBool(flagTLS) {
+		p = endpoints.HTTP
 	}
-
-	retry := 0
-	for retry < maxRetries {
-		cd, pair, err := getClusterData(e)
-		if err != nil {
-			die("%v", err)
+	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
+		viper.GetDuration(flagTimeout))
+	var httpCode int
+	var updateErr error
+	if updateOpts.patch {
+		httpCode, updateErr = apiClient.PatchClusterSpec(patch)
+	} else {
+		cd := &cluster.Spec{}
+		if encodingErr := json.Unmarshal(patch, cd); encodingErr != nil {
+			logger.Fatal().
+				AnErr("error", encodingErr).
+				Str("source", updateOpts.file).
+				Str("spec", string(patch)).
+				Msg("invalid cluster data spec")
 		}
-		if cd.Cluster == nil {
-			die("no cluster spec available")
-		}
-		if cd.Cluster.Spec == nil {
-			die("no cluster spec available")
-		}
-
-		var newcs *cluster.Spec
-		if updateOpts.patch {
-			newcs, err = patchClusterSpec(cd.Cluster.Spec, data)
-			if err != nil {
-				die("failed to patch cluster spec: %v", err)
-			}
-		} else {
-			if err = json.Unmarshal(data, &newcs); err != nil {
-				die("failed to unmarshal cluster spec: %v", err)
-			}
-		}
-		if err = cd.Cluster.UpdateSpec(newcs); err != nil {
-			die("Cannot update cluster spec: %v", err)
-		}
-
-		// retry if cd has been modified between reading and writing
-		_, err = e.AtomicPutClusterData(context.TODO(), cd, pair)
-		if err != nil {
-			if err == consensus.ErrKeyModified {
-				retry++
-				continue
-			}
-			die("cannot update cluster data: %v", err)
-		}
-		break
+		httpCode, updateErr = apiClient.PutClusterSpec(cd)
 	}
-	if retry == maxRetries {
-		die("failed to update cluster data after %d retries", maxRetries)
+	if updateErr != nil {
+		logger.Fatal().
+			AnErr("error", updateErr).
+			Int("http return code", httpCode).
+			Msg("failed to get clusterdata")
 	}
 }

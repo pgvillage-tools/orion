@@ -1,5 +1,5 @@
 // Copyright 2026 PgVillage
-// Copyright 2017 Sorint.lab
+// Copyright 2016 Sorint.lab
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,58 +26,51 @@ import (
 	"github.com/spf13/viper"
 )
 
-type deleteKeeperOptions struct {
+var cmdConnect = &cobra.Command{
+	Use:   "connect",
+	Run:   connectCluster,
+	Short: "connect to an API",
+}
+
+// InitOptions is a struct which can contain initiation options
+type connectOptions struct {
+	file    string
 	Host    string        `mapstructure:"host"`
 	Port    uint16        `mapstructure:"port"`
 	TLS     bool          `mapstructure:"tls"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
-var deleteKeeperOpts deleteKeeperOptions
-
-var removeKeeperCmd = &cobra.Command{
-	Use:   "removekeeper [keeper uid]",
-	Short: "Removes keeper from cluster data",
-	Run:   removeKeeper,
-}
+var connOpts connectOptions
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	removeKeeperCmd.PersistentFlags().BoolVarP(&deleteKeeperOpts.TLS, "tls", "t", true, "use tls")
-	if err := viper.BindPFlag("tls", removeKeeperCmd.PersistentFlags().Lookup("tls")); err != nil {
+	cmdConnect.PersistentFlags().BoolVarP(&connOpts.TLS, "tls", "t", true, "use tls")
+	if err := viper.BindPFlag("tls", cmdConnect.PersistentFlags().Lookup("tls")); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
-	removeKeeperCmd.PersistentFlags().Uint16VarP(&deleteKeeperOpts.Port, "port", "p", defaultAPIPort,
+	cmdConnect.PersistentFlags().Uint16VarP(&connOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", removeKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
+	if err := viper.BindPFlag("port", cmdConnect.PersistentFlags().Lookup("port")); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
-	removeKeeperCmd.PersistentFlags().StringVarP(&deleteKeeperOpts.Host, "host", "H", defaultAPIIP,
+	cmdConnect.PersistentFlags().StringVarP(&connOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
+	if err := viper.BindPFlag("host", cmdConnect.PersistentFlags().Lookup("host")); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
-	removeKeeperCmd.PersistentFlags().DurationVarP(&deleteKeeperOpts.Timeout, flagTimeout, "T", defaultTimeout,
+	cmdConnect.PersistentFlags().DurationVarP(&connOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, removeKeeperCmd.PersistentFlags().Lookup(flagTimeout)); err != nil {
+	if err := viper.BindPFlag(flagTimeout, cmdConnect.PersistentFlags().Lookup(flagTimeout)); err != nil {
 		logger.Fatal().AnErr("error", err).Msg("")
 	}
-	CmdCLI.AddCommand(removeKeeperCmd)
+	CmdCLI.AddCommand(cmdConnect)
 }
 
-func removeKeeper(_ *cobra.Command, args []string) {
+func connectCluster(_ *cobra.Command, args []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	defer cancelFunc()
-	if len(args) > 1 {
-		die("too many arguments")
-	}
-
-	if len(args) == 0 {
-		die("keeper uid required")
-	}
-
-	keeperID := args[0]
 
 	p := endpoints.HTTPS
 	if !viper.GetBool(flagTLS) {
@@ -86,11 +79,16 @@ func removeKeeper(_ *cobra.Command, args []string) {
 	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
 		viper.GetDuration(flagTimeout))
 
-	httpCode, deleteErr := apiClient.PutFailKeeper(keeperID)
-	if deleteErr != nil {
+	if httpCode, healthErr := apiClient.Healthy(); healthErr != nil {
 		logger.Fatal().
-			AnErr("error", deleteErr).
+			AnErr("error", healthErr).
 			Int("http_code", httpCode).
-			Msg("failed to fail the keeper")
+			Str("url", apiClient.EndpointURL(endpoints.HealthEndPoint)).
+			Msg("connecting to the api failed")
+	}
+	if writeErr := viper.WriteConfig(); writeErr != nil {
+		logger.Fatal().
+			AnErr("error", writeErr).
+			Msg("updating cli config failed")
 	}
 }
