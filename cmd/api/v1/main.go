@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 
@@ -36,10 +37,14 @@ const (
 type config struct {
 	cmdcommon.CommonConfig
 
-	baseURL string
-	port    uint
-	token   string
-	debug   bool
+	baseURL     string
+	port        uint
+	token       string
+	debug       bool
+	tls         bool
+	tlsCertFile string
+	tlsKeyFile  string
+	tlsCAFile   string
 }
 
 var cfg config
@@ -55,6 +60,14 @@ func init() {
 		"port for webserver")
 	CmdWebApi.PersistentFlags().BoolVar(&cfg.debug, "debug", false,
 		"enable debug logging")
+	CmdWebApi.PersistentFlags().BoolVar(&cfg.tls, "tls", false,
+		"enable tls for the webserver")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCertFile, "tls-cert-file", "~/.orion/server.crt",
+		"certificate file for TLS")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsKeyFile, "tls-key-file", "~/.orion/server.key",
+		"private key file for TLS")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCAFile, "tls-ca-file", "~/.orion/root.crt",
+		"CA file for TLS client authentication")
 	// revive:enable
 }
 
@@ -108,9 +121,24 @@ func api(c *cobra.Command, _ []string) {
 		Addr:    addr,
 		Handler: mux,
 	}
+
+	useTLS := cfg.tls || (cfg.tlsCertFile != "" && cfg.tlsKeyFile != "")
+	if useTLS {
+		tlsConfig, err := common.NewTLSConfig(cfg.tlsCertFile, cfg.tlsKeyFile, cfg.tlsCAFile, false)
+		if err != nil {
+			logger.Fatal().AnErr("error", err).Msg("failed to create TLS config")
+		}
+		srv.TLSConfig = tlsConfig
+	}
+
 	ready.Store(true)
-	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Msg("server ready")
-	err = srv.Serve(ln)
+	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Bool("tls", useTLS).Msg("server ready")
+
+	if useTLS {
+		err = srv.ServeTLS(ln, "", "")
+	} else {
+		err = srv.Serve(ln)
+	}
 	if err != nil {
 		logger.Fatal().AnErr("error", err).Msg("server failing")
 	}
