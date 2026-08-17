@@ -356,8 +356,8 @@ github.com/subosito/gotenv v1.6.0 h1:9NlTDc1FTs4qu0DDq7AEtTPNw6SVm7uBMsUCUjABIf8
 github.com/subosito/gotenv v1.6.0/go.mod h1:Dk4QP5c2W3ibzajGcXpNraDfq2IrhjMIvMSWPKKo0FU=
 github.com/testcontainers/testcontainers-go v0.44.0 h1:/Fwh6HY1mIikhnm9e7HwoxGycx0lzRAE0f5VQpjFxzI=
 github.com/testcontainers/testcontainers-go v0.44.0/go.mod h1:IcnwQrYTO86xHXu5bvMaBH7ATlbS3Qn1M1QWW3c66rE=
-github.com/testcontainers/testcontainers-go/modules/etcd v0.43.0 h1:nTrmoY5WZkio3/EEhOE6bHRkR+W7PBmoaaB/C8k66iA=
-github.com/testcontainers/testcontainers-go/modules/etcd v0.43.0/go.mod h1:avfg/77osD4sT3nhQdecBfkC3BK9SgxvTMr/uuqruG0=
+github.com/testcontainers/testcontainers-go/modules/etcd v0.44.0 h1:5EJnJCUdSKTSKmTji/Wgu9g1Fj8lwIbz8kdwgBcKHHY=
+github.com/testcontainers/testcontainers-go/modules/etcd v0.44.0/go.mod h1:VDtHLTbW7dMf2/W57Ws/91fuiJpjyI1xiwd3IKs8jlo=
 github.com/tidwall/gjson v1.18.0 h1:FIDeeyB800efLX89e5a8Y0BNH+LOngJyGrIWxG2FKQY=
 github.com/tidwall/gjson v1.18.0/go.mod h1:/wbyibRr2FHMks5tjHJ5F8dMZh3AcwJEMf5vlfC0lxk=
 github.com/tidwall/match v1.1.1 h1:+Ho715JplO36QYgwN9PGYNhgZvoUSc9X2c80KVTi+GA=
