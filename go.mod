@@ -17,7 +17,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/onsi/ginkgo/v2 v2.32.1
-	github.com/onsi/gomega v1.42.1
+	github.com/onsi/gomega v1.43.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/rs/zerolog v1.35.1
 	github.com/sgotti/gexpect v0.0.0-20210315095146-1ec64e69809b
