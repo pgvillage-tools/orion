@@ -24,10 +24,10 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 

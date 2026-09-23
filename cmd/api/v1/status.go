@@ -23,8 +23,8 @@ import (
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/consensus"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // StatusRoutes collects and returns all Status routes
