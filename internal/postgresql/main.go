@@ -1039,3 +1039,23 @@ func isDirEmpty(dirPath string) (bool, error) {
 	}
 	return false, err
 }
+
+// validateWalDir returns an error when walDir is symlinkPath (PGDATA/pg_wal) or lives below it,
+// since moving WAL there would move pg_wal into itself and then remove it.
+func validateWalDir(symlinkPath string, walDir string) error {
+	if walDir == "" {
+		return nil
+	}
+	absSymlink, err := filepath.Abs(symlinkPath)
+	if err != nil {
+		return err
+	}
+	absWal, err := filepath.Abs(walDir)
+	if err != nil {
+		return err
+	}
+	if absWal == absSymlink || isSubPath(absSymlink, absWal) {
+		return fmt.Errorf("wal dir %s must not be (inside) %s", walDir, symlinkPath)
+	}
+	return nil
+}

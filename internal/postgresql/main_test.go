@@ -113,3 +113,24 @@ var _ = Describe("moveDirRecursive", func() {
 		})
 	})
 })
+
+var _ = Describe("validateWalDir", func() {
+	const pgWal = "/data/pg_wal"
+	DescribeTable("validating wal dir against PGDATA/pg_wal",
+		func(walDir string, valid bool) {
+			err := validateWalDir(pgWal, walDir)
+			if valid {
+				Ω(err).NotTo(HaveOccurred())
+			} else {
+				Ω(err).To(HaveOccurred())
+			}
+		},
+		Entry("empty", "", true),
+		Entry("outside PGDATA", "/wal", true),
+		Entry("sibling with common prefix", "/data/pg_wal_new", true),
+		Entry("pg_wal itself", "/data/pg_wal", false),
+		Entry("pg_wal with trailing slash", "/data/pg_wal/", false),
+		Entry("inside pg_wal", "/data/pg_wal/sub", false),
+		Entry("deep inside pg_wal", "/data/pg_wal/sub1/../sub2/x", false),
+	)
+})

@@ -256,6 +256,10 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 	var desiredPath string
 	var tmpPath string
 	symlinkPath := filepath.Join(p.dataDir, "pg_wal")
+	if err = validateWalDir(symlinkPath, p.walDir); err != nil {
+		logger.Error().AnErr("err", err).Msg("invalid wal dir")
+		return err
+	}
 	if curPath, err = filepath.EvalSymlinks(symlinkPath); err != nil {
 		logger.Error().Str("path", symlinkPath).AnErr("err", err).Msg("could not evaluate symlink")
 		return err
