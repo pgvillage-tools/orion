@@ -943,6 +943,9 @@ func moveDir(ctx context.Context, src string, dst string) (err error) {
 		logger.Info().Str("src", src).Str("dest", dst).Msg("same location")
 		return nil
 	}
+	// When dst lives inside src, creating it up front would make WalkDir visit (and remap) its
+	// freshly created ancestors. So in that case dst (and its parents) are created lazily.
+	dstInSrc := isSubPath(src, dst)
 	var cleanupDirs []string
 	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -957,25 +960,34 @@ func moveDir(ctx context.Context, src string, dst string) (err error) {
 		}
 		targetPath := filepath.Join(dst, relPath)
 
-		if d.IsDir() {
-			info, err := d.Info()
-			if err != nil {
+		if !d.IsDir() {
+			if err = os.MkdirAll(filepath.Dir(targetPath), stat.Mode()&os.ModePerm); err != nil {
 				return err
 			}
-			if src != path {
-				cleanupDirs = append(cleanupDirs, path)
-			} else {
-				rel, err := filepath.Rel(src, dst)
-				// if Rel can work out the relative path of dst, and it is not inside src,
-				// it will be .., or start with ../. In that case, we cn clean out src too.
-				if err == nil && rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-					cleanupDirs = append(cleanupDirs, path)
-				}
-			}
-			return os.MkdirAll(targetPath, info.Mode())
+			return moveFile(path, targetPath)
 		}
-		return moveFile(path, targetPath)
+		if path == src {
+			if dstInSrc {
+				return nil
+			}
+			// dst is outside of src, so src can be cleaned out too.
+			cleanupDirs = append(cleanupDirs, path)
+		} else if isSubPath(path, dst) {
+			// Pre-existing ancestor of dst: move its contents, but keep the dir itself.
+			return nil
+		} else {
+			cleanupDirs = append(cleanupDirs, path)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(targetPath, info.Mode()&os.ModePerm)
 	})
+	if err == nil {
+		// Make sure dst exists, even if src was empty
+		err = os.MkdirAll(dst, stat.Mode()&os.ModePerm)
+	}
 
 	if err != nil {
 		logger.Info().Str("src", src).Str("dest", dst).AnErr("error", err).Msg("error while copying")
@@ -983,6 +995,15 @@ func moveDir(ctx context.Context, src string, dst string) (err error) {
 	}
 	slices.Reverse(cleanupDirs)
 	return removeDirs(cleanupDirs)
+}
+
+// isSubPath returns true if child is located (at any depth) below parent
+func isSubPath(parent string, child string) bool {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil || rel == "." || rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func removeDirs(cleanupDirs []string) error {

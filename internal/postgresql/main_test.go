@@ -37,15 +37,20 @@ var _ = Describe("moveDirRecursive", func() {
 				wal1      = walDir + "1"
 				wal2      = walDir + "2"
 				walSubDir = walDir + "/subdir"
+				walDeep   = walDir + "/sub1/sub2"
 			)
 			for _, test := range []struct {
 				src      string
 				dst      string
 				cleanSrc bool
+				// preExisting is a dir (relative to src) holding a file, which is also an ancestor of dst
+				preExisting string
 			}{
 				{src: wal1, dst: wal2, cleanSrc: true},
 				{src: walDir, dst: walSubDir},
 				{src: walSubDir, dst: walDir, cleanSrc: true},
+				{src: walDir, dst: walDeep},
+				{src: walDir, dst: walDeep + "/sub3", preExisting: "sub1"},
 			} {
 				var expected = map[string][]byte{}
 				var unExpected []string
@@ -74,6 +79,16 @@ var _ = Describe("moveDirRecursive", func() {
 						err = os.WriteFile(filepath.Join(srcDir, filePath), data, uRW)
 						Ω(err).NotTo(HaveOccurred())
 					}
+				}
+				if test.preExisting != "" {
+					filePath := filepath.Join(test.preExisting, randomString())
+					data := randomBytes()
+					err = os.MkdirAll(filepath.Join(srcDir, test.preExisting), uRWX)
+					Ω(err).NotTo(HaveOccurred())
+					err = os.WriteFile(filepath.Join(srcDir, filePath), data, uRW)
+					Ω(err).NotTo(HaveOccurred())
+					expected[filepath.Join(dstDir, filePath)] = data
+					unExpected = append(unExpected, filepath.Join(srcDir, filePath))
 				}
 				err = moveDir(context.Background(), srcDir, dstDir)
 				Ω(err).NotTo(HaveOccurred())
