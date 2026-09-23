@@ -14,7 +14,7 @@
 package api_client
 
 import (
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // Healthy checks the API to be in healthy state (includes and etcd roundtrip)

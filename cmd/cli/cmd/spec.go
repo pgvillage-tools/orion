@@ -21,7 +21,7 @@ import (
 	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
 

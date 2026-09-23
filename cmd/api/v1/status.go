@@ -23,7 +23,7 @@ import (
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 )
 

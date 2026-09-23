@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"time"
 
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // HealthRoutes collect and return all health routes

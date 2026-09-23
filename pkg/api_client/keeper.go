@@ -14,7 +14,7 @@
 package api_client
 
 import (
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // PutFailKeeper uses the API to trigger a Failover for a Keeper
