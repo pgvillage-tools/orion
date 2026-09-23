@@ -115,22 +115,60 @@ var _ = Describe("moveDirRecursive", func() {
 })
 
 var _ = Describe("validateWalDir", func() {
-	const pgWal = "/data/pg_wal"
-	DescribeTable("validating wal dir against PGDATA/pg_wal",
-		func(walDir string, valid bool) {
-			err := validateWalDir(pgWal, walDir)
+	var (
+		base    string
+		dataDir string
+		walDir  string
+	)
+	BeforeEach(func() {
+		// On macOS TempDir itself sits below a symlink (/var -> /private/var)
+		base = GinkgoT().TempDir()
+		dataDir = filepath.Join(base, "data")
+		walDir = filepath.Join(base, "wal")
+		Ω(os.MkdirAll(dataDir, 0o700)).To(Succeed())
+		Ω(os.MkdirAll(walDir, 0o700)).To(Succeed())
+		// dataLink -> data and walLink -> data/pg_wal
+		Ω(os.Symlink(dataDir, filepath.Join(base, "dataLink"))).To(Succeed())
+	})
+	DescribeTable("with pg_wal as a directory",
+		func(rel string, viaDataLink bool, valid bool) {
+			Ω(os.MkdirAll(filepath.Join(dataDir, "pg_wal", "sub"), 0o700)).To(Succeed())
+			Ω(os.Symlink(filepath.Join(dataDir, "pg_wal"), filepath.Join(base, "walLink"))).To(Succeed())
+			dd := dataDir
+			if viaDataLink {
+				dd = filepath.Join(base, "dataLink")
+			}
+			wd := ""
+			if rel != "" {
+				wd = filepath.Join(base, rel)
+			}
+			err := validateWalDir(dd, wd)
 			if valid {
 				Ω(err).NotTo(HaveOccurred())
 			} else {
 				Ω(err).To(HaveOccurred())
 			}
 		},
-		Entry("empty", "", true),
-		Entry("outside PGDATA", "/wal", true),
-		Entry("sibling with common prefix", "/data/pg_wal_new", true),
-		Entry("pg_wal itself", "/data/pg_wal", false),
-		Entry("pg_wal with trailing slash", "/data/pg_wal/", false),
-		Entry("inside pg_wal", "/data/pg_wal/sub", false),
-		Entry("deep inside pg_wal", "/data/pg_wal/sub1/../sub2/x", false),
+		Entry("empty", "", false, true),
+		Entry("outside PGDATA", "wal", false, true),
+		Entry("non-existing outside PGDATA", "wal/new/sub", false, true),
+		Entry("sibling with common prefix", "data/pg_wal_new", false, true),
+		Entry("pg_wal itself", "data/pg_wal", false, false),
+		Entry("pg_wal with trailing slash", "data/pg_wal/", false, false),
+		Entry("inside pg_wal", "data/pg_wal/sub", false, false),
+		Entry("non-existing deep inside pg_wal", "data/pg_wal/sub1/../sub2/x", false, false),
+		Entry("pg_wal via symlinked data dir", "data/pg_wal", true, false),
+		Entry("walDir via symlinked parent", "dataLink/pg_wal/sub", false, false),
+		Entry("walDir via symlink to pg_wal", "walLink/new", false, false),
 	)
+	It("accepts walDir as target of an existing pg_wal symlink", func() {
+		Ω(os.Symlink(walDir, filepath.Join(dataDir, "pg_wal"))).To(Succeed())
+		Ω(validateWalDir(dataDir, walDir)).To(Succeed())
+		Ω(validateWalDir(filepath.Join(base, "dataLink"), filepath.Join(walDir, "sub"))).To(Succeed())
+	})
+	It("rejects pg_wal itself when it is a symlink", func() {
+		Ω(os.Symlink(walDir, filepath.Join(dataDir, "pg_wal"))).To(Succeed())
+		Ω(validateWalDir(dataDir, filepath.Join(dataDir, "pg_wal"))).NotTo(Succeed())
+		Ω(validateWalDir(dataDir, filepath.Join(base, "dataLink", "pg_wal", "sub"))).NotTo(Succeed())
+	})
 })

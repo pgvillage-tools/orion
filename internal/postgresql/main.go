@@ -1040,22 +1040,48 @@ func isDirEmpty(dirPath string) (bool, error) {
 	return false, err
 }
 
-// validateWalDir returns an error when walDir is symlinkPath (PGDATA/pg_wal) or lives below it,
-// since moving WAL there would move pg_wal into itself and then remove it.
-func validateWalDir(symlinkPath string, walDir string) error {
+// validateWalDir returns an error when walDir is PGDATA/pg_wal or lives below it, since moving WAL there would
+// move pg_wal into itself and then remove it. Paths are compared canonically: dataDir is resolved before pg_wal is
+// appended, and symlinks in walDir are resolved component by component. pg_wal itself is never resolved, so an
+// existing pg_wal symlink pointing to walDir stays valid.
+func validateWalDir(dataDir string, walDir string) error {
 	if walDir == "" {
 		return nil
 	}
-	absSymlink, err := filepath.Abs(symlinkPath)
+	absData, err := filepath.Abs(dataDir)
 	if err != nil {
 		return err
 	}
+	if absData, err = filepath.EvalSymlinks(absData); err != nil {
+		return err
+	}
+	pgWal := filepath.Join(absData, "pg_wal")
 	absWal, err := filepath.Abs(walDir)
 	if err != nil {
 		return err
 	}
-	if absWal == absSymlink || isSubPath(absSymlink, absWal) {
-		return fmt.Errorf("wal dir %s must not be (inside) %s", walDir, symlinkPath)
+	insidePgWal := func(path string) bool { return path == pgWal || isSubPath(pgWal, path) }
+	cur := string(filepath.Separator)
+	for _, part := range strings.Split(absWal, string(filepath.Separator)) {
+		if part == "" {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		if insidePgWal(cur) {
+			return fmt.Errorf("wal dir %s must not be (inside) %s", walDir, pgWal)
+		}
+		if stat, statErr := os.Lstat(cur); statErr != nil || stat.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		resolved, resolveErr := filepath.EvalSymlinks(cur)
+		if resolveErr != nil {
+			// dangling symlink, keep comparing lexically
+			continue
+		}
+		cur = resolved
+		if insidePgWal(cur) {
+			return fmt.Errorf("wal dir %s must not be (inside) %s", walDir, pgWal)
+		}
 	}
 	return nil
 }
