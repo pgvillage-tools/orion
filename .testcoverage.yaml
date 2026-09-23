@@ -39,7 +39,7 @@ override:
   #  threshold: 100
   - path: ^internal/postgresql/main.go
     threshold: 25
-  - path: ^internal/api_endpoints/endpoints.go
+  - path: ^pkg/api_endpoints/endpoints.go
     threshold: 0
   - path: ^internal/postgresql/manager.go
     threshold: 0
@@ -74,7 +74,7 @@ override:
   - path: scripts/gen_commands_doc.go
     threshold: 0
 
-  - path: ^internal/api_endpoints$
+  - path: ^pkg/api_endpoints$
     threshold: 0
   - path: ^internal/mock/consensus$
     threshold: 22
