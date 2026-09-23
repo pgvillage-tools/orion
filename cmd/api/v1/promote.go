@@ -21,8 +21,8 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/util"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // PromoteReplicaSetRoutes returns the routes to be added for the PromoteReplicaSet code

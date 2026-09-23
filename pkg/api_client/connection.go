@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"time"
 
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // Connection is a resource to connect to the orion API

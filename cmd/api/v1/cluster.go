@@ -21,9 +21,9 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // ClusterRoutes adds all Cluster routes to the list of all routes

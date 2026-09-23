@@ -15,7 +15,7 @@ package api_client
 
 import (
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // GetStatus uses the API to fetch status for the entire cluster

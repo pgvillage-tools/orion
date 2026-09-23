@@ -19,9 +19,9 @@ import (
 	"context"
 	"time"
 
-	endpoints "github.com/pgvillage-tools/orion/internal/api_endpoints"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
