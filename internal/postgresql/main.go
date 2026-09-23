@@ -19,6 +19,7 @@ package postgresql
 import (
 	"bufio"
 	"context"
+	"slices"
 
 	// TODO: replace with jackc
 	"database/sql"
@@ -33,7 +34,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -310,8 +310,8 @@ const (
 	walSegSize = (16 * 1024 * 1024) // 16MiB
 	globalDB   = "postgres"
 
-	urwx = 0o700
-	urw  = 0o600
+	uRWX = 0o700
+	uRW  = 0o600
 
 	logCmd = "cmd"
 
@@ -919,44 +919,169 @@ func moveFile(sourcePath, destPath string) error {
 	return nil
 }
 
-func moveDirRecursive(ctx context.Context, src string, dest string) (err error) {
+func moveDir(ctx context.Context, src string, dst string) (err error) {
 	_, logger := logging.GetLogComponent(ctx, logging.PgComponent)
+	src, err = filepath.Abs(src)
+	if err != nil {
+		return err
+	}
+	dst, err = filepath.Abs(dst)
+	if err != nil {
+		return err
+	}
+
 	var stat fs.FileInfo
-	logger.Info().Str("src", src).Str("dest", dest).Msg("Moving")
+	logger.Info().Str("src", src).Str("dest", dst).Msg("Moving")
 	if stat, err = os.Stat(src); err != nil {
 		logger.Error().Str("path", src).AnErr("err", err).Msg("could not get stat of file")
 		return err
 	} else if !stat.IsDir() {
-		return moveFile(src, dest)
-	}
-	// Make the dir if it doesn't exist
-	if _, err = os.Stat(dest); errors.Is(err, os.ErrNotExist) {
-		if err = os.MkdirAll(dest, stat.Mode()&os.ModePerm); err != nil {
-			return err
-		}
-	} else if err != nil {
-		logger.Error().Str("path", dest).AnErr("err", err).Msg("could not get stat of file")
-		return err
-	}
-	// Copy all files and folders in this folder
-	var entries []fs.DirEntry
-	if entries, err = os.ReadDir(src); err != nil {
-		logger.Error().Str("path", src).AnErr("err", err).Msg("could not read contents of folder")
-		return err
-	}
-	for _, entry := range entries {
-		srcEntry := filepath.Join(src, entry.Name())
-		dstEntry := filepath.Join(dest, entry.Name())
-		if err := moveDirRecursive(ctx, srcEntry, dstEntry); err != nil {
-			return err
-		}
+		return moveFile(src, dst)
 	}
 
-	// Remove this folder, which is now supposedly empty
-	if err := syscall.Rmdir(src); err != nil {
-		logger.Error().Str("path", src).AnErr("err", err).Msg("could not remove folder")
-		// If this is a mountpoint or you don't have enough permissions, you might nog be able to. But that is fine.
-		// return err
+	if src == dst {
+		logger.Info().Str("src", src).Str("dest", dst).Msg("same location")
+		return nil
+	}
+	// When dst lives inside src, creating it up front would make WalkDir visit (and remap) its
+	// freshly created ancestors. So in that case dst (and its parents) are created lazily.
+	dstInSrc := isSubPath(src, dst)
+	var cleanupDirs []string
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == dst {
+			return filepath.SkipDir
+		}
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(dst, relPath)
+
+		if !d.IsDir() {
+			if err = os.MkdirAll(filepath.Dir(targetPath), stat.Mode()&os.ModePerm); err != nil {
+				return err
+			}
+			return moveFile(path, targetPath)
+		}
+		if path == src {
+			if dstInSrc {
+				return nil
+			}
+			// dst is outside of src, so src can be cleaned out too.
+			cleanupDirs = append(cleanupDirs, path)
+		} else if isSubPath(path, dst) {
+			// Pre-existing ancestor of dst: move its contents, but keep the dir itself.
+			return nil
+		} else {
+			cleanupDirs = append(cleanupDirs, path)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(targetPath, info.Mode()&os.ModePerm)
+	})
+	if err == nil {
+		// Make sure dst exists, even if src was empty
+		err = os.MkdirAll(dst, stat.Mode()&os.ModePerm)
+	}
+
+	if err != nil {
+		logger.Info().Str("src", src).Str("dest", dst).AnErr("error", err).Msg("error while copying")
+		return err
+	}
+	slices.Reverse(cleanupDirs)
+	return removeDirs(cleanupDirs)
+}
+
+// isSubPath returns true if child is located (at any depth) below parent
+func isSubPath(parent string, child string) bool {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil || rel == "." || rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func removeDirs(cleanupDirs []string) error {
+	for _, path := range cleanupDirs {
+		isEmpty, err := isDirEmpty(path)
+		if err != nil {
+			return err
+		} else if !isEmpty {
+			return fmt.Errorf("%s/ is not empty", path)
+		}
+		err = os.Remove(path)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isDirEmpty(dirPath string) (bool, error) {
+	f, err := os.Open(dirPath)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+
+	_, err = f.Readdirnames(1)
+	if err == io.EOF {
+		return true, nil
+	}
+	return false, err
+}
+
+// validateWalDir returns an error when walDir is PGDATA/pg_wal or lives below it, since moving WAL there would
+// move pg_wal into itself and then remove it. Paths are compared canonically: dataDir is resolved before pg_wal is
+// appended, and symlinks in walDir are resolved component by component. pg_wal itself is never resolved, so an
+// existing pg_wal symlink pointing to walDir stays valid.
+func validateWalDir(dataDir string, walDir string) error {
+	if walDir == "" {
+		return nil
+	}
+	absData, err := filepath.Abs(dataDir)
+	if err != nil {
+		return err
+	}
+	if absData, err = filepath.EvalSymlinks(absData); err != nil {
+		return err
+	}
+	pgWal := filepath.Join(absData, "pg_wal")
+	absWal, err := filepath.Abs(walDir)
+	if err != nil {
+		return err
+	}
+	insidePgWal := func(path string) bool { return path == pgWal || isSubPath(pgWal, path) }
+	cur := string(filepath.Separator)
+	for _, part := range strings.Split(absWal, string(filepath.Separator)) {
+		if part == "" {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		if insidePgWal(cur) {
+			return fmt.Errorf("wal dir %s must not be (inside) %s", walDir, pgWal)
+		}
+		if stat, statErr := os.Lstat(cur); statErr != nil || stat.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		resolved, resolveErr := filepath.EvalSymlinks(cur)
+		if resolveErr != nil {
+			// dangling symlink, keep comparing lexically
+			continue
+		}
+		cur = resolved
+		if insidePgWal(cur) {
+			return fmt.Errorf("wal dir %s must not be (inside) %s", walDir, pgWal)
+		}
 	}
 	return nil
 }
