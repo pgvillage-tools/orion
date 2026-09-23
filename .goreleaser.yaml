@@ -14,7 +14,33 @@ before:
     - go mod tidy
 
 builds:
-  - id: stolon-keeper
+  - id: orion-api
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/api
+    binary: orion-api
+    ldflags:
+      - -s -w -X "cmd.Version={{.Version}}"
+  - id: orion-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/cli
+    binary: orion-cli
+    ldflags:
+      - -s -w -X "cmd.Version={{.Version}}"
+  - id: orion-keeper
     env:
       - CGO_ENABLED=0
     goos:
@@ -24,10 +50,10 @@ builds:
       - amd64
       - arm64
     main: ./cmd/keeper
-    binary: stolon-keeper
+    binary: orion-keeper
     ldflags:
       - -s -w -X "cmd.Version={{.Version}}"
-  - id: stolon-proxy
+  - id: orion-proxy
     env:
       - CGO_ENABLED=0
     goos:
@@ -37,10 +63,10 @@ builds:
       - amd64
       - arm64
     main: ./cmd/proxy
-    binary: stolon-proxy
+    binary: orion-proxy
     ldflags:
       - -s -w -X "cmd.Version={{.Version}}"
-  - id: stolon-sentinel
+  - id: orion-sentinel
     env:
       - CGO_ENABLED=0
     goos:
@@ -50,27 +76,14 @@ builds:
       - amd64
       - arm64
     main: ./cmd/sentinel
-    binary: stolon-sentinel
-    ldflags:
-      - -s -w -X "cmd.Version={{.Version}}"
-  - id: stolonctl
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-    goarch:
-      - amd64
-      - arm64
-    main: ./cmd/stolonctl
-    binary: stolonctl
+    binary: orion-sentinel
     ldflags:
       - -s -w -X "cmd.Version={{.Version}}"
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     # this name template makes the OS and Arch compatible with the results of `uname`.
-    name_template: stolon_v{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
+    name_template: orion_v{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}
 
 changelog:
   sort: asc
