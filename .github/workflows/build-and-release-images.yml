@@ -63,7 +63,7 @@ jobs:
       contents: write
     strategy:
       matrix:
-        pgversion: ['13', '14', '15', '16', '17']
+        pgversion: ['14', '15', '16', '17', '18']
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
