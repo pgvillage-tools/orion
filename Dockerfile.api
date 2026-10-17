@@ -1,9 +1,9 @@
-# Build the manager binary
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
 ARG VERSION=v0.0.0-devel
 
-FROM docker.io/golang:bookworm AS builder
+# Build on the native platform of the builder and cross-compile for the target platform.
+# TARGETOS and TARGETARCH are set by buildx (from --platform), and must not have a default here,
+# or that default overrides the value from buildx and every image ends up with the same binary.
+FROM --platform=$BUILDPLATFORM docker.io/golang:bookworm AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -21,17 +21,18 @@ COPY internal/ internal/
 COPY pkg/ pkg/
 
 # Build
-# the GOARCH has not a default value to allow the binary be built according to the host where the command
-# was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
-# the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
-# by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -v -a \
     -ldflags="-X 'github.com/pgvillage-tools/orion/cmd.Version=$VERSION'" -o orion-api ./cmd/api
 
 FROM docker.io/debian:bookworm-slim
 
 LABEL MAINTAINER=Nibble-IT
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /
 COPY --from=builder /workspace/orion-api ./
 
