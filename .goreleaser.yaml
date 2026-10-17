@@ -26,7 +26,7 @@ builds:
     main: ./cmd/api
     binary: orion-api
     ldflags:
-      - -s -w -X "cmd.Version={{.Version}}"
+      - -s -w -X "github.com/pgvillage-tools/orion/cmd.Version={{.Version}}"
   - id: orion-cli
     env:
       - CGO_ENABLED=0
@@ -39,7 +39,7 @@ builds:
     main: ./cmd/cli
     binary: orion-cli
     ldflags:
-      - -s -w -X "cmd.Version={{.Version}}"
+      - -s -w -X "github.com/pgvillage-tools/orion/cmd.Version={{.Version}}"
   - id: orion-keeper
     env:
       - CGO_ENABLED=0
@@ -52,7 +52,7 @@ builds:
     main: ./cmd/keeper
     binary: orion-keeper
     ldflags:
-      - -s -w -X "cmd.Version={{.Version}}"
+      - -s -w -X "github.com/pgvillage-tools/orion/cmd.Version={{.Version}}"
   - id: orion-proxy
     env:
       - CGO_ENABLED=0
@@ -65,7 +65,7 @@ builds:
     main: ./cmd/proxy
     binary: orion-proxy
     ldflags:
-      - -s -w -X "cmd.Version={{.Version}}"
+      - -s -w -X "github.com/pgvillage-tools/orion/cmd.Version={{.Version}}"
   - id: orion-sentinel
     env:
       - CGO_ENABLED=0
@@ -78,7 +78,7 @@ builds:
     main: ./cmd/sentinel
     binary: orion-sentinel
     ldflags:
-      - -s -w -X "cmd.Version={{.Version}}"
+      - -s -w -X "github.com/pgvillage-tools/orion/cmd.Version={{.Version}}"
 
 archives:
   - formats: [tar.gz]
