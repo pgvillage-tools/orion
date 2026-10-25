@@ -109,7 +109,7 @@ jobs:
         run: make test
       - name: check test coverage
         id: coverage
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@v2201
         with:
           config: .testcoverage.yaml
           profile: cover.out
@@ -130,7 +130,7 @@ jobs:
             echo "No open pull request found for this branch."
           fi
       - name: create badge
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@v2201
         with:
           profile: cover.out
           threshold-total: 21
