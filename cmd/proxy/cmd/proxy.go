@@ -101,7 +101,7 @@ func init() {
 
 	if err := CmdProxy.PersistentFlags().MarkDeprecated("debug", "use --log-level=debug instead"); err != nil {
 		_, logger := logging.GetLogComponent(context.Background(), logging.ProxyComponent)
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 }
 
@@ -192,7 +192,7 @@ func (c *ClusterChecker) stopPollonProxy(ctx context.Context) {
 		c.pp.Stop()
 		c.pp = nil
 		if err := c.listener.Close(); err != nil {
-			logger.Fatal().AnErr("err", err).Msg("Stopping listening")
+			logger.Fatal().AnErr(logging.KeyErr, err).Msg("Stopping listening")
 		}
 		c.listener = nil
 	}
@@ -268,7 +268,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
 		// ignore errors on setting proxy info
 		if err = c.SetProxyInfo(ctx, c.e, cluster.NoGeneration, proxyTimeout); err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to update proxyInfo")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to update proxyInfo")
 		} else {
 			// update proxyCheckinterval and proxyTimeout only if we successfully updated our proxy info
 			c.configMutex.Lock()
@@ -285,7 +285,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
 		// ignore errors on setting proxy info
 		if err = c.SetProxyInfo(ctx, c.e, proxy.Generation, proxyTimeout); err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to update proxyInfo")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to update proxyInfo")
 		} else {
 			// update proxyCheckinterval and proxyTimeout only if we successfully updated our proxy info
 			c.configMutex.Lock()
@@ -298,7 +298,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 
 	addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(db.Status.ListenAddress, db.Status.Port))
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("cannot resolve db address")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("cannot resolve db address")
 		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
 		return nil
 	}
@@ -385,7 +385,7 @@ func (c *ClusterChecker) Start(ctx context.Context) error {
 		case err := <-checkCh:
 			if err != nil {
 				// don't report check ok since it returned an error
-				logger.Info().AnErr("err", err).Msg("check function error")
+				logger.Info().AnErr(logging.KeyErr, err).Msg("check function error")
 			} else {
 				// report that check was ok
 				checkOkCh <- struct{}{}
@@ -406,11 +406,11 @@ func (c *ClusterChecker) Start(ctx context.Context) error {
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.ProxyComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdProxy.PersistentFlags(), "ORIONPROXY"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	if err := CmdProxy.Execute(); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 }
 
@@ -427,7 +427,7 @@ func proxy(c *cobra.Command, _ []string) {
 	}
 
 	if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	cmd.SetMetrics(&cfg.CommonConfig, "proxy")
@@ -450,7 +450,7 @@ func proxy(c *cobra.Command, _ []string) {
 		go func() {
 			err := http.ListenAndServe(cfg.MetricsListenAddress, nil)
 			if err != nil {
-				logger.Fatal().AnErr("err", err).Msg("metrics http server error")
+				logger.Fatal().AnErr(logging.KeyErr, err).Msg("metrics http server error")
 			}
 		}()
 	}

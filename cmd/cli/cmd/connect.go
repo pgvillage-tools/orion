@@ -47,22 +47,22 @@ func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdConnect.PersistentFlags().BoolVarP(&connOpts.TLS, "tls", "t", true, "use tls")
 	if err := viper.BindPFlag("tls", cmdConnect.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdConnect.PersistentFlags().Uint16VarP(&connOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdConnect.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdConnect.PersistentFlags().StringVarP(&connOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdConnect.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdConnect.PersistentFlags().DurationVarP(&connOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
 	if err := viper.BindPFlag(flagTimeout, cmdConnect.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdConnect)
 }
@@ -81,14 +81,14 @@ func connectCluster(_ *cobra.Command, args []string) {
 
 	if httpCode, healthErr := apiClient.Healthy(); healthErr != nil {
 		logger.Fatal().
-			AnErr("error", healthErr).
+			AnErr(logging.KeyError, healthErr).
 			Int("http_code", httpCode).
 			Str("url", apiClient.EndpointURL(endpoints.HealthEndPoint)).
 			Msg("connecting to the api failed")
 	}
 	if writeErr := viper.WriteConfig(); writeErr != nil {
 		logger.Fatal().
-			AnErr("error", writeErr).
+			AnErr(logging.KeyError, writeErr).
 			Msg("updating cli config failed")
 	}
 }

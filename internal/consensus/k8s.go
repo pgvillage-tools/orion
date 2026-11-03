@@ -46,6 +46,11 @@ import (
 type ComponentLabelValue string
 
 const (
+	// leaseDuration is the duration non-leaders wait before trying to acquire leadership
+	leaseDuration = 15 * time.Second
+	// renewDeadline is the duration the leader retries refreshing leadership before giving up
+	renewDeadline = 10 * time.Second
+
 	// DefaultComponentLabel is the defaultlabel to set when no label is defined
 	DefaultComponentLabel = "component"
 
@@ -472,8 +477,8 @@ func (e *KubeElection) campaign() {
 
 		leaderelection.RunOrDie(e.ctx, leaderelection.LeaderElectionConfig{
 			Lock:          e.rl,
-			LeaseDuration: 15 * time.Second,
-			RenewDeadline: 10 * time.Second,
+			LeaseDuration: leaseDuration,
+			RenewDeadline: renewDeadline,
 			RetryPeriod:   2 * time.Second,
 			Callbacks: leaderelection.LeaderCallbacks{
 				OnStartedLeading: func(context.Context) {

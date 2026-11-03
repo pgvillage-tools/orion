@@ -197,7 +197,7 @@ func (p *Manager) Init(ctx context.Context, initConfig *InitConfig) error {
 	// remove the dataDir, so we don't end with an half initialized database
 	if err != nil {
 		if cleanupErr := p.RemoveAll(ctx); cleanupErr != nil {
-			logger.Error().AnErr("err", cleanupErr).Msg("failed to cleanup database")
+			logger.Error().AnErr(logging.KeyErr, cleanupErr).Msg("failed to cleanup database")
 		}
 		return err
 	}
@@ -232,7 +232,7 @@ func (p *Manager) Restore(ctx context.Context, command string) error {
 out:
 	if err != nil {
 		if cleanupErr := p.RemoveAll(ctx); cleanupErr != nil {
-			logger.Error().AnErr("err", cleanupErr).Msg("failed to cleanup database")
+			logger.Error().AnErr(logging.KeyErr, cleanupErr).Msg("failed to cleanup database")
 		}
 		return err
 	}
@@ -257,11 +257,11 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 	var tmpPath string
 	symlinkPath := filepath.Join(p.dataDir, "pg_wal")
 	if err = validateWalDir(p.dataDir, p.walDir); err != nil {
-		logger.Error().AnErr("err", err).Msg("invalid wal dir")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("invalid wal dir")
 		return err
 	}
 	if curPath, err = filepath.EvalSymlinks(symlinkPath); err != nil {
-		logger.Error().Str("path", symlinkPath).AnErr("err", err).Msg("could not evaluate symlink")
+		logger.Error().Str("path", symlinkPath).AnErr(logging.KeyErr, err).Msg("could not evaluate symlink")
 		return err
 	}
 	if p.walDir == "" {
@@ -278,12 +278,12 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 		logger.Info().
 			Str("src", curPath).
 			Str("temp path", tmpPath).
-			Str("dest", desiredPath).
+			Str(logKeyDest, desiredPath).
 			Msg("moving WAL from src to temp path first and then to dest")
 	} else {
 		logger.Info().
 			Str("src", curPath).
-			Str("dest", desiredPath).
+			Str(logKeyDest, desiredPath).
 			Msg("moving WAL from src to dest")
 	}
 	// We use tmpPath here first and (if needed) mv tmpPath to desiredPath when all is copied.
@@ -298,14 +298,14 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 	} else if err != nil {
 		logger.Error().
 			Str("path", symlinkPath).
-			AnErr("err", err).
+			AnErr(logging.KeyErr, err).
 			Msg("could not get info on current pg_wal folder/symlink path")
 		return err
 	} else if symlinkStat.Mode()&os.ModeSymlink != 0 {
 		if err = os.Remove(symlinkPath); err != nil {
 			logger.Error().
 				Str("path", symlinkPath).
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("could not remove current pg_wal symlink path")
 			return err
 		}
@@ -313,13 +313,13 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 		if err = syscall.Rmdir(symlinkPath); err != nil {
 			logger.Error().
 				Str("path", symlinkPath).
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("could not remove current folder")
 			return err
 		}
 	} else {
 		err = fmt.Errorf("location %s is no symlink and no dir, so please check and resolve by hand", symlinkPath)
-		logger.Error().AnErr("err", err).Msg("")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("")
 		return err
 	}
 	if p.walDir == "" {
@@ -328,30 +328,30 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 		if err = os.Rename(tmpPath, desiredPath); err != nil {
 			logger.Error().
 				Str("temp path", tmpPath).
-				Str("dest", desiredPath).
-				AnErr("err", err).
+				Str(logKeyDest, desiredPath).
+				AnErr(logging.KeyErr, err).
 				Msg("cannot move temp path to dest")
 			return err
 		}
 	} else {
 		logger.Info().
 			Str("src", symlinkPath).
-			Str("dest", desiredPath).
+			Str(logKeyDest, desiredPath).
 			Msg("symlinking src to dest")
 		if err = os.Symlink(desiredPath, symlinkPath); err != nil {
 			// We were copying WAL files from PGDATA (or another location) to a location outside of PGDATA and
 			// pointing the symlink in the right direction failed.
 			logger.Error().
 				Str("symlink", symlinkPath).
-				Str("dest", desiredPath).
-				AnErr("err", err).
+				Str(logKeyDest, desiredPath).
+				AnErr(logging.KeyErr, err).
 				Msg("could not create symlink to dest")
 			return err
 		}
 	}
 	logger.Info().
 		Str("src", curPath).
-		Str("dest", desiredPath).
+		Str(logKeyDest, desiredPath).
 		Msg("moving pg_wal is successful")
 	return nil
 }
@@ -444,7 +444,7 @@ func (p *Manager) start(ctx context.Context, args ...string) error {
 		default:
 		}
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(pollInterval)
 	}
 
 	if !ok {
@@ -576,7 +576,7 @@ func (p *Manager) WaitReady(ctx context.Context, timeout time.Duration) error {
 		if err := p.Ping(ctx); err == nil {
 			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(pollInterval)
 	}
 	return errors.New("timeout waiting for db ready")
 }
@@ -1076,7 +1076,7 @@ func (p *Manager) SyncFromFollowed(ctx context.Context, followedConnParams ConnP
 
 	go func() {
 		if _, err := io.Copy(os.Stderr, stderr); err != nil {
-			logger.Error().AnErr("err", err).Msg("pg_basebackup failed to copy stderr")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("pg_basebackup failed to copy stderr")
 		}
 	}()
 
@@ -1110,7 +1110,7 @@ func (p *Manager) RemoveAll(ctx context.Context) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
 	if p.walDir != "" {
 		if err := os.RemoveAll(p.walDir); err != nil {
-			logger.Fatal().Str("path", p.walDir).AnErr("err", err).Msg("failed to remove tree")
+			logger.Fatal().Str("path", p.walDir).AnErr(logging.KeyErr, err).Msg("failed to remove tree")
 		}
 	}
 

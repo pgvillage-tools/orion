@@ -29,6 +29,9 @@ import (
 )
 
 const (
+	// uidBytes is the number of bytes of a UUID used for a UID
+	uidBytes = 4
+
 	// StorePrefix is a default for the store-prefix parameter
 	StorePrefix = "orion/cluster"
 
@@ -61,7 +64,7 @@ var Roles = []Role{
 // UID returns a new UID (4 bytes of a UUID)
 func UID() string {
 	u := uuid.Must(uuid.NewV4())
-	return fmt.Sprintf("%x", u[:4])
+	return fmt.Sprintf("%x", u[:uidBytes])
 }
 
 // UUID returns a new UUID

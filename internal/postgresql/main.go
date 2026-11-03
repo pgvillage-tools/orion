@@ -47,6 +47,11 @@ import (
 )
 
 const (
+	// logKeyDest is the log field key for a destination path
+	logKeyDest = "dest"
+	// pollInterval is the time to wait between checks when waiting for postgres
+	pollInterval = 200 * time.Millisecond
+
 	postgresConf           = "postgresql.conf"
 	postgresRecoveryConf   = "recovery.conf"
 	postgresStandbySignal  = "standby.signal"
@@ -331,31 +336,31 @@ var (
 
 func handledDbClose(db *sql.DB) {
 	if err := db.Close(); err != nil {
-		utlLogger.Fatal().AnErr("err", err).Msg("Failed to close db connection")
+		utlLogger.Fatal().AnErr(logging.KeyErr, err).Msg("Failed to close db connection")
 	}
 }
 
 func handledRowsClose(rows *sql.Rows) {
 	if err := rows.Close(); err != nil {
-		utlLogger.Fatal().AnErr("err", err).Msg("Failed to close cursor")
+		utlLogger.Fatal().AnErr(logging.KeyErr, err).Msg("Failed to close cursor")
 	}
 }
 
 func handledFileClose(fh *os.File) {
 	if err := fh.Close(); err != nil {
-		utlLogger.Fatal().Str("file", fh.Name()).AnErr("err", err).Msg("Failed to close")
+		utlLogger.Fatal().Str("file", fh.Name()).AnErr(logging.KeyErr, err).Msg("Failed to close")
 	}
 }
 
 func handledDBClose(fh *sql.DB) {
 	if err := fh.Close(); err != nil {
-		utlLogger.Fatal().AnErr("err", err).Msg("Failed to close database")
+		utlLogger.Fatal().AnErr(logging.KeyErr, err).Msg("Failed to close database")
 	}
 }
 
 func handledFileRemove(fh *os.File) {
 	if err := os.Remove(fh.Name()); err != nil {
-		utlLogger.Fatal().Str("path", fh.Name()).AnErr("err", err).Msg("Failed to remove")
+		utlLogger.Fatal().Str("path", fh.Name()).AnErr(logging.KeyErr, err).Msg("Failed to remove")
 	}
 	handledFileClose(fh)
 }
@@ -931,16 +936,16 @@ func moveDir(ctx context.Context, src string, dst string) (err error) {
 	}
 
 	var stat fs.FileInfo
-	logger.Info().Str("src", src).Str("dest", dst).Msg("Moving")
+	logger.Info().Str("src", src).Str(logKeyDest, dst).Msg("Moving")
 	if stat, err = os.Stat(src); err != nil {
-		logger.Error().Str("path", src).AnErr("err", err).Msg("could not get stat of file")
+		logger.Error().Str("path", src).AnErr(logging.KeyErr, err).Msg("could not get stat of file")
 		return err
 	} else if !stat.IsDir() {
 		return moveFile(src, dst)
 	}
 
 	if src == dst {
-		logger.Info().Str("src", src).Str("dest", dst).Msg("same location")
+		logger.Info().Str("src", src).Str(logKeyDest, dst).Msg("same location")
 		return nil
 	}
 	// When dst lives inside src, creating it up front would make WalkDir visit (and remap) its
@@ -990,7 +995,7 @@ func moveDir(ctx context.Context, src string, dst string) (err error) {
 	}
 
 	if err != nil {
-		logger.Info().Str("src", src).Str("dest", dst).AnErr("error", err).Msg("error while copying")
+		logger.Info().Str("src", src).Str(logKeyDest, dst).AnErr(logging.KeyError, err).Msg("error while copying")
 		return err
 	}
 	slices.Reverse(cleanupDirs)

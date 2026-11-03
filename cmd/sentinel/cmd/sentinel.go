@@ -50,10 +50,14 @@ import (
 
 const (
 	fakeStandbyName = "orionfakestandby"
+
+	// electionRetryInterval is the time to wait before restarting the election loop
+	electionRetryInterval = 10 * time.Second
 )
 
 const (
 	logDB             = "db"
+	logKeyNewCD       = "newcd"
 	logRecDB          = "receivedDB"
 	logKeeper         = "keeper"
 	logDbSysID        = "dbSystemdID"
@@ -98,7 +102,7 @@ func init() {
 		"enable debug logging (deprecated, use log-level instead)")
 
 	if err := CmdSentinel.PersistentFlags().MarkDeprecated("debug", "use --log-level=debug instead"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 }
 
@@ -125,7 +129,7 @@ func (s *Sentinel) electionLoop(ctx context.Context) {
 
 			case err := <-errCh:
 				if err != nil {
-					logger.Error().AnErr("err", err).Msg("election loop error")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("election loop error")
 
 					// It's important to Stop() any on-going elections, as most stores will block
 					// until all previous elections have completed. If we continue without stopping,
@@ -141,7 +145,7 @@ func (s *Sentinel) electionLoop(ctx context.Context) {
 			}
 		}
 	end:
-		time.Sleep(10 * time.Second)
+		time.Sleep(electionRetryInterval)
 	}
 }
 
@@ -931,7 +935,7 @@ func (s *Sentinel) updateCluster(ctx context.Context, cd *cluster.Data,
 				}
 				newcd.DBs[db.UID] = db
 				newcd.Cluster.Status.Master = db.UID
-				logger.Debug().Any("newcd", spew.Sdump(newcd)).Msg("newcd dump")
+				logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
 			} else {
 				db, ok := newcd.DBs[cd.Cluster.Status.Master]
 				if !ok {
@@ -1002,7 +1006,7 @@ func (s *Sentinel) updateCluster(ctx context.Context, cd *cluster.Data,
 				}
 				newcd.DBs[db.UID] = db
 				newcd.Cluster.Status.Master = db.UID
-				logger.Debug().Any("newcd", spew.Sdump(newcd)).Msg("newcd dump")
+				logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
 			} else {
 				db, ok := newcd.DBs[cd.Cluster.Status.Master]
 				if !ok {
@@ -1061,7 +1065,7 @@ func (s *Sentinel) updateCluster(ctx context.Context, cd *cluster.Data,
 				}
 				newcd.DBs[db.UID] = db
 				newcd.Cluster.Status.Master = db.UID
-				logger.Debug().Any("newcd", spew.Sdump(newcd)).Msg("newcd dump")
+				logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
 			} else {
 				db, ok := newcd.DBs[cd.Cluster.Status.Master]
 				if !ok {
@@ -2149,19 +2153,19 @@ func (s *Sentinel) clusterSentinelCheck(ctx context.Context) {
 
 	cd, prevCDPair, err := e.GetClusterData(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("error retrieving cluster data")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("error retrieving cluster data")
 		return
 	}
 	if cd != nil {
 		if cd.FormatVersion != cluster.CurrentCDFormatVersion {
 			logger.Error().
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Uint64("version", cd.FormatVersion).
 				Msg("unsupported clusterdata format version")
 			return
 		}
 		if err = cd.Cluster.Spec.Validate(); err != nil {
-			logger.Error().AnErr("err", err).Msg("clusterdata validation failed")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("clusterdata validation failed")
 			return
 		}
 		if cd.Cluster != nil {
@@ -2181,28 +2185,28 @@ func (s *Sentinel) clusterSentinelCheck(ctx context.Context) {
 		c := cluster.NewCluster(s.UIDFn(), s.initialClusterSpec)
 		logger.Info().Msg("writing initial cluster data")
 		newcd := cluster.NewClusterData(c)
-		logger.Debug().Any("newcd", spew.Sdump(newcd)).Msg("newcd dump")
+		logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
 		if _, err = e.AtomicPutClusterData(ctx, newcd, nil); err != nil {
-			logger.Error().AnErr("err", err).Msg("error saving cluster data")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error saving cluster data")
 		}
 		return
 	}
 
 	if err = s.setSentinelInfo(ctx, 2*s.sleepInterval); err != nil {
-		logger.Error().AnErr("err", err).Msg("cannot update sentinel info")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("cannot update sentinel info")
 		return
 	}
 
 	keepersInfo, err := s.e.GetKeepersInfo(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("cannot get keepers info")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("cannot get keepers info")
 		return
 	}
 	logger.Debug().Any("keepersInfo", spew.Sdump(keepersInfo)).Msg("keepersInfo dump")
 
 	proxiesInfo, err := s.e.GetProxiesInfo(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("failed to get proxies info")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("failed to get proxies info")
 		return
 	}
 
@@ -2233,21 +2237,21 @@ func (s *Sentinel) clusterSentinelCheck(ctx context.Context) {
 	}
 
 	newcd, newKeeperInfoHistories := s.updateKeepersStatus(ctx, cd, keepersInfo, firstRun)
-	logger.Debug().Any("newcd", spew.Sdump(newcd)).Msg("newcd dump after updateKeepersStatus")
+	logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump after updateKeepersStatus")
 
 	activeProxiesInfos := s.activeProxiesInfos(proxiesInfo)
 
 	newcd, err = s.updateCluster(ctx, newcd, activeProxiesInfos)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("failed to update cluster data")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("failed to update cluster data")
 		return
 	}
-	logger.Debug().Any("newcd", spew.Sdump(newcd)).Msg("newcd dump after updateCluster")
+	logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump after updateCluster")
 
 	if newcd != nil {
 		s.updateChangeTimes(cd, newcd)
 		if _, err := e.AtomicPutClusterData(ctx, newcd, prevCDPair); err != nil {
-			logger.Error().AnErr("err", err).Msg("error saving clusterdata")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error saving clusterdata")
 		}
 	}
 
@@ -2276,11 +2280,11 @@ func sigHandler(ctx context.Context, sigs chan os.Signal, cancel context.CancelF
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdSentinel.PersistentFlags(), "ORIONSENTINEL"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	if err := CmdSentinel.Execute(); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 }
 
@@ -2295,7 +2299,7 @@ func sentinel(c *cobra.Command, _ []string) {
 	}
 
 	if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	cmd.SetMetrics(&cfg.CommonConfig, "sentinel")
@@ -2314,7 +2318,7 @@ func sentinel(c *cobra.Command, _ []string) {
 		go func() {
 			err := http.ListenAndServe(cfg.MetricsListenAddress, nil)
 			if err != nil {
-				logger.Error().AnErr("err", err).Msg("metrics http server error")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("metrics http server error")
 				cancel()
 			}
 		}()
@@ -2322,7 +2326,7 @@ func sentinel(c *cobra.Command, _ []string) {
 
 	s, err := NewSentinel(ctx, uid, &cfg, end)
 	if err != nil {
-		logger.Fatal().AnErr("err", err).Msg("cannot create sentinel")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot create sentinel")
 	}
 	go s.Start(ctx)
 

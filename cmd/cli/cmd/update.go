@@ -59,22 +59,22 @@ func init() {
 
 	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.TLS, "tls", "t", true, "use tls")
 	if err := viper.BindPFlag("tls", cmdUpdate.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdUpdate.PersistentFlags().Uint16VarP(&updateOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdUpdate.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdUpdate.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdUpdate.PersistentFlags().DurationVarP(&updateOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
 	if err := viper.BindPFlag(flagTimeout, cmdUpdate.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdUpdate)
 }
@@ -142,7 +142,7 @@ func update(_ *cobra.Command, args []string) {
 		cd := &cluster.Spec{}
 		if encodingErr := json.Unmarshal(patch, cd); encodingErr != nil {
 			logger.Fatal().
-				AnErr("error", encodingErr).
+				AnErr(logging.KeyError, encodingErr).
 				Str("source", updateOpts.file).
 				Str("spec", string(patch)).
 				Msg("invalid cluster data spec")
@@ -151,7 +151,7 @@ func update(_ *cobra.Command, args []string) {
 	}
 	if updateErr != nil {
 		logger.Fatal().
-			AnErr("error", updateErr).
+			AnErr(logging.KeyError, updateErr).
 			Int("http return code", httpCode).
 			Msg("failed to get clusterdata")
 	}

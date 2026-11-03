@@ -28,7 +28,7 @@ func initConfig() {
 	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	home, homedirErr := os.UserHomeDir()
 	if homedirErr != nil {
-		logger.Fatal().AnErr("error", homedirErr).Msg("failed to detect home dir")
+		logger.Fatal().AnErr(logging.KeyError, homedirErr).Msg("failed to detect home dir")
 	}
 	configDir := filepath.Join(home, ".orion")
 	viper.AddConfigPath(configDir)
@@ -36,7 +36,7 @@ func initConfig() {
 	viper.SetConfigType("yml")
 
 	if err := os.MkdirAll(configDir, readWrite); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("failed to create config dir")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create config dir")
 	}
 	configFile := filepath.Join(configDir, "config.yml")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
@@ -45,7 +45,7 @@ func initConfig() {
 		viper.Set("tls", true)
 		viper.Set("timeout", defaultTimeout)
 		if err := viper.SafeWriteConfig(); err != nil {
-			logger.Fatal().AnErr("error", err).Msg("failed to create config file")
+			logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create config file")
 		}
 	}
 
@@ -58,6 +58,6 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("failed to parse config file")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to parse config file")
 	}
 }
