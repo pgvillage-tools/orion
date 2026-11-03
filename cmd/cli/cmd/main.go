@@ -46,7 +46,7 @@ var CmdCLI = &cobra.Command{
 		if c.Name() != "orion" && c.Name() != "version" {
 			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 				_, logger := logging.GetLogComponent(c.Context(), logging.CmdComponent)
-				logger.Fatal().AnErr("err", err).Msg("")
+				logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 			}
 		}
 		initConfig()
@@ -82,10 +82,10 @@ func init() {
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdCLI.PersistentFlags(), "ORIONCLI"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 	if err := CmdCLI.Execute(); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 }
 

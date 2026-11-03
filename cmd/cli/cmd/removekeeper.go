@@ -45,22 +45,22 @@ func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	removeKeeperCmd.PersistentFlags().BoolVarP(&deleteKeeperOpts.TLS, "tls", "t", true, "use tls")
 	if err := viper.BindPFlag("tls", removeKeeperCmd.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	removeKeeperCmd.PersistentFlags().Uint16VarP(&deleteKeeperOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", removeKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	removeKeeperCmd.PersistentFlags().StringVarP(&deleteKeeperOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	removeKeeperCmd.PersistentFlags().DurationVarP(&deleteKeeperOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
 	if err := viper.BindPFlag(flagTimeout, removeKeeperCmd.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
@@ -89,7 +89,7 @@ func removeKeeper(_ *cobra.Command, args []string) {
 	httpCode, deleteErr := apiClient.PutFailKeeper(keeperID)
 	if deleteErr != nil {
 		logger.Fatal().
-			AnErr("error", deleteErr).
+			AnErr(logging.KeyError, deleteErr).
 			Int("http_code", httpCode).
 			Msg("failed to fail the keeper")
 	}

@@ -53,22 +53,22 @@ func init() {
 	cmdInit.PersistentFlags().StringVarP(&initOpts.file, flagFile, "f", "-", "file to read as input, use - for stdin")
 	cmdInit.PersistentFlags().BoolVarP(&initOpts.TLS, flagTLS, "t", true, "use tls")
 	if err := viper.BindPFlag("tls", cmdInit.PersistentFlags().Lookup(flagTLS)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdInit.PersistentFlags().Uint16VarP(&initOpts.Port, flagPort, "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdInit.PersistentFlags().Lookup(flagPort)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdInit.PersistentFlags().StringVarP(&initOpts.Host, flagHost, "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdInit.PersistentFlags().Lookup(flagHost)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdInit.PersistentFlags().DurationVarP(&initOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
 	if err := viper.BindPFlag(flagTimeout, cmdInit.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 
 	CmdCLI.AddCommand(cmdInit)
@@ -88,7 +88,7 @@ func initCluster(_ *cobra.Command, args []string) {
 		encodingErr := json.Unmarshal([]byte(args[0]), initSpec)
 		if encodingErr != nil {
 			logger.Fatal().
-				AnErr("error", encodingErr).
+				AnErr(logging.KeyError, encodingErr).
 				Str("input", "argument").
 				Str("spec", args[0]).
 				Msg("invalid cluster data spec")
@@ -104,13 +104,13 @@ func initCluster(_ *cobra.Command, args []string) {
 			}
 			if readErr != nil {
 				logger.Fatal().
-					AnErr("error", readErr).
+					AnErr(logging.KeyError, readErr).
 					Str("source", initOpts.file).
 					Msg("cannot read from stdin")
 			}
 			if encodingErr := json.Unmarshal(data, initSpec); encodingErr != nil {
 				logger.Fatal().
-					AnErr("error", encodingErr).
+					AnErr(logging.KeyError, encodingErr).
 					Str("source", initOpts.file).
 					Str("spec", string(data)).
 					Msg("invalid cluster data spec")
@@ -129,7 +129,7 @@ func initCluster(_ *cobra.Command, args []string) {
 	if httpCode != http.StatusNotFound {
 		if getClusterErr != nil {
 			logger.Fatal().
-				AnErr("error", getClusterErr).
+				AnErr(logging.KeyError, getClusterErr).
 				Str("source", initOpts.file).
 				Msg("failed to get clusterdata")
 		}
@@ -137,7 +137,7 @@ func initCluster(_ *cobra.Command, args []string) {
 	}
 	if httpCode, initErr := apiClient.PostClusterSpec(initSpec); initErr != nil {
 		logger.Fatal().
-			AnErr("error", initErr).
+			AnErr(logging.KeyError, initErr).
 			Int("http_code", httpCode).
 			Str("source", initOpts.file).
 			Any("spec", initSpec).

@@ -52,6 +52,9 @@ import (
 )
 
 const (
+	// defaultWalSegmentSizeMB is the default PostgreSQL wal segment size in MB
+	defaultWalSegmentSizeMB = 16
+
 	errorMsgPgInst          = "failed to stop pg instance"
 	errorMsgDbState         = "failed to save db local state"
 	followedStr             = "followedDB"
@@ -197,10 +200,10 @@ func init() {
 
 	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
 	if err := CmdKeeper.PersistentFlags().MarkDeprecated("id", "please use --uid"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("--id is deprecated, please use --uid")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("--id is deprecated, please use --uid")
 	}
 	if err := CmdKeeper.PersistentFlags().MarkDeprecated("debug", "use --log-level=debug instead"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("--debug is deprecated, please use --log-level=debug instead")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("--debug is deprecated, please use --log-level=debug instead")
 	}
 }
 
@@ -266,7 +269,7 @@ func (p *PostgresKeeper) walLevel(ctx context.Context, db *cluster.DB) string {
 	if err != nil {
 		// in case we fail to parse the binary version then log it and just use "hot_standby"
 		// that works for all versions
-		logger.Warn().AnErr("err", err).Msg("failed to get postgres binary version")
+		logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to get postgres binary version")
 		return "hot_standby"
 	}
 
@@ -305,7 +308,7 @@ func (p *PostgresKeeper) walKeepSegments(db *cluster.DB) int {
 
 func (p *PostgresKeeper) walKeepSize(db *cluster.DB) string {
 	// assume default 16Mib wal segment size
-	walKeepSize := strconv.Itoa(minWalKeepSegments * 16)
+	walKeepSize := strconv.Itoa(minWalKeepSegments * defaultWalSegmentSizeMB)
 
 	// TODO(sgotti) currently we ignore if wal_keep_size value is less than our
 	// min value or wrong and just return it as is
@@ -329,7 +332,7 @@ func (p *PostgresKeeper) mandatoryPGParameters(ctx context.Context, db *cluster.
 	version, err := p.pgm.BinaryVersion()
 	if err != nil {
 		// in case we fail to parse the binary version don't return any wal_keep_segments or wal_keep_size
-		logger.Warn().AnErr("err", err).Msg("failed to get postgres binary version")
+		logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to get postgres binary version")
 		return params
 	}
 
@@ -650,7 +653,7 @@ func NewPostgresKeeper(ctx context.Context, cfg *config, end chan error) (*Postg
 		}
 		if err = p.saveKeeperLocalState(); err != nil {
 			logger.Info().
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("error while saving local state")
 		}
 	}
@@ -688,7 +691,7 @@ func (p *PostgresKeeper) updateKeeperInfo(ctx context.Context) error {
 	version, err := p.pgm.BinaryVersion()
 	if err != nil {
 		// in case we fail to parse the binary version then log it and just report maj and min as 0
-		logger.Warn().AnErr("err", err).Msg("failed to get postgres binary version")
+		logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to get postgres binary version")
 	}
 
 	keeperInfo := &cluster.KeeperInfo{
@@ -717,7 +720,7 @@ func (p *PostgresKeeper) updatePGState(ctx context.Context) {
 	defer p.pgStateMutex.Unlock()
 	pgState, err := p.GetPGState(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("failed to get pg state")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("failed to get pg state")
 	}
 	p.lastPGState = pgState
 }
@@ -814,7 +817,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 	if initialized {
 		pgParameters, err := p.pgm.GetConfigFilePGParameters(ctx)
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("cannot get configured pg parameters")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("cannot get configured pg parameters")
 			return pgState, nil
 		}
 		logger.Debug().Any("pgParameters", pgParameters).Msg("got configured pg parameters")
@@ -832,7 +835,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 		inSyncStandbys, err := p.GetInSyncStandbys(ctx)
 		if err != nil {
 			logger.Error().
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("failed to retrieve current in sync standbys from instance")
 			return pgState, nil
 		}
@@ -841,7 +844,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 
 		sd, err := p.pgm.GetSystemData(ctx)
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("error getting pg state")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error getting pg state")
 			return pgState, nil
 		}
 		pgState.SystemID = sd.SystemID
@@ -850,14 +853,14 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 
 		ctlsh, err := getTimeLinesHistory(ctx, pgState, p.pgm, maxPostgresTimelinesHistory)
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("error getting timeline history")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error getting timeline history")
 			return pgState, nil
 		}
 		pgState.TimelinesHistory = ctlsh
 
 		ow, err := p.pgm.OlderWalFile()
 		if err != nil {
-			logger.Warn().AnErr("err", err).Msg("error getting older wal file")
+			logger.Warn().AnErr(logging.KeyErr, err).Msg("error getting older wal file")
 		} else {
 			logger.Warn().Str("filename", ow).Msg("older wal file")
 			pgState.OlderWalFile = ow
@@ -882,7 +885,7 @@ func getTimeLinesHistory(
 		var tlsh []*pg.TimelineHistory
 		tlsh, err := pgm.GetTimelinesHistory(ctx, pgState.TimelineID)
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("error getting timeline history")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error getting timeline history")
 			return ctlsh, err
 		}
 		if len(tlsh) > maxPostgresTimelinesHistory {
@@ -920,7 +923,7 @@ func (p *PostgresKeeper) Start(ctx context.Context) {
 	var cd *cluster.Data
 	cd, _, err = p.e.GetClusterData(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("error retrieving cluster data")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("error retrieving cluster data")
 	} else if cd != nil {
 		if cd.FormatVersion != cluster.CurrentCDFormatVersion {
 			logger.Error().Uint64("version", cd.FormatVersion).Msg("unsupported clusterdata format version")
@@ -964,7 +967,7 @@ func (p *PostgresKeeper) Start(ctx context.Context) {
 		case <-ctx.Done():
 			logger.Debug().Msg("stopping orion keeper")
 			if err = p.pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 			}
 			p.end <- nil
 			return
@@ -992,7 +995,7 @@ func (p *PostgresKeeper) Start(ctx context.Context) {
 		case <-updateKeeperInfoTimerCh:
 			go func() {
 				if err := p.updateKeeperInfo(ctx); err != nil {
-					logger.Error().AnErr("err", err).Msg("failed to update keeper info")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("failed to update keeper info")
 				}
 				endUpdateKeeperInfo <- struct{}{}
 			}()
@@ -1033,13 +1036,13 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 			return nil
 		}
 		// log pg_rewind error and fallback to pg_basebackup
-		logger.Error().AnErr("err", err).Msg("error syncing with pg_rewind")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("error syncing with pg_rewind")
 	}
 
 	version, err := p.pgm.BinaryVersion()
 	if err != nil {
 		// in case we fail to parse the binary version then log it and just don't use replSlot
-		logger.Warn().AnErr("err", err).Msg("failed to get postgres binary version")
+		logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to get postgres binary version")
 	}
 	replSlot := ""
 	if version.GreaterThanEqual(pg.V96) {
@@ -1155,7 +1158,7 @@ func (p *PostgresKeeper) updateReplSlots(
 		if _, ok := internalReplSlots[slot]; !ok {
 			logger.Info().Str("slot", slot).Msg("dropping replication slot")
 			if err := p.pgm.DropReplicationSlot(ctx, slot); err != nil {
-				logger.Error().AnErr("err", err).Str("slot", slot).Msg("failed to drop replication slot")
+				logger.Error().AnErr(logging.KeyErr, err).Str("slot", slot).Msg("failed to drop replication slot")
 				// don't return the error but continue also if drop failed (standby still connected)
 			}
 		}
@@ -1166,7 +1169,7 @@ func (p *PostgresKeeper) updateReplSlots(
 		if !util.StringInSlice(curReplSlots, slot) {
 			logger.Info().Str("slot", slot).Msg("creating replication slot")
 			if err := p.pgm.CreateReplicationSlot(ctx, slot); err != nil {
-				logger.Error().AnErr("err", err).Str("slot", slot).Msg("failed to create replication slot")
+				logger.Error().AnErr(logging.KeyErr, err).Str("slot", slot).Msg("failed to create replication slot")
 				return err
 			}
 		}
@@ -1179,7 +1182,7 @@ func (p *PostgresKeeper) refreshReplicationSlots(ctx context.Context, _ *cluster
 	var currentReplicationSlots []string
 	currentReplicationSlots, err := p.pgm.GetReplicationSlots(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("failed to get replication slots")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("failed to get replication slots")
 		return err
 	}
 
@@ -1191,7 +1194,7 @@ func (p *PostgresKeeper) refreshReplicationSlots(ctx context.Context, _ *cluster
 		db.UID,
 		followersUIDs,
 		db.Spec.AdditionalReplicationSlots); err != nil {
-		logger.Error().AnErr("err", err).Msg("error updating replication slots")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("error updating replication slots")
 		return err
 	}
 
@@ -1205,7 +1208,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 	cd, _, err := e.GetClusterData(ctx)
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("error retrieving cluster data")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("error retrieving cluster data")
 		return
 	}
 	logger.Debug().Any("clusterdata", cd).Msg("cd dump: %s")
@@ -1219,7 +1222,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		return
 	}
 	if err = cd.Cluster.Spec.Validate(); err != nil {
-		logger.Error().AnErr("err", err).Msg("clusterdata validation failed")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("clusterdata validation failed")
 		return
 	}
 
@@ -1235,7 +1238,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		if p.keeperLocalState.ClusterUID != cd.Cluster.UID {
 			p.keeperLocalState.ClusterUID = cd.Cluster.UID
 			if err = p.saveKeeperLocalState(); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to save keeper local state")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to save keeper local state")
 				return
 			}
 		}
@@ -1251,7 +1254,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 	if db == nil {
 		logger.Info().Msg("no db assigned")
 		if err = pgm.StopIfStarted(ctx, true); err != nil {
-			logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+			logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 		}
 		return
 	}
@@ -1262,7 +1265,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			Str("clusterBootUUID", k.Status.BootUUID).
 			Msg("our db boot UID is different than the cluster data one, waiting for it to be updated")
 		if err = pgm.StopIfStarted(ctx, true); err != nil {
-			logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+			logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 		}
 		return
 	}
@@ -1279,13 +1282,13 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		logger.Error().Msg("db failed to initialize or resync")
 
 		if err = pgm.StopIfStarted(ctx, true); err != nil {
-			logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+			logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 			return
 		}
 
 		// Clean up cluster db datadir
 		if err = pgm.RemoveAllIfInitialized(ctx); err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to remove the postgres data dir")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to remove the postgres data dir")
 			return
 		}
 		// Reset current db local state since it's not valid anymore
@@ -1295,7 +1298,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			Initializing: false,
 		}
 		if err = p.saveDBLocalState(ndbls); err != nil {
-			logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+			logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 			return
 		}
 	}
@@ -1304,7 +1307,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		var initialized bool
 		initialized, err = pgm.IsInitialized()
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to detect if instance is initialized")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to detect if instance is initialized")
 			return
 		}
 		logger.Info().
@@ -1325,7 +1328,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				Initializing: true,
 			}
 			if err = p.saveDBLocalState(ndbls); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 
@@ -1343,47 +1346,47 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			}
 
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 				return
 			}
 			if err = pgm.RemoveAllIfInitialized(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to remove the postgres data dir")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to remove the postgres data dir")
 				return
 			}
 			if err = pgm.Init(ctx, initConfig); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to initialize postgres database cluster")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to initialize postgres database cluster")
 				return
 			}
 
 			if err = pgm.StartTmpMerged(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to start instance")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to start instance")
 				return
 			}
 			if err = pgm.WaitReady(ctx, cd.Cluster.DefSpec().DBWaitReadyTimeout.Duration); err != nil {
-				logger.Error().AnErr("err", err).Msg("timeout waiting for instance to be ready")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("timeout waiting for instance to be ready")
 				return
 			}
 			if db.Spec.IncludeConfig {
 				pgParameters, err = pgm.GetConfigFilePGParameters(ctx)
 				if err != nil {
-					logger.Error().AnErr("err", err).Msg("failed to retrieve postgres parameters")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve postgres parameters")
 					return
 				}
 				ndbls.InitPGParameters = pgParameters
 				if err = p.saveDBLocalState(ndbls); err != nil {
-					logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+					logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 					return
 				}
 			}
 
 			logger.Info().Msg("setting roles")
 			if err = pgm.SetupRoles(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to setup roles")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to setup roles")
 				return
 			}
 
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 				return
 			}
 		case cluster.PITRDB:
@@ -1395,7 +1398,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				Initializing: true,
 			}
 			if err = p.saveDBLocalState(ndbls); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 
@@ -1405,16 +1408,16 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			pgm.SetParameters(pgParameters)
 
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgPgInst)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 				return
 			}
 			if err = pgm.RemoveAllIfInitialized(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to remove the postgres data dir")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to remove the postgres data dir")
 				return
 			}
 			logger.Info().Msg("executing DataRestoreCommand")
 			if err = pgm.Restore(ctx, db.Spec.PITRConfig.DataRestoreCommand); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to restore postgres database cluster")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to restore postgres database cluster")
 				return
 			}
 
@@ -1432,7 +1435,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				db.Spec.PITRConfig.RecoveryTargetSettings))
 
 			if err = pgm.StartTmpMerged(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to start instance")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to start instance")
 				return
 			}
 
@@ -1440,31 +1443,31 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				// wait for the db having replayed all the wals
 				logger.Info().Msg("waiting for recovery to be completed")
 				if err = pgm.WaitRecoveryDone(cd.Cluster.DefSpec().SyncTimeout.Duration); err != nil {
-					logger.Error().AnErr("err", err).Msg("recovery not finished")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("recovery not finished")
 					return
 				}
 				logger.Info().Msg("recovery completed")
 			}
 			if err = pgm.WaitReady(ctx, cd.Cluster.DefSpec().SyncTimeout.Duration); err != nil {
-				logger.Error().AnErr("err", err).Msg("timeout waiting for instance to be ready")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("timeout waiting for instance to be ready")
 				return
 			}
 
 			if db.Spec.IncludeConfig {
 				pgParameters, err = pgm.GetConfigFilePGParameters(ctx)
 				if err != nil {
-					logger.Error().AnErr("err", err).Msg("failed to retrieve postgres parameters")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve postgres parameters")
 					return
 				}
 				ndbls.InitPGParameters = pgParameters
 				if err = p.saveDBLocalState(ndbls); err != nil {
-					logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+					logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 					return
 				}
 			}
 
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 
@@ -1478,12 +1481,12 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				Initializing: true,
 			}
 			if err = p.saveDBLocalState(ndbls); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 
@@ -1498,7 +1501,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			} else {
 				systemID, err = pgm.GetSystemID()
 				if err != nil {
-					logger.Error().AnErr("err", err).Msg("error retrieving systemd ID")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("error retrieving systemd ID")
 					return
 				}
 			}
@@ -1538,11 +1541,11 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			// We have to find a better way to detect if a standby is waiting
 			// for unavailable wals.
 			if err = p.resync(ctx, db, masterDB, followedDB, tryPgrewind); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to resync from followed instance")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to resync from followed instance")
 				return
 			}
 			if err = pgm.Start(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to start instance")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to start instance")
 				return
 			}
 
@@ -1559,7 +1562,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 					var pgState *cluster.PostgresState
 					pgState, err = p.GetPGState(ctx)
 					if err != nil {
-						logger.Error().AnErr("err", err).Msg("cannot get current pgstate")
+						logger.Error().AnErr(logging.KeyErr, err).Msg("cannot get current pgstate")
 						return
 					}
 					if p.isDifferentTimelineBranch(ctx, followedDB, pgState) {
@@ -1569,11 +1572,11 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 				if fullResync {
 					if err = pgm.StopIfStarted(ctx, true); err != nil {
-						logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+						logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 						return
 					}
 					if err = p.resync(ctx, db, masterDB, followedDB, false); err != nil {
-						logger.Error().AnErr("err", err).Msg("failed to resync from followed instance")
+						logger.Error().AnErr(logging.KeyErr, err).Msg("failed to resync from followed instance")
 						return
 					}
 				}
@@ -1588,7 +1591,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				Initializing: false,
 			}
 			if err = p.saveDBLocalState(ndbls); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 
@@ -1598,31 +1601,31 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			pgm.SetParameters(pgParameters)
 
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 			if err = pgm.StartTmpMerged(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to start instance")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to start instance")
 				return
 			}
 			if err = pgm.WaitReady(ctx, cd.Cluster.DefSpec().DBWaitReadyTimeout.Duration); err != nil {
-				logger.Error().AnErr("err", err).Msg("timeout waiting for instance to be ready")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("timeout waiting for instance to be ready")
 				return
 			}
 			if db.Spec.IncludeConfig {
 				pgParameters, err = pgm.GetConfigFilePGParameters(ctx)
 				if err != nil {
-					logger.Error().AnErr("err", err).Msg("failed to retrieve postgres parameters")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve postgres parameters")
 					return
 				}
 				ndbls.InitPGParameters = pgParameters
 				if err = p.saveDBLocalState(ndbls); err != nil {
-					logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+					logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 					return
 				}
 			}
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
-				logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 				return
 			}
 		case cluster.NoDB:
@@ -1637,7 +1640,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 	initialized, err := pgm.IsInitialized()
 	if err != nil {
-		logger.Error().AnErr("err", err).Msg("failed to detect if instance is initialized")
+		logger.Error().AnErr(logging.KeyErr, err).Msg("failed to detect if instance is initialized")
 		return
 	}
 
@@ -1646,7 +1649,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		started, err = pgm.IsStarted()
 		if err != nil {
 			// log error getting instance state but go ahead.
-			logger.Error().AnErr("err", err).Msg("failed to retrieve instance status")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve instance status")
 		}
 		logger.Debug().Bool("initialized", true).Bool("started", started).Msg("db status")
 	} else {
@@ -1665,7 +1668,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 	} else {
 		localRole, err = pgm.GetRole()
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("error retrieving current pg role")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error retrieving current pg role")
 			return
 		}
 	}
@@ -1690,7 +1693,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 		started, err := pgm.IsStarted()
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to retrieve instance status")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve instance status")
 			return
 		}
 		if !started {
@@ -1704,11 +1707,11 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			}
 
 			if err = pgm.Start(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to start postgres")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to start postgres")
 				return
 			}
 			if err = pgm.WaitReady(ctx, cd.Cluster.DefSpec().DBWaitReadyTimeout.Duration); err != nil {
-				logger.Error().AnErr("err", err).Msg("timeout waiting for instance to be ready")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("timeout waiting for instance to be ready")
 				return
 			}
 		}
@@ -1716,7 +1719,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		if localRole == common.RoleReplica {
 			logger.Info().Msg("promoting to master")
 			if err = pgm.Promote(ctx); err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to promote instance")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to promote instance")
 				return
 			}
 		} else {
@@ -1724,7 +1727,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		}
 
 		if err := p.refreshReplicationSlots(ctx, cd, db); err != nil {
-			logger.Error().AnErr("err", err).Msg("error updating replication slots")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("error updating replication slots")
 			return
 		}
 
@@ -1758,13 +1761,13 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			logger.Info().Msg("already standby")
 			started, err := pgm.IsStarted()
 			if err != nil {
-				logger.Error().AnErr("err", err).Msg("failed to retrieve instance status")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve instance status")
 				return
 			}
 			if !started {
 				pgm.SetRecoveryOptions(p.createRecoveryOptions(pg.RecoveryModeStandby, standbySettings, nil, nil))
 				if err = pgm.Start(ctx); err != nil {
-					logger.Error().AnErr("err", err).Msg("failed to start postgres")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("failed to start postgres")
 					return
 				}
 			}
@@ -1797,13 +1800,13 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 					pgm.SetRecoveryOptions(newRecoveryOptions)
 
 					if err = pgm.Restart(ctx, true); err != nil {
-						logger.Error().AnErr("err", err).Msg("failed to restart postgres instance")
+						logger.Error().AnErr(logging.KeyErr, err).Msg("failed to restart postgres instance")
 						return
 					}
 				}
 
 				if err = p.refreshReplicationSlots(ctx, cd, db); err != nil {
-					logger.Error().AnErr("err", err).Msg("error updating replication slots")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("error updating replication slots")
 				}
 
 			case cluster.FollowTypeExternal:
@@ -1823,13 +1826,13 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 					pgm.SetRecoveryOptions(newRecoveryOptions)
 
 					if err = pgm.Restart(ctx, true); err != nil {
-						logger.Error().AnErr("err", err).Msg("failed to restart postgres instance")
+						logger.Error().AnErr(logging.KeyErr, err).Msg("failed to restart postgres instance")
 						return
 					}
 				}
 
 				if err = p.refreshReplicationSlots(ctx, cd, db); err != nil {
-					logger.Error().AnErr("err", err).Msg("error updating replication slots")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("error updating replication slots")
 				}
 			}
 
@@ -1882,7 +1885,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 	if db.Spec.SynchronousReplication && p.waitSyncStandbysSynced {
 		inSyncStandbys, err := p.GetInSyncStandbys(ctx)
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to retrieve current in sync standbys from instance")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve current in sync standbys from instance")
 			return
 		}
 		if !util.CompareStringSliceNoOrder(inSyncStandbys, db.Spec.SynchronousStandbys) {
@@ -1907,7 +1910,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 	if needsReload {
 		needsReloadGauge.Set(1) // mark as reload needed
 		if err := pgm.Reload(ctx); err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to reload postgres instance")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to reload postgres instance")
 		} else {
 			needsReloadGauge.Set(0) // successful reload implies no longer required
 		}
@@ -1919,7 +1922,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 		needsRestart, err := pgm.IsRestartRequired(ctx, changedParams)
 		if err != nil {
-			logger.Error().AnErr("err", err).Msg("failed to check if restart is required")
+			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to check if restart is required")
 		}
 
 		if needsRestart {
@@ -1927,7 +1930,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			if automaticPgRestartEnabled {
 				logger.Info().Msg("restarting postgres")
 				if err := pgm.Restart(ctx, true); err != nil {
-					logger.Error().AnErr("err", err).Msg("failed to restart postgres instance")
+					logger.Error().AnErr(logging.KeyErr, err).Msg("failed to restart postgres instance")
 				} else {
 					needsRestartGauge.Set(0) // successful restart implies no longer required
 				}
@@ -1940,7 +1943,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 	ndbls.Generation = db.Generation
 	ndbls.Initializing = false
 	if err := p.saveDBLocalState(ndbls); err != nil {
-		logger.Error().AnErr("err", err).Msg(errorMsgDbState)
+		logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgDbState)
 		return
 	}
 
@@ -2125,11 +2128,11 @@ func sigHandler(ctx context.Context, sigs chan os.Signal, cancel context.CancelF
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.KeeperComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdKeeper.PersistentFlags(), "ORIONKEEPER"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	if err := CmdKeeper.Execute(); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 }
 
@@ -2147,7 +2150,7 @@ func keeper(c *cobra.Command, _ []string) {
 		var user string
 		user, err = util.GetUser()
 		if err != nil {
-			logger.Fatal().AnErr("err", err).Msg("cannot get current user")
+			logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot get current user")
 		}
 		cfg.pgSUUsername = user
 	}
@@ -2183,7 +2186,7 @@ func keeper(c *cobra.Command, _ []string) {
 	cmd.SetMetrics(&cfg.CommonConfig, "keeper")
 
 	if err = os.MkdirAll(cfg.dataDir, ownerRWExecPermisions); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("cannot create data dir")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot create data dir")
 	}
 
 	if cfg.pgListenAddress == "" {
@@ -2212,7 +2215,7 @@ func keeper(c *cobra.Command, _ []string) {
 	ipAddr, err := net.ResolveIPAddr("ip", cfg.pgAdvertiseAddress)
 	if err != nil {
 		logger.Warn().
-			AnErr("err", err).
+			AnErr(logging.KeyErr, err).
 			Str("flag", listenAddFlag).
 			Str("address", cfg.pgAdvertiseAddress).
 			Msg("cannot resolve provided flag")
@@ -2296,14 +2299,14 @@ func keeper(c *cobra.Command, _ []string) {
 		cfg.pgReplPassword, err = readPasswordFromFile(ctx, cfg.pgReplPasswordFile)
 		if err != nil {
 			logger.Fatal().
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("cannot read pg replication user password")
 		}
 	}
 	if cfg.pgSUPasswordFile != "" {
 		cfg.pgSUPassword, err = readPasswordFromFile(ctx, cfg.pgSUPasswordFile)
 		if err != nil {
-			logger.Fatal().AnErr("err", err).Msg("cannot read pg superuser password")
+			logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot read pg superuser password")
 		}
 	}
 
@@ -2348,7 +2351,7 @@ func keeper(c *cobra.Command, _ []string) {
 		if err != nil {
 			logger.Fatal().
 				Str("logfile", lockFileName).
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("cannot take exclusive lock on data dir")
 		}
 
@@ -2364,7 +2367,7 @@ func keeper(c *cobra.Command, _ []string) {
 		if err != nil {
 			logger.Fatal().
 				Str("logfile", lockFileName).
-				AnErr("err", err).
+				AnErr(logging.KeyErr, err).
 				Msg("cannot take exclusive lock on data dir")
 		}
 
@@ -2392,7 +2395,7 @@ func keeper(c *cobra.Command, _ []string) {
 		go func() {
 			err = http.ListenAndServe(cfg.MetricsListenAddress, nil)
 			if err != nil {
-				logger.Error().AnErr("err", err).Msg("metrics http server error")
+				logger.Error().AnErr(logging.KeyErr, err).Msg("metrics http server error")
 				cancel()
 			}
 		}()
@@ -2400,15 +2403,17 @@ func keeper(c *cobra.Command, _ []string) {
 
 	p, err := NewPostgresKeeper(ctx, &cfg, end)
 	if err != nil {
-		logger.Fatal().AnErr("err", err).Msg("cannot create keeper")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot create keeper")
 	}
 	go p.Start(ctx)
 
-	<-end
+	if err := <-end; err != nil {
+		logger.Error().AnErr(logging.KeyErr, err).Msg("keeper stopped with error")
+	}
 
 	if !cfg.disableDataDirLocking {
 		if err := lockFile.Close(); err != nil {
-			logger.Fatal().AnErr("err", err).Msg("closing lock file failed")
+			logger.Fatal().AnErr(logging.KeyErr, err).Msg("closing lock file failed")
 		}
 	}
 }

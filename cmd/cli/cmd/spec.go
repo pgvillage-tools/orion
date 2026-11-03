@@ -52,22 +52,22 @@ func init() {
 
 	cmdSpec.PersistentFlags().BoolVarP(&specOpts.TLS, "tls", "t", true, "use tls")
 	if err := viper.BindPFlag("tls", cmdSpec.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdSpec.PersistentFlags().Uint16VarP(&specOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdSpec.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdSpec.PersistentFlags().StringVarP(&specOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdSpec.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdSpec.PersistentFlags().DurationVarP(&specOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
 	if err := viper.BindPFlag(flagTimeout, cmdSpec.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdSpec)
 }
@@ -154,7 +154,7 @@ func spec(_ *cobra.Command, _ []string) {
 	cd, httpCode, getClusterErr := apiClient.GetCluster()
 	if getClusterErr != nil {
 		logger.Fatal().
-			AnErr("error", getClusterErr).
+			AnErr(logging.KeyError, getClusterErr).
 			Int("http return code", httpCode).
 			Msg("failed to get clusterdata")
 	}
@@ -173,7 +173,7 @@ func spec(_ *cobra.Command, _ []string) {
 	}
 	if marshalErr != nil {
 		logger.Fatal().
-			AnErr("error", marshalErr).
+			AnErr(logging.KeyError, marshalErr).
 			Msg("failed to marshall spec")
 	}
 

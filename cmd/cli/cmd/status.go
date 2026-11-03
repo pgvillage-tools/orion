@@ -55,22 +55,22 @@ func init() {
 	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Format, "format", "f", "", "output format")
 	cmdStatus.PersistentFlags().BoolVarP(&statusOpts.TLS, "tls", "t", true, "use tls")
 	if err := viper.BindPFlag("tls", cmdStatus.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdStatus.PersistentFlags().Uint16VarP(&statusOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdStatus.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Host, "host", "H", defaultAPIIP,
 		"hostname or ip for connecting to the api")
 	if err := viper.BindPFlag("host", cmdStatus.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	cmdStatus.PersistentFlags().DurationVarP(&statusOpts.Timeout, flagTimeout, "T", defaultTimeout,
 		"connection timeout for api endpoint")
 	if err := viper.BindPFlag(flagTimeout, cmdStatus.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
 	}
 	CmdCLI.AddCommand(cmdStatus)
 }
@@ -147,14 +147,14 @@ func marshalJSON(value any) {
 func tabPrint(ctx context.Context, tw *tabwriter.Writer, formatted string, args ...any) {
 	if _, err := fmt.Fprintf(tw, formatted, args...); err != nil {
 		_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-		logger.Fatal().AnErr("err", err).Msg("failed to write to tab writer")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("failed to write to tab writer")
 	}
 }
 
 func tabFlush(ctx context.Context, tw *tabwriter.Writer) {
 	if err := tw.Flush(); err != nil {
 		_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-		logger.Fatal().AnErr("err", err).Msg("failed to flush tab writer")
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("failed to flush tab writer")
 	}
 }
 func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error) {
@@ -238,7 +238,7 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 	cd, httpCode, getClusterErr := apiClient.GetCluster()
 	if getClusterErr != nil {
 		logger.Fatal().
-			AnErr("error", getClusterErr).
+			AnErr(logging.KeyError, getClusterErr).
 			Int("http return code", httpCode).
 			Msg("failed to get clusterdata")
 	}
@@ -306,7 +306,7 @@ func generateStatus(ctx context.Context) (*cluster.InfoCluster, error) {
 	ic, httpCode, getClusterErr := apiClient.GetStatus()
 	if getClusterErr != nil {
 		logger.Fatal().
-			AnErr("error", getClusterErr).
+			AnErr(logging.KeyError, getClusterErr).
 			Int("http return code", httpCode).
 			Msg("failed to get info on cluster")
 	}

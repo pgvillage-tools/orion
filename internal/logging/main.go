@@ -19,6 +19,11 @@ import (
 
 const (
 	defaultLevel = zerolog.InfoLevel
+
+	// KeyErr is the log field key used for errors by the server components
+	KeyErr = "err"
+	// KeyError is the log field key used for errors by the cli
+	KeyError = "error"
 )
 
 var (
