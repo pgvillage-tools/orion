@@ -2,6 +2,16 @@ name: CI run on PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  # On main (and when started by hand) everything runs, with e2e tests on all PostgreSQL versions
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# A new push to a PR cancels the run of the previous push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Golang version to use across CI steps
@@ -18,31 +28,89 @@ jobs:
   codechanges:
     runs-on: ubuntu-22.04
     outputs:
-      backend: ${{ steps.filter.outputs.backend_any_changed }}
-      ci: ${{ steps.filter.outputs.ci_any_changed }}
+      go: ${{ steps.decide.outputs.go }}
+      e2e: ${{ steps.decide.outputs.e2e }}
+      shell: ${{ steps.decide.outputs.shell }}
+      pgversions: ${{ steps.decide.outputs.pgversions }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        if: github.event_name == 'pull_request'
       - uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         id: filter
+        if: github.event_name == 'pull_request'
         with:
-          # Any file which is not under docs/, examples/, or is not a markdown file is counted as a backend file
-          # Also run when ci-run-on-pr has been changed to validate it is working
           files_yaml: |
-            backend:
-              - '!**.md'
-              - '!**/*.md'
-              - '!docs/**'
-              - '!examples/**'
-              - '!.github/**'
             ci:
               - '.github/workflows/ci-run-on-pr.yaml'
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.golangci.yaml'
+              - '.testcoverage.yaml'
+              - 'Makefile'
+            e2e_src:
+              - '**/*.go'
+              - '!**/*_test.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Dockerfile.*'
+              - 'Makefile'
+            e2e_tests:
+              - 'tests/**'
+            shell:
+              - '**/*.sh'
+            all_pg:
+              - 'Dockerfile.keeper'
+              - 'cmd/keeper/**'
+              - 'internal/postgresql/**'
+      - name: Decide which jobs to run
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          CI_CHANGED: ${{ steps.filter.outputs.ci_any_changed }}
+          GO_CHANGED: ${{ steps.filter.outputs.go_any_changed }}
+          E2E_SRC_CHANGED: ${{ steps.filter.outputs.e2e_src_any_changed }}
+          E2E_TESTS_CHANGED: ${{ steps.filter.outputs.e2e_tests_any_changed }}
+          SHELL_CHANGED: ${{ steps.filter.outputs.shell_any_changed }}
+          ALL_PG_CHANGED: ${{ steps.filter.outputs.all_pg_any_changed }}
+        run: |
+          if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
+            # Run everything on main, when started by hand, and when this workflow changes
+            go=true e2e=true shell=true all_pg=true
+          else
+            go=${GO_CHANGED:-false}
+            shell=${SHELL_CHANGED:-false}
+            all_pg=${ALL_PG_CHANGED:-false}
+            e2e=false
+            if [ "${E2E_SRC_CHANGED}" = true ] || [ "${E2E_TESTS_CHANGED}" = true ]; then
+              e2e=true
+            fi
+          fi
+          # Drafts get the quick checks only; the images and e2e tests run once the PR is ready for review
+          if [ "${DRAFT}" = true ]; then
+            e2e=false
+          fi
+          # PRs test the oldest and the newest PostgreSQL version, unless keeper or PostgreSQL code changed
+          if [ "${all_pg}" = true ]; then
+            pgversions='["14","15","16","17","18"]'
+          else
+            pgversions='["14","18"]'
+          fi
+          {
+            echo "go=${go}"
+            echo "e2e=${e2e}"
+            echo "shell=${shell}"
+            echo "pgversions=${pgversions}"
+          } | tee -a "${GITHUB_OUTPUT}"
 
   check-go:
     name: Ensure Go modules synchronicity
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -63,7 +131,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     permissions:
       contents: read # for actions/checkout to fetch code
       pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
@@ -83,12 +151,12 @@ jobs:
     name: Shellcheck
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.shell == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master (2024-06-20)
 
   unit-test:
     name: Run unit tests
@@ -97,7 +165,7 @@ jobs:
       - codechanges
     permissions:
       pull-requests: write
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -120,15 +188,8 @@ jobs:
           name: unittests-coverage
           path: cover.out
       - name: find pull request ID
-        run: |
-          PR_ID=${GITHUB_REF_NAME%%/merge}
-          echo "PR_ID: $PR_ID"
-
-          if [ "$PR_ID" != "null" ]; then
-            echo "pull_request_id=$PR_ID" >> $GITHUB_ENV
-          else
-            echo "No open pull request found for this branch."
-          fi
+        if: github.event_name == 'pull_request'
+        run: echo "pull_request_id=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
       - name: create badge
         uses: vladopajic/go-test-coverage@v2
         continue-on-error: true # 'finally check coverage' fails the job when the coverage is too low
@@ -159,10 +220,10 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
     strategy:
       matrix:
-        pgversion: ['14','15','16','17','18']
+        pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -189,6 +250,8 @@ jobs:
           context: .
           file: ./Dockerfile.keeper
           push: false
+          cache-from: type=gha,scope=keeper-${{ matrix.pgversion }}
+          cache-to: type=gha,mode=max,scope=keeper-${{ matrix.pgversion }}
           platforms: linux/amd64
           tags: ${{ steps.keeper-meta.outputs.tags }}
           labels: ${{ steps.keeper-meta.outputs.labels }}
@@ -206,7 +269,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
     strategy:
       matrix:
         image:
@@ -239,6 +302,8 @@ jobs:
           context: .
           file: ./Dockerfile.${{ matrix.image }}
           push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -259,10 +324,10 @@ jobs:
       - codechanges
       - e2e-keeper-images
       - e2e-other-images
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
     strategy:
       matrix:
-        pgversion: ['14','15','16','17','18']
+        pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -274,9 +339,9 @@ jobs:
 
       - name: installe etcd
         run: |
-          curl -L ${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz -o /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
-          tar xzvf /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz -C "${ETCD_PATH}" --strip-components=1 --no-same-owner
-          rm -f /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
+          curl -L "${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" -o "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
+          tar xzvf "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz" -C "${ETCD_PATH}" --strip-components=1 --no-same-owner
+          rm -f "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
 
       - name: Download keeper artifact
         uses: actions/download-artifact@v8
@@ -331,7 +396,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
