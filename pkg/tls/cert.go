@@ -212,6 +212,10 @@ func (c *Cert) Decode() error {
 	c.signed = true
 	c.IsCa = cert.IsCA
 	c.MaxPathLen = cert.MaxPathLen
+	if c.Subject == nil {
+		subject := SubjectFromPkixName(cert.Subject)
+		c.Subject = &subject
+	}
 	return nil
 }
 

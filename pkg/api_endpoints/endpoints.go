@@ -123,7 +123,12 @@ func (ep EndPoint) clean() string {
 
 // URL can be used to retrieve the URL to use this endpoint
 func (ep EndPoint) URL(protocol Protocol, ip string, port uint16) string {
-	return fmt.Sprintf("%s://%s:%d/%s", protocol, ip, port, ep.clean())
+	return fmt.Sprintf("%s://%s/%s", protocol, hostPort(ip, port), ep.clean())
+}
+
+// hostPort joins host and port, and brackets IPv6 addresses (unless they already are)
+func hostPort(host string, port uint16) string {
+	return net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(int(port)))
 }
 
 // Route can be used to get the route definition for adding this endpoint to the API
@@ -141,8 +146,7 @@ type ProbeEndPoint string
 
 // URL can be used to retrieve the URL to use this endpoint
 func (ep ProbeEndPoint) URL(protocol Protocol, ip string, port uint16) string {
-	hostPort := net.JoinHostPort(ip, strconv.Itoa(int(port)))
-	return fmt.Sprintf("%s://%s/%s", protocol, hostPort, strings.Trim(string(ep), "/"))
+	return fmt.Sprintf("%s://%s/%s", protocol, hostPort(ip, port), strings.Trim(string(ep), "/"))
 }
 
 // Route can be used to get the route definition for adding this endpoint to the probe server

@@ -85,7 +85,8 @@ The api certificate is always valid for `localhost`, `127.0.0.1` and `::1`.
 | `--tls-ca-file` | `ORIONAPI_TLS_CA_FILE` | `<pki-dir>/client-ca.crt` | Use another file for the CA of the client certificates. |
 
 - The api doesn't start without its certificates. Starting without certificates (bootstrap mode) is planned.
-- At start, and once a day, the api logs a warning for every certificate that expires within 30 days.
+- The api reads its certificates at start. After you replace them (e.g. after a renewal), restart the api.
+- At start, and once a day, the api logs a warning for every certificate it loaded that expires within 30 days.
 - The api container image reads its certificates from `/etc/orion/api` (`ORIONAPI_PKI_DIR`). Mount them there, e.g.
   from a Kubernetes Secret, and make sure the `orion` user can read the private key.
 

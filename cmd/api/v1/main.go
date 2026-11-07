@@ -17,6 +17,7 @@ package v1
 
 import (
 	"context"
+	"crypto/x509"
 	"net"
 	"net/http"
 	"strconv"
@@ -109,15 +110,12 @@ func (c config) tlsFiles() (pki.TLSFiles, error) {
 	return files.Expand()
 }
 
-func warnExpiring(ctx context.Context, files pki.TLSFiles) {
+// warnExpiring warns about the certificates (as loaded at start) that expire soon. The api reads its certificates
+// at start only, so new files need a restart.
+func warnExpiring(ctx context.Context, certs []*x509.Certificate) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-	expiring, err := files.ExpiringCertificates(time.Now(), pki.ExpiryWarning)
-	if err != nil {
-		logger.Error().AnErr(keyError, err).Msg("failed to check the expiry of the certificates")
-		return
-	}
-	for _, e := range expiring {
-		logger.Warn().Str("certificate", e).Msg("certificate expires soon; renew it with the cli")
+	for _, e := range pki.ExpiringCertificates(certs, time.Now(), pki.ExpiryWarning) {
+		logger.Warn().Str("certificate", e).Msg("certificate expires soon; renew it with the cli and restart the api")
 	}
 }
 
@@ -171,10 +169,14 @@ func api(c *cobra.Command, _ []string) {
 	if err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("failed to load the certificates")
 	}
-	warnExpiring(ctx, files)
+	certs, err := files.Certificates()
+	if err != nil {
+		logger.Fatal().AnErr(keyError, err).Msg("failed to load the certificates")
+	}
+	warnExpiring(ctx, certs)
 	go func() {
 		for range time.Tick(expiryCheckPeriod) {
-			warnExpiring(ctx, files)
+			warnExpiring(ctx, certs)
 		}
 	}()
 

@@ -59,7 +59,7 @@ func NewTLSConnection(host string, port uint16, timeout time.Duration, tlsConfig
 		port:     port,
 		client: http.Client{
 			Timeout:   timeout,
-			Transport: &http.Transport{TLSClientConfig: tlsConfig},
+			Transport: &http.Transport{TLSClientConfig: tlsConfig, Proxy: http.ProxyFromEnvironment},
 		},
 	}
 }

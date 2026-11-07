@@ -20,6 +20,7 @@ import (
 	"net"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -86,7 +87,9 @@ func (i *Intermediate) InitializeIntermediate(name string, signer Pair) error {
 	return i.Cert.Process(signer)
 }
 
-func isValidServer(input string) bool {
+// IsValidServer returns true when input can be used as the name or an address of a server (an ip address, a host
+// name or a fully qualified domain name)
+func IsValidServer(input string) bool {
 	if net.ParseIP(input) != nil {
 		return true
 	}
@@ -102,6 +105,15 @@ func IsValidClient(input string) bool {
 		return true
 	}
 	return reToken.MatchString(input)
+}
+
+// ValidateStoreName returns an error when name can't be used as the name of a file or directory in a store: it must
+// be one path component, and it can't be the name of the files of the intermediate itself (ca)
+func ValidateStoreName(name string) error {
+	if name == "" || name == "." || name == ".." || name == caName || strings.ContainsAny(name, `/\`) {
+		return fmt.Errorf("%q can't be used as a name in a store", name)
+	}
+	return nil
 }
 
 func (i *Intermediate) newChild(name string) (Pair, error) {
@@ -128,6 +140,9 @@ func (i *Intermediate) newChild(name string) (Pair, error) {
 		PrivateKey: PrivateKey{Algorithm: i.Cert.PrivateKey.Algorithm},
 	}
 	if i.Store != "" {
+		if err := ValidateStoreName(name); err != nil {
+			return Pair{}, err
+		}
 		pair.Cert.Path = filepath.Join(i.Store, name+".crt")
 		pair.PrivateKey.Path = filepath.Join(i.Store, name+".key")
 	}
@@ -139,7 +154,7 @@ func (i *Intermediate) newChild(name string) (Pair, error) {
 func (i *Intermediate) InitializeServers() error {
 	for server, addresses := range i.Servers {
 		for _, a := range append([]string{server}, addresses...) {
-			if !isValidServer(a) {
+			if !IsValidServer(a) {
 				return fmt.Errorf("invalid server or address: %s", a)
 			}
 		}

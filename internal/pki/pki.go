@@ -19,6 +19,7 @@ package pki
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -108,9 +109,68 @@ func (o InitOptions) Files() []string {
 	return files
 }
 
+// realPath returns the absolute path of path, with symlinks resolved as far as the path exists
+func realPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	existing, rest := abs, ""
+	for {
+		if resolved, evalErr := filepath.EvalSymlinks(existing); evalErr == nil {
+			return filepath.Join(resolved, rest), nil
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return abs, nil
+		}
+		rest = filepath.Join(filepath.Base(existing), rest)
+		existing = parent
+	}
+}
+
+// isWithin returns true when path is dir, or is below dir
+func isWithin(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// checkDirs refuses an api directory that contains the CA directory of the cli: copying the api directory to the
+// api host would copy the CA keys too
+func (o InitOptions) checkDirs() error {
+	apiDir, err := realPath(o.APIDir)
+	if err != nil {
+		return err
+	}
+	caDir, err := realPath(filepath.Join(o.CLIDir, CLICADir))
+	if err != nil {
+		return err
+	}
+	if isWithin(caDir, apiDir) {
+		return fmt.Errorf("the api directory %s contains the CA directory %s: use separate directories", o.APIDir,
+			filepath.Join(o.CLIDir, CLICADir))
+	}
+	return nil
+}
+
+func (o InitOptions) checkSANs() error {
+	for _, san := range o.APISANs {
+		if !oriontls.IsValidServer(san) {
+			return fmt.Errorf("invalid name or address for the api certificate: %q", san)
+		}
+	}
+	return nil
+}
+
 func (o InitOptions) check() error {
 	if o.CLIDir == "" || o.APIDir == "" {
 		return errors.New("both the cli and the api directory need to be set")
+	}
+	if err := o.checkDirs(); err != nil {
+		return err
+	}
+	if err := o.checkSANs(); err != nil {
+		return err
 	}
 	if o.Force {
 		return nil
@@ -235,7 +295,7 @@ func ParseValidity(s string) (time.Duration, error) {
 	for suffix, unit := range map[string]time.Duration{"y": oriontls.Year, "d": oriontls.Day} {
 		if number, ok := strings.CutSuffix(s, suffix); ok {
 			n, err := strconv.ParseUint(number, decimal, uint32Bits)
-			if err != nil || n == 0 {
+			if err != nil || n == 0 || n > uint64(math.MaxInt64/int64(unit)) {
 				return 0, fmt.Errorf("invalid validity %q", s)
 			}
 			return time.Duration(n) * unit, nil

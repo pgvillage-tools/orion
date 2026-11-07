@@ -25,7 +25,7 @@ var _ = Describe("Intermediate", func() {
 			It("Should return true for valid ip and hostnames", func() {
 				for _, s := range []string{s1, s1ip, s1fqdn, s2, s2ip, s2fqdn} {
 					fmt.Fprintf(GinkgoWriter, "DEBUG - Valid server: %s\n", s)
-					Expect(isValidServer(s)).To(BeTrue())
+					Expect(IsValidServer(s)).To(BeTrue())
 				}
 			})
 			It("Should return false for anything else", func() {
@@ -37,7 +37,7 @@ var _ = Describe("Intermediate", func() {
 					"{",
 				} {
 					fmt.Fprintf(GinkgoWriter, "DEBUG - Invalid server: %s\n", s)
-					Expect(isValidServer(s)).To(BeFalse())
+					Expect(IsValidServer(s)).To(BeFalse())
 				}
 			})
 		})

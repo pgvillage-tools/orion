@@ -157,21 +157,27 @@ func (f TLSFiles) Exist() bool {
 	return true
 }
 
-// ExpiringCertificates returns a description of all certificates in the files (the certificate, its chain and the
-// CA) that expire before now + within
-func (f TLSFiles) ExpiringCertificates(now time.Time, within time.Duration) ([]string, error) {
-	var expiring []string
+// Certificates returns all certificates in the files: the certificate, its chain and the CA
+func (f TLSFiles) Certificates() ([]*x509.Certificate, error) {
+	var all []*x509.Certificate
 	for _, p := range []string{f.CertFile, f.CAFile} {
 		_, certs, err := LoadCertPool(p)
 		if err != nil {
 			return nil, err
 		}
-		for _, c := range certs {
-			if c.NotAfter.Before(now.Add(within)) {
-				expiring = append(expiring, fmt.Sprintf("%s (in %s) expires at %s", c.Subject.CommonName, p,
-					c.NotAfter.Format(time.RFC3339)))
-			}
+		all = append(all, certs...)
+	}
+	return all, nil
+}
+
+// ExpiringCertificates returns a description of all certificates that expire before now + within
+func ExpiringCertificates(certs []*x509.Certificate, now time.Time, within time.Duration) []string {
+	var expiring []string
+	for _, c := range certs {
+		if c.NotAfter.Before(now.Add(within)) {
+			expiring = append(expiring, fmt.Sprintf("%s expires at %s", c.Subject.CommonName,
+				c.NotAfter.Format(time.RFC3339)))
 		}
 	}
-	return expiring, nil
+	return expiring
 }

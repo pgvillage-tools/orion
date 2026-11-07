@@ -42,6 +42,35 @@ func (s Subject) SetCommonName(commonName string) Subject {
 	return s
 }
 
+func first(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+// SubjectFromPkixName converts a pkix.Name (e.g. of a loaded certificate) to a Subject. Only the first value of
+// each field is used.
+func SubjectFromPkixName(name pkix.Name) Subject {
+	s := Subject{
+		Country:            first(name.Country),
+		CommonName:         name.CommonName,
+		Locality:           first(name.Locality),
+		Organisation:       first(name.Organization),
+		OrganisationalUnit: first(name.OrganizationalUnit),
+		PostalCode:         first(name.PostalCode),
+		SerialNumber:       name.SerialNumber,
+		State:              first(name.Province),
+		StreetAddress:      first(name.StreetAddress),
+	}
+	for _, attr := range name.Names {
+		if value, ok := attr.Value.(string); ok && attr.Type.Equal(oidUserID) {
+			s.UserID = value
+		}
+	}
+	return s
+}
+
 func nonEmpty(value string) []string {
 	if value == "" {
 		return nil

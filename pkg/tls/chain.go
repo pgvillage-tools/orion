@@ -15,6 +15,7 @@
 package tls
 
 import (
+	"fmt"
 	"path/filepath"
 )
 
@@ -69,6 +70,9 @@ func (c *Chain) InitializeCA() error {
 func (c *Chain) InitializeIntermediates() (err error) {
 	if c.Store != "" {
 		for name, intermediate := range c.Intermediates {
+			if err = ValidateStoreName(name); err != nil {
+				return fmt.Errorf("invalid name for an intermediate: %w", err)
+			}
 			dir := filepath.Join(c.Store, name)
 			setPaths(&intermediate.Cert, dir, caName)
 			if intermediate.Store == "" {

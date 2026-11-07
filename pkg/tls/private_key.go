@@ -150,8 +150,36 @@ func (pk *PrivateKey) Decode() error {
 	if !ok {
 		return errors.New("private key can't be used for signing")
 	}
+	algorithm, err := algorithmOf(signer)
+	if err != nil {
+		return err
+	}
 	pk.key = signer
+	pk.Algorithm = algorithm
 	return nil
+}
+
+// algorithmOf returns the KeyAlgorithm of a key
+func algorithmOf(key crypto.Signer) (KeyAlgorithm, error) {
+	switch k := key.(type) {
+	case *ecdsa.PrivateKey:
+		if k.Curve == elliptic.P256() {
+			return KeyAlgorithmECDSAP256, nil
+		}
+		return "", fmt.Errorf("unsupported curve %s", k.Curve.Params().Name)
+	case *rsa.PrivateKey:
+		switch k.N.BitLen() {
+		case rsa2048Bits:
+			return KeyAlgorithmRSA2048, nil
+		case rsa3072Bits:
+			return KeyAlgorithmRSA3072, nil
+		case rsa4096Bits:
+			return KeyAlgorithmRSA4096, nil
+		}
+		return "", fmt.Errorf("unsupported RSA key size %d", k.N.BitLen())
+	default:
+		return "", fmt.Errorf("unsupported key type %T", key)
+	}
 }
 
 // Load reads the private key from Path

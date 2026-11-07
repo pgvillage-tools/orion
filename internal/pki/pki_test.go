@@ -83,6 +83,33 @@ var _ = Describe("PKI", Ordered, func() {
 			_, err = pki.Init(forced)
 			Expect(err).NotTo(HaveOccurred())
 		})
+		It("refuses an api directory that contains the CA directory", func() {
+			for _, apiDir := range []string{tmpDir, filepath.Join(tmpDir, "nested")} {
+				_, err := pki.Init(pki.InitOptions{
+					CLIDir: filepath.Join(tmpDir, "nested", "cli"), APIDir: apiDir, Force: true,
+				})
+				Expect(err).To(MatchError(ContainSubstring("contains the CA directory")), apiDir)
+			}
+			Expect(os.MkdirAll(filepath.Join(tmpDir, "nested"), 0o700)).To(Succeed())
+			link := filepath.Join(tmpDir, "link-to-nested")
+			Expect(os.Symlink(filepath.Join(tmpDir, "nested"), link)).To(Succeed())
+			_, err := pki.Init(pki.InitOptions{
+				CLIDir: filepath.Join(tmpDir, "nested", "cli"), APIDir: link, Force: true,
+			})
+			Expect(err).To(MatchError(ContainSubstring("contains the CA directory")))
+		})
+		It("validates the names for the api certificate before it writes anything", func() {
+			before, err := os.ReadFile(filepath.Join(opts.CLIDir, pki.CLICADir, "root.crt"))
+			Expect(err).NotTo(HaveOccurred())
+			invalid := opts
+			invalid.Force = true
+			invalid.APISANs = []string{"not a name"}
+			_, err = pki.Init(invalid)
+			Expect(err).To(MatchError(ContainSubstring("invalid name or address")))
+			after, err := os.ReadFile(filepath.Join(opts.CLIDir, pki.CLICADir, "root.crt"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(after).To(Equal(before))
+		})
 		It("needs both directories", func() {
 			_, err := pki.Init(pki.InitOptions{CLIDir: tmpDir})
 			Expect(err).To(HaveOccurred())
@@ -152,14 +179,15 @@ var _ = Describe("PKI", Ordered, func() {
 
 	Context("when checking the expiry", func() {
 		It("reports nothing for new certificates", func() {
-			expiring, err := pki.APIFiles(opts.APIDir).ExpiringCertificates(time.Now(), pki.ExpiryWarning)
+			certs, err := pki.APIFiles(opts.APIDir).Certificates()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(expiring).To(BeEmpty())
+			Expect(certs).To(HaveLen(3))
+			Expect(pki.ExpiringCertificates(certs, time.Now(), pki.ExpiryWarning)).To(BeEmpty())
 		})
 		It("reports certificates that expire soon", func() {
-			expiring, err := pki.APIFiles(opts.APIDir).ExpiringCertificates(
-				time.Now().Add(oriontls.Year), pki.ExpiryWarning)
+			certs, err := pki.APIFiles(opts.APIDir).Certificates()
 			Expect(err).NotTo(HaveOccurred())
+			expiring := pki.ExpiringCertificates(certs, time.Now().Add(oriontls.Year), pki.ExpiryWarning)
 			Expect(expiring).To(ContainElement(ContainSubstring(pki.APIServerName)))
 		})
 	})
@@ -174,7 +202,7 @@ var _ = Describe("Helpers", func() {
 		} {
 			Expect(pki.ParseValidity(input)).To(Equal(expected), input)
 		}
-		for _, invalid := range []string{"", "0y", "-1d", "y", "5x", "-5h"} {
+		for _, invalid := range []string{"", "0y", "-1d", "y", "5x", "-5h", "585y", "106752d"} {
 			_, err := pki.ParseValidity(invalid)
 			Expect(err).To(HaveOccurred(), invalid)
 		}

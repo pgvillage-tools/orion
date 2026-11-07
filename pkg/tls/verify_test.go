@@ -148,3 +148,68 @@ var _ = Describe("A chain with separate server and client intermediates", Ordere
 		Expect(server.Cert.X509().KeyUsage & x509.KeyUsageKeyEncipherment).NotTo(BeZero())
 	})
 })
+
+var _ = Describe("Loading stored CA material", Ordered, func() {
+	var (
+		tmpDir string
+		chain  Chain
+	)
+	BeforeAll(func() {
+		var err error
+		tmpDir, err = os.MkdirTemp("", "loadTest")
+		Expect(err).NotTo(HaveOccurred())
+		chain = Chain{
+			Store:         tmpDir,
+			KeyAlgorithm:  KeyAlgorithmRSA2048,
+			Intermediates: Intermediates{"server": Intermediate{Servers: Servers{"s1": nil}}},
+		}
+		Expect(chain.InitializeCA()).To(Succeed())
+		Expect(chain.InitializeIntermediates()).To(Succeed())
+	})
+	AfterAll(func() {
+		Expect(os.RemoveAll(tmpDir)).To(Succeed())
+	})
+
+	It("restores the subject and the algorithm, so a loaded root can sign again", func() {
+		root := Pair{
+			Cert:       Cert{Path: chain.Root.Cert.Path},
+			PrivateKey: PrivateKey{Path: chain.Root.PrivateKey.Path},
+		}
+		Expect(root.Load()).To(Succeed())
+		Expect(root.Cert.Subject).NotTo(BeNil())
+		Expect(*root.Cert.Subject).To(Equal(DefaultSubject))
+		Expect(root.PrivateKey.Algorithm).To(Equal(KeyAlgorithmRSA2048))
+
+		im := Intermediate{Clients: []string{"c1"}}
+		Expect(im.InitializeIntermediate("clients", root)).To(Succeed())
+		Expect(im.Cert.PrivateKey.Algorithm).To(Equal(KeyAlgorithmRSA2048))
+		Expect(im.InitializeClients()).To(Succeed())
+		client := im.Children()["c1"].Cert.X509()
+		Expect(client.KeyUsage & x509.KeyUsageKeyEncipherment).NotTo(BeZero())
+	})
+
+	It("converts the subject of a certificate back, including the UID", func() {
+		s := Subject{CommonName: "x", Organisation: "o", UserID: "uid1"}
+		pair := Pair{Cert: Cert{Subject: &s, Expiry: Day, KeyUsage: DefaultCAKeyUsage, IsCa: true}}
+		Expect(pair.SelfSign()).To(Succeed())
+		Expect(SubjectFromPkixName(pair.Cert.X509().Subject)).To(Equal(s))
+	})
+
+	It("refuses names that would escape the store or overwrite the CA files", func() {
+		for _, name := range []string{"ca", "../root", "a/b", "..", ""} {
+			Expect(ValidateStoreName(name)).NotTo(Succeed(), name)
+		}
+		Expect(ValidateStoreName("orion-cli")).To(Succeed())
+
+		im := Intermediate{Store: tmpDir, Clients: []string{"ca"}}
+		Expect(im.InitializeIntermediate("other", chain.Root)).To(Succeed())
+		Expect(im.InitializeClients()).To(MatchError(ContainSubstring("can't be used as a name")))
+
+		traversal := Chain{
+			Store:         tmpDir,
+			Intermediates: Intermediates{"../escape": Intermediate{}},
+		}
+		Expect(traversal.InitializeCA()).To(Succeed())
+		Expect(traversal.InitializeIntermediates()).To(MatchError(ContainSubstring("invalid name")))
+	})
+})
