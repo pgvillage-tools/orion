@@ -110,10 +110,10 @@ jobs:
       - name: check test coverage
         id: coverage
         uses: vladopajic/go-test-coverage@v2
+        continue-on-error: true # Should fail after coverage comment is posted
         with:
           config: .testcoverage.yaml
           profile: cover.out
-          continue-on-error: true # Should fail after coverage comment is posted
       - name: Generate test results artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -131,9 +131,10 @@ jobs:
           fi
       - name: create badge
         uses: vladopajic/go-test-coverage@v2
+        continue-on-error: true # 'finally check coverage' fails the job when the coverage is too low
         with:
+          config: .testcoverage.yaml
           profile: cover.out
-          threshold-total: 21
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           git-branch: badges
       - name: post coverage report
