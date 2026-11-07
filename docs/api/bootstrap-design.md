@@ -25,11 +25,10 @@ their certificates. Most of it is not implemented yet: see [Roadmap](#roadmap) f
 
 ```bash
 # Generate the CA, the intermediates, the api server certificate and the cli client certificate
-orion-cli pki init --api-url https://orion-api.example.com:8443
+orion-cli pki init --host orion-api.example.com
 
-# Start the api with the generated certificates
-orion-api --tls-cert-file ~/.orion/api/server.crt --tls-key-file ~/.orion/api/server.key \
-  --tls-ca-file ~/.orion/api/client-ca.crt
+# Copy ~/.orion/api to the api host, and start the api with it
+orion-api --pki-dir ~/.orion/api
 ```
 
 ## Goals
@@ -88,7 +87,7 @@ The api certificate always gets `localhost`, `127.0.0.1` and `::1`, plus:
 
 | How the certificate is made | Detected names | Extra names |
 |-----------------------------|----------------|-------------|
-| `orion-cli pki init` | The host of the api URL of the cli (`--api-url`) | `--api-san` (repeatable) |
+| `orion-cli pki init` | The api host of the cli (`--host`) | `--api-san` (repeatable) |
 | Bootstrap mode | The hostname and IP addresses of the api host, and the host of `--base-url` | Sent by the cli |
 
 In most cases the detected names are enough; the extra names are for load balancers, DNS aliases or Kubernetes Service
@@ -98,8 +97,8 @@ names (`orion-api.<namespace>.svc`, ...).
 
 | Port | Protocol | Bootstrap mode | Normal mode |
 |------|----------|----------------|-------------|
-| api (`--port`) | TLS | Temporary self-signed certificate, no client certificate, only the bootstrap endpoints (protected with HMAC) | Server certificate from the PKI, client certificate required, the normal api |
-| probe (`--probe-port`) | HTTP | `/healthz`, `/readyz`, `/status` reports `bootstrap` | `/healthz`, `/readyz`, `/status` reports `normal`, later `/metrics` |
+| api (`--port`, default 8443) | TLS | Temporary self-signed certificate, no client certificate, only the bootstrap endpoints (protected with HMAC) | Server certificate from the PKI, client certificate required, the normal api |
+| probe (`--probe-port`, default 8080) | HTTP | `/healthz`, `/readyz`, `/status` reports `bootstrap` | `/healthz`, `/readyz`, `/status` reports `normal`, later `/metrics` |
 
 The api port has one mode at a time:
 
@@ -214,7 +213,7 @@ Use it to:
 - create the certificates with the cli, so the CA keys never touch the api host:
 
   ```bash
-  orion-cli pki init --api-url https://orion-api.example.com:8443
+  orion-cli pki init --host orion-api.example.com
   ```
 
 - run the api on Kubernetes, with the certificates (created by the cli) mounted from Secrets;
@@ -263,16 +262,18 @@ The directories are only readable for their owner, and private keys are stored w
 
 Implemented in the first PR:
 
-- [ ] The PKI library (`pkg/tls`): root, server intermediate, client intermediate, server and client certificates,
+- [x] The PKI library (`pkg/tls`): root, server intermediate, client intermediate, server and client certificates,
   ECDSA P-256, validity rules.
-- [ ] `orion-cli pki init`: generates the CA, the intermediates, the api server certificate and the cli client
+- [x] `orion-cli pki init`: generates the CA, the intermediates, the api server certificate and the cli client
   certificate.
-- [ ] The api with your own certificates: mTLS on the api port, the identity of the client in the request context.
-- [ ] The probe port with `/healthz`, `/readyz` and `/status`.
-- [ ] The cli connects to the api with mTLS.
+- [x] The api with your own certificates: mTLS on the api port, the identity of the client in the request context.
+- [x] The probe port with `/healthz`, `/readyz` and `/status`.
+- [x] The cli connects to the api with mTLS.
 
 Later, each in its own PR:
 
+- [ ] Encrypt the CA keys on the cli with a passphrase. For now, `orion-cli pki init` stores them unencrypted, readable
+  for the owner only.
 - [ ] Bootstrap mode, with the shared secret, the HMAC, the archive, the confirmation and `--rebootstrap`.
 - [ ] Certificate management in the cli and the api (issue, renew, list), and automatic renewal.
 - [ ] `/metrics` on the probe port.
