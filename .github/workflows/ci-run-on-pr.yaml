@@ -164,6 +164,7 @@ jobs:
     needs:
       - codechanges
     permissions:
+      contents: write # to push the coverage badge to the badges branch (on main)
       pull-requests: write
     if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
