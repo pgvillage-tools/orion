@@ -178,7 +178,7 @@ jobs:
         run: make test
       - name: check test coverage
         id: coverage
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
         continue-on-error: true # Should fail after coverage comment is posted
         with:
           config: .testcoverage.yaml
@@ -192,7 +192,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: echo "pull_request_id=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
       - name: create badge
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
         continue-on-error: true # 'finally check coverage' fails the job when the coverage is too low
         with:
           config: .testcoverage.yaml
