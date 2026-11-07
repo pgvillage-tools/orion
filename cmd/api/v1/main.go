@@ -72,7 +72,7 @@ func init() {
 	CmdWebApi.PersistentFlags().BoolVar(&cfg.debug, "debug", false,
 		"enable debug logging")
 	CmdWebApi.PersistentFlags().StringVar(&cfg.pkiDir, "pki-dir", defaultPKIDir,
-		"directory with the certificates of the api (as created by `orion-cli pki init`)")
+		"directory with the certificates of the api, as created by orion-cli pki init")
 	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCertFile, "tls-cert-file", "",
 		"server certificate of the api, followed by its chain (default <pki-dir>/"+pki.APIServerCertFile+")")
 	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsKeyFile, "tls-key-file", "",
