@@ -53,15 +53,10 @@ var (
 	// DefaultClientExtKeyUsages are the extended key usages of a client certificate
 	DefaultClientExtKeyUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
 
-	// DefaultSubject is used when no subject is set
+	// DefaultSubject is used when no subject is set. It has no OrganizationalUnit on purpose: the api uses the
+	// OrganizationalUnits of a client certificate as the groups of the client.
 	DefaultSubject = Subject{
-		Country:            "NL",
-		CommonName:         "orion",
-		Locality:           "Blaricum",
-		Organisation:       "PGVillage",
-		OrganisationalUnit: "postgres",
-		PostalCode:         "1261 WZ",
-		State:              "Utrecht",
-		StreetAddress:      "Binnendelta 1-U2",
+		CommonName:   "Orion root CA",
+		Organisation: "PGVillage",
 	}
 )
