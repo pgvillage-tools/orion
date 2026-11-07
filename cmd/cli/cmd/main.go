@@ -28,6 +28,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -43,7 +44,7 @@ var CmdCLI = &cobra.Command{
 	Short:   "orion command line interface",
 	Version: cmd.Version,
 	PersistentPreRun: func(c *cobra.Command, _ []string) {
-		if c.Name() != "orion" && c.Name() != "version" {
+		if c.Name() != "orion" && c.Name() != "version" && !isPKICommand(c) {
 			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 				_, logger := logging.GetLogComponent(c.Context(), logging.CmdComponent)
 				logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
@@ -64,6 +65,11 @@ var cfg config
 func init() {
 	cfg.IsCLI = true
 	cmd.AddCommonFlags(CmdCLI, &cfg.CommonConfig)
+	CmdCLI.PersistentFlags().String(flagPKIDir, defaultCLIPKIDir,
+		"directory with the client certificate of the cli, and the CA")
+	if err := viper.BindPFlag(flagPKIDir, CmdCLI.PersistentFlags().Lookup(flagPKIDir)); err != nil {
+		log.Fatal(err)
+	}
 }
 
 var cmdVersion = &cobra.Command{
@@ -104,4 +110,14 @@ func stdout(format string, a ...any) {
 func die(format string, a ...any) {
 	stderr(format, a...)
 	os.Exit(1)
+}
+
+// isPKICommand returns true for the pki commands, which don't need a store
+func isPKICommand(c *cobra.Command) bool {
+	for ; c != nil; c = c.Parent() {
+		if c == cmdPKI {
+			return true
+		}
+	}
+	return false
 }

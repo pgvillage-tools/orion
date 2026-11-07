@@ -7,6 +7,13 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
+var _ = Describe("ProbeEndPoints", func() {
+	It("returns URLs and routes without a version", func() {
+		Ω(endpoints.HealthEndPoint.URL(endpoints.HTTP, "::1", 8080)).To(Equal("http://[::1]:8080/healthz"))
+		Ω(endpoints.ModeEndPoint.Route(endpoints.MethodGet)).To(Equal("GET /status"))
+	})
+})
+
 var _ = Describe("Endpoints", func() {
 	When("Getting Route from Endpoint", func() {
 		It("should work as expected", func() {
@@ -39,6 +46,10 @@ var _ = Describe("Endpoints", func() {
 					expected: "https://1.2.3.4:8080/v1/a/b/c/d"},
 				{ep: endpoints.EndPoint("/a/b/c/d/"), proto: endpoints.HTTP, port: 8081, ip: "1.2.3.5",
 					expected: "http://1.2.3.5:8081/v1/a/b/c/d"},
+				{ep: endpoints.WhoAmIEndPoint, proto: endpoints.HTTPS, port: 8443, ip: "::1",
+					expected: "https://[::1]:8443/v1/whoami"},
+				{ep: endpoints.WhoAmIEndPoint, proto: endpoints.HTTPS, port: 8443, ip: "[::1]",
+					expected: "https://[::1]:8443/v1/whoami"},
 			} {
 				Ω(t.ep.URL(t.proto, t.ip, t.port)).To(Equal(t.expected))
 			}

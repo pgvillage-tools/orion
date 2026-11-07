@@ -16,6 +16,7 @@ package api_client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,6 +25,11 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
+
+// endpoint is an endpoint on the api port (endpoints.EndPoint) or on the probe port (endpoints.ProbeEndPoint)
+type endpoint interface {
+	URL(protocol endpoints.Protocol, ip string, port uint16) string
+}
 
 // Connection is a resource to connect to the orion API
 type Connection struct {
@@ -44,13 +50,27 @@ func NewConnection(protocol endpoints.Protocol, host string, port uint16,
 	}
 }
 
+// NewTLSConnection returns an initialized Connection that uses https with tlsConfig (e.g. with a client
+// certificate)
+func NewTLSConnection(host string, port uint16, timeout time.Duration, tlsConfig *tls.Config) Connection {
+	return Connection{
+		protocol: endpoints.HTTPS,
+		host:     host,
+		port:     port,
+		client: http.Client{
+			Timeout:   timeout,
+			Transport: &http.Transport{TLSClientConfig: tlsConfig, Proxy: http.ProxyFromEnvironment},
+		},
+	}
+}
+
 // EndpointURL calculates and returns the url for a specific endpoint on this Connection
-func (c Connection) EndpointURL(ep endpoints.EndPoint) string {
+func (c Connection) EndpointURL(ep endpoint) string {
 	return ep.URL(c.protocol, c.host, c.port)
 }
 
 // Get will issue a GET request on the API
-func (c Connection) Get(ep endpoints.EndPoint, o any) (httpError int, err error) {
+func (c Connection) Get(ep endpoint, o any) (httpError int, err error) {
 	url := c.EndpointURL(ep)
 
 	getReq, getReqErr := http.NewRequest(http.MethodGet, url, nil)

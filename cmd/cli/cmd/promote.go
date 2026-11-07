@@ -20,8 +20,6 @@ import (
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/logging"
-	client "github.com/pgvillage-tools/orion/pkg/api_client"
-	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -29,7 +27,6 @@ import (
 type promoteOptions struct {
 	Host    string        `mapstructure:"host"`
 	Port    uint16        `mapstructure:"port"`
-	TLS     bool          `mapstructure:"tls"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -43,10 +40,6 @@ var cmdPromote = &cobra.Command{
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	cmdPromote.PersistentFlags().BoolVarP(&promoteOpts.TLS, "tls", "t", true, "use tls")
-	if err := viper.BindPFlag("tls", cmdPromote.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	cmdPromote.PersistentFlags().Uint16VarP(&promoteOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdPromote.PersistentFlags().Lookup("port")); err != nil {
@@ -74,12 +67,7 @@ func promote(_ *cobra.Command, args []string) {
 		logger.Fatal().Msg("too many arguments")
 	}
 
-	p := endpoints.HTTPS
-	if !viper.GetBool(flagTLS) {
-		p = endpoints.HTTP
-	}
-	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
-		viper.GetDuration(flagTimeout))
+	apiClient := defaultAPIClient(ctx)
 
 	httpCode, putErr := apiClient.PutPromoteReplicaSet()
 	if putErr != nil {
