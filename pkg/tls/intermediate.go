@@ -1,11 +1,26 @@
+// Copyright 2026 PgVillage
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tls
 
 import (
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"regexp"
+	"time"
 )
 
 var (
@@ -18,11 +33,9 @@ var (
 // Intermediates holds all intermediates that are configured
 type Intermediates map[string]Intermediate
 
-// Initialize can be used to generate, build and save certificates and private
-// keys for all servers and clients of all intermediates
-func (i Intermediates) Initialize(
-	signer Pair,
-) (Intermediates, error) {
+// Initialize generates, signs and saves the certificates and private keys of all intermediates, and of all their
+// servers and clients
+func (i Intermediates) Initialize(signer Pair) (Intermediates, error) {
 	for iName, intermediate := range i {
 		if err := intermediate.InitializeIntermediate(iName, signer); err != nil {
 			return nil, err
@@ -38,32 +51,38 @@ func (i Intermediates) Initialize(
 	return i, nil
 }
 
-// Intermediate holds the config of an intermediate, which can be either Server
-// or Client (or both)
+// Intermediate holds the config of an intermediate, which can sign server and client certificates. Use separate
+// intermediates for servers and clients, and a separate client intermediate per service: a server that trusts a
+// client intermediate trusts all client certificates it signed.
 type Intermediate struct {
-	Cert     Pair `json:"cert"`
-	children Pairs
+	Cert     Pair     `json:"cert"`
 	Servers  Servers  `json:"servers"`
 	Clients  []string `json:"clients"`
+	children Pairs
+	// LeafExpiry is the validity of the server and client certificates (DefaultExpiry when not set)
+	LeafExpiry time.Duration `json:"leaf_expiry"`
+	// Store is the directory for the files of the server and client certificates. When set, files that have no
+	// path get <Store>/<name>.crt and <Store>/<name>.key.
+	Store string `json:"store"`
 }
 
-// InitializeIntermediate can be used to initialize the intermediate
-func (i *Intermediate) InitializeIntermediate(
-	name string,
-	signer Pair,
-) error {
-	if signer.Cert.Subject == nil {
+// InitializeIntermediate generates, signs and saves the intermediate
+func (i *Intermediate) InitializeIntermediate(name string, signer Pair) error {
+	if signer.Cert.Subject == nil || signer.Cert.X509() == nil {
 		return errors.New("signer not properly initialized")
 	}
 	i.Cert.Cert.SetDefaults(
 		signer.Cert.Subject.SetCommonName(name),
-		signer.Cert.Expiry,
-		signer.Cert.KeyUsage,
-		signer.Cert.ExtKeyUsage,
+		DefaultIntermediateExpiry,
+		DefaultCAKeyUsage,
+		nil,
 	)
 	i.Cert.Cert.IsCa = true
-	// Enable cert sign for intermediates
-	i.Cert.Cert.KeyUsage |= x509.KeyUsageCertSign
+	i.Cert.Cert.MaxPathLen = 0
+	i.Cert.Cert.AlternateNames = nil
+	if i.Cert.PrivateKey.Algorithm == "" {
+		i.Cert.PrivateKey.Algorithm = signer.PrivateKey.Algorithm
+	}
 	return i.Cert.Process(signer)
 }
 
@@ -77,41 +96,7 @@ func isValidServer(input string) bool {
 	return reFQDN.MatchString(input)
 }
 
-// InitializeServers can be used to generate, build and save certificates and
-// private keys for all servers an intermediate
-func (i *Intermediate) InitializeServers() error {
-	if i.children == nil {
-		i.children = Pairs{}
-	}
-	for server, addresses := range i.Servers {
-		if _, exists := i.children["server"]; exists {
-			return errors.New("cannot define client multiple times")
-		}
-		for _, a := range append([]string{server}, addresses...) {
-			if !isValidServer(a) {
-				return fmt.Errorf("invalid server or address: %s", a)
-			}
-		}
-		subject := i.Cert.Cert.Subject.SetCommonName(server)
-		pair := Pair{
-			Cert: Cert{
-				Subject:        &subject,
-				Expiry:         i.Cert.Cert.Expiry,
-				KeyUsage:       i.Cert.Cert.KeyUsage,
-				ExtKeyUsage:    i.Cert.Cert.ExtKeyUsage,
-				AlternateNames: addresses,
-			},
-		}
-		pair.Cert.KeyUsage &^= x509.KeyUsageCertSign
-		err := pair.Process(i.Cert)
-		if err != nil {
-			return err
-		}
-		i.children[server] = pair
-	}
-	return nil
-}
-
+// IsValidClient returns true when input can be used as the name of a client (a PostgreSQL user or a token)
 func IsValidClient(input string) bool {
 	if rePgUser.MatchString(input) {
 		return true
@@ -119,30 +104,72 @@ func IsValidClient(input string) bool {
 	return reToken.MatchString(input)
 }
 
-// InitializeClients can be used to generate, build and save certificates and
-// private keys for all clients of an intermediate
-func (i *Intermediate) InitializeClients() error {
+func (i *Intermediate) newChild(name string) (Pair, error) {
 	if i.children == nil {
 		i.children = Pairs{}
 	}
-	i.children = Pairs{}
+	if _, exists := i.children[name]; exists {
+		return Pair{}, fmt.Errorf("cannot define %s multiple times", name)
+	}
+	if i.Cert.Cert.X509() == nil {
+		return Pair{}, errors.New("intermediate needs to be initialized first")
+	}
+	expiry := i.LeafExpiry
+	if expiry == 0 {
+		expiry = DefaultExpiry
+	}
+	subject := i.Cert.Cert.Subject.SetCommonName(name)
+	pair := Pair{
+		Cert: Cert{
+			Subject:  &subject,
+			Expiry:   expiry,
+			KeyUsage: DefaultKeyUsage,
+		},
+		PrivateKey: PrivateKey{Algorithm: i.Cert.PrivateKey.Algorithm},
+	}
+	if i.Store != "" {
+		pair.Cert.Path = filepath.Join(i.Store, name+".crt")
+		pair.PrivateKey.Path = filepath.Join(i.Store, name+".key")
+	}
+	return pair, nil
+}
+
+// InitializeServers generates, signs and saves the certificates and private keys of all servers of the
+// intermediate. The name of a server is its CommonName, and is also added as an alternate name.
+func (i *Intermediate) InitializeServers() error {
+	for server, addresses := range i.Servers {
+		for _, a := range append([]string{server}, addresses...) {
+			if !isValidServer(a) {
+				return fmt.Errorf("invalid server or address: %s", a)
+			}
+		}
+		pair, err := i.newChild(server)
+		if err != nil {
+			return err
+		}
+		pair.Cert.ExtKeyUsage = DefaultServerExtKeyUsages
+		pair.Cert.AlternateNames = uniqueStrings(append([]string{server}, addresses...))
+		if err = pair.Process(i.Cert); err != nil {
+			return err
+		}
+		i.children[server] = pair
+	}
+	return nil
+}
+
+// InitializeClients generates, signs and saves the certificates and private keys of all clients of the
+// intermediate. The name of a client is its CommonName.
+func (i *Intermediate) InitializeClients() error {
 	for _, client := range i.Clients {
 		if !IsValidClient(client) {
 			return fmt.Errorf("client is not valid: %s", client)
 		}
-		subject := i.Cert.Cert.Subject.SetCommonName(client)
-		pair := Pair{
-			Cert: Cert{
-				Subject:     &subject,
-				Expiry:      i.Cert.Cert.Expiry,
-				KeyUsage:    i.Cert.Cert.KeyUsage,
-				ExtKeyUsage: i.Cert.Cert.ExtKeyUsage,
-			},
-		}
-		// disable cert-sign for certs
-		pair.Cert.KeyUsage &^= x509.KeyUsageCertSign
-		err := pair.Process(i.Cert)
+		pair, err := i.newChild(client)
 		if err != nil {
+			return err
+		}
+		pair.Cert.ExtKeyUsage = DefaultClientExtKeyUsages
+		if err = pair.Process(i.Cert); err != nil {
 			return err
 		}
 		i.children[client] = pair
@@ -150,10 +177,26 @@ func (i *Intermediate) InitializeClients() error {
 	return nil
 }
 
-// Servers is a map holding servers, with addresses. The key will be used for
-// the CommonName
+// Children returns the server and client certificates (and private keys) of the intermediate
+func (i Intermediate) Children() Pairs {
+	return i.children
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	var result []string
+	for _, v := range values {
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		result = append(result, v)
+	}
+	return result
+}
+
+// Servers is a map holding servers, with addresses. The key will be used for the CommonName
 type Servers map[string]ServerAddresses
 
-// ServerAddresses is a list of DNS names and/or ip addresses to be used in the
-// SAN field
+// ServerAddresses is a list of DNS names and/or ip addresses to be used in the SAN field
 type ServerAddresses []string

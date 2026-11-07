@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"crypto/x509"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -65,7 +66,7 @@ var _ = Describe("Intermediate", func() {
 				Expect(string(myIntermediate.Cert.Cert.PEM)).To(
 					HavePrefix("-----BEGIN CERTIFICATE-----"))
 				Expect(string(myIntermediate.Cert.PrivateKey.PEM)).To(
-					HavePrefix("-----BEGIN RSA PRIVATE KEY-----"))
+					HavePrefix("-----BEGIN PRIVATE KEY-----"))
 				Expect(myIntermediate.children).To(HaveKey(s1))
 
 				server1 := myIntermediate.children[s1]
@@ -76,7 +77,30 @@ var _ = Describe("Intermediate", func() {
 				Expect(server1.PrivateKey.key).NotTo(BeNil())
 				Expect(server1.PrivateKey.PEM).NotTo(BeEmpty())
 				Expect(string(server1.PrivateKey.PEM)).To(
-					HavePrefix("-----BEGIN RSA PRIVATE KEY-----"))
+					HavePrefix("-----BEGIN PRIVATE KEY-----"))
+			})
+			It("Should give servers the serverAuth and clients the clientAuth usage", func() {
+				children := chain.Intermediates[im].Children()
+				Expect(children).To(HaveKey(s1))
+				Expect(children).To(HaveKey(c1))
+				server := children[s1].Cert.X509()
+				Expect(server.ExtKeyUsage).To(Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}))
+				Expect(server.DNSNames).To(ConsistOf(s1, s1fqdn))
+				Expect(server.Subject.CommonName).To(Equal(s1))
+				client := children[c1].Cert.X509()
+				Expect(client.ExtKeyUsage).To(Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}))
+				Expect(client.Subject.CommonName).To(Equal(c1))
+				Expect(client.IsCA).To(BeFalse())
+			})
+			It("Should refuse a name that is both a server and a client", func() {
+				dupChain := Chain{
+					Intermediates: Intermediates{
+						im: Intermediate{Servers: Servers{s1: nil}, Clients: []string{s1}},
+					},
+				}
+				Expect(dupChain.InitializeCA()).To(Succeed())
+				_, err := dupChain.Intermediates.Initialize(dupChain.Root)
+				Expect(err).To(MatchError(ContainSubstring("multiple times")))
 			})
 			It("requires an initialized root to sign the intermediate", func() {
 				//InitializeIntermediates
@@ -86,7 +110,7 @@ var _ = Describe("Intermediate", func() {
 				Expect(im).To(BeNil())
 			})
 		})
-		When("When working with a valid intermediate", Ordered, func() {
+		When("working with invalid servers or clients", Ordered, func() {
 			var (
 				invalidClientChain = Chain{
 					Intermediates: Intermediates{

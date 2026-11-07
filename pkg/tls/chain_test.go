@@ -32,7 +32,7 @@ var _ = Describe("Chain", func() {
 			Expect(chain.Root.PrivateKey.key).NotTo(BeNil())
 			Expect(chain.Root.PrivateKey.PEM).NotTo(BeEmpty())
 			Expect(string(chain.Root.PrivateKey.PEM)).To(
-				HavePrefix("-----BEGIN RSA PRIVATE KEY-----"))
+				HavePrefix("-----BEGIN PRIVATE KEY-----"))
 		})
 		It("Should properly initialize intermediates", func() {
 			//InitializeIntermediates
@@ -44,7 +44,7 @@ var _ = Describe("Chain", func() {
 			Expect(string(myIntermediate.Cert.Cert.PEM)).To(
 				HavePrefix("-----BEGIN CERTIFICATE-----"))
 			Expect(string(myIntermediate.Cert.PrivateKey.PEM)).To(
-				HavePrefix("-----BEGIN RSA PRIVATE KEY-----"))
+				HavePrefix("-----BEGIN PRIVATE KEY-----"))
 			Expect(myIntermediate.children).To(HaveKey(server1))
 
 			server1 := myIntermediate.children[server1]
@@ -55,7 +55,7 @@ var _ = Describe("Chain", func() {
 			Expect(server1.PrivateKey.key).NotTo(BeNil())
 			Expect(server1.PrivateKey.PEM).NotTo(BeEmpty())
 			Expect(string(server1.PrivateKey.PEM)).To(
-				HavePrefix("-----BEGIN RSA PRIVATE KEY-----"))
+				HavePrefix("-----BEGIN PRIVATE KEY-----"))
 		})
 		It("Should properly generate structure", func() {
 			//Structure
@@ -67,7 +67,9 @@ var _ = Describe("Chain", func() {
 			s1 := myIntermediate[server1]
 			Expect(string(s1)).To(
 				HavePrefix("-----BEGIN CERTIFICATE-----"))
-			i1Chain := myIntermediate["chain"]
+			Expect(structure.Keys[intermediate]).To(HaveKey(server1))
+			Expect(structure.Chains).To(HaveKey(intermediate))
+			i1Chain := structure.Chains[intermediate]
 			Expect(string(i1Chain)).To(
 				HavePrefix("-----BEGIN CERTIFICATE-----"))
 			Expect(
