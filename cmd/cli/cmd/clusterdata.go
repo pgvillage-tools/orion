@@ -25,8 +25,6 @@ import (
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/logging"
-	client "github.com/pgvillage-tools/orion/pkg/api_client"
-	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -35,7 +33,6 @@ import (
 const (
 	flagPort    = "port"
 	flagHost    = "host"
-	flagTLS     = "tls"
 	flagFile    = "file"
 	flagPatch   = "patch"
 	flagTimeout = "timeout"
@@ -50,7 +47,6 @@ type clusterdataReadOptions struct {
 	pretty  bool
 	Host    string        `mapstructure:"host"`
 	Port    uint16        `mapstructure:"port"`
-	TLS     bool          `mapstructure:"tls"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -60,7 +56,6 @@ type clusterdataWriteOptions struct {
 	file    string
 	Host    string        `mapstructure:"host"`
 	Port    uint16        `mapstructure:"port"`
-	TLS     bool          `mapstructure:"tls"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -81,10 +76,6 @@ var cmdWriteClusterData = &cobra.Command{
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdReadClusterData.PersistentFlags().BoolVar(&readClusterdataOpts.pretty, "pretty", false, "pretty print")
-	cmdReadClusterData.PersistentFlags().BoolVarP(&readClusterdataOpts.TLS, flagTLS, "t", true, "use tls")
-	if err := viper.BindPFlag(flagTLS, cmdReadClusterData.PersistentFlags().Lookup(flagTLS)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	cmdReadClusterData.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, flagPort, "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag(flagPort, cmdReadClusterData.PersistentFlags().Lookup(flagPort)); err != nil {
@@ -104,10 +95,6 @@ func init() {
 
 	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.file, flagFile, "f", "",
 		"file containing the new cluster data")
-	cmdWriteClusterData.PersistentFlags().BoolVarP(&writeClusterdataOpts.TLS, flagTLS, "t", true, "use tls")
-	if err := viper.BindPFlag(flagTLS, cmdWriteClusterData.PersistentFlags().Lookup(flagTLS)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	cmdWriteClusterData.PersistentFlags().Uint16VarP(&writeClusterdataOpts.Port, flagPort, "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag(flagPort, cmdWriteClusterData.PersistentFlags().Lookup(flagPort)); err != nil {
@@ -132,12 +119,7 @@ func readClusterdata(_ *cobra.Command, _ []string) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	p := endpoints.HTTPS
-	if !viper.GetBool(flagTLS) {
-		p = endpoints.HTTP
-	}
-	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
-		viper.GetDuration(flagTimeout))
+	apiClient := defaultAPIClient(ctx)
 	cd, httpCode, getClusterErr := apiClient.GetCluster()
 	if getClusterErr != nil {
 		logger.Fatal().
@@ -205,12 +187,7 @@ func runWriteClusterdata(_ *cobra.Command, args []string) {
 		logger.Fatal().Msg("clusterdata write accepts at most one positional argument")
 	}
 
-	p := endpoints.HTTPS
-	if !viper.GetBool(flagTLS) {
-		p = endpoints.HTTP
-	}
-	apiClient := client.NewConnection(p, writeClusterdataOpts.Host, writeClusterdataOpts.Port,
-		viper.GetDuration(flagTimeout))
+	apiClient := newAPIClient(ctx, writeClusterdataOpts.Host, writeClusterdataOpts.Port)
 	httpCode, putClusterErr := apiClient.PutCluster(cd)
 	if putClusterErr != nil {
 		logger.Fatal().

@@ -17,29 +17,45 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"sync/atomic"
+	"time"
 
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	"github.com/pgvillage-tools/orion/internal/auth"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/pki"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 
 	"github.com/spf13/cobra"
 )
 
 const (
 	readMaxBytes int64 = 1 << 20
+
+	defaultPort       = uint(8443)
+	defaultProbePort  = uint(8080)
+	defaultPKIDir     = "~/.orion/api"
+	readHeaderTimeout = 10 * time.Second
+	expiryCheckPeriod = 24 * time.Hour
+	keyError          = "error"
+	decimal           = 10
 )
 
 type config struct {
 	cmdcommon.CommonConfig
 
-	baseURL string
-	port    uint
-	token   string
-	debug   bool
+	baseURL     string
+	port        uint
+	probePort   uint
+	debug       bool
+	pkiDir      string
+	tlsCertFile string
+	tlsKeyFile  string
+	tlsCAFile   string
 }
 
 var cfg config
@@ -48,27 +64,81 @@ func init() {
 	cmdcommon.AddCommonFlags(CmdWebApi, &cfg.CommonConfig)
 	// revive:disable
 	CmdWebApi.PersistentFlags().StringVar(&cfg.baseURL, "baseurl", "0.0.0.0",
-		"baseurl for the webserver to run on.")
-	CmdWebApi.PersistentFlags().StringVar(&cfg.token, "token", "",
-		"token for authentication.")
+		"address for the api and probe ports to listen on")
 	CmdWebApi.PersistentFlags().UintVar(&cfg.port, "port", defaultPort,
-		"port for webserver")
+		"port for the api (TLS, a client certificate is required)")
+	CmdWebApi.PersistentFlags().UintVar(&cfg.probePort, "probe-port", defaultProbePort,
+		"port for /healthz, /readyz and /status (plain HTTP, no authentication)")
 	CmdWebApi.PersistentFlags().BoolVar(&cfg.debug, "debug", false,
 		"enable debug logging")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.pkiDir, "pki-dir", defaultPKIDir,
+		"directory with the certificates of the api, as created by orion-cli pki init")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCertFile, "tls-cert-file", "",
+		"server certificate of the api, followed by its chain (default <pki-dir>/"+pki.APIServerCertFile+")")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsKeyFile, "tls-key-file", "",
+		"private key of the server certificate (default <pki-dir>/"+pki.APIServerKeyFile+")")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCAFile, "tls-ca-file", "",
+		"CA that signs the client certificates the api accepts (default <pki-dir>/"+pki.APIClientCAFile+")")
 	// revive:enable
 }
 
 var ready atomic.Bool
-
-const (
-	defaultPort = uint(8080)
-)
 
 // CmdWebApi exports the main webapi process
 var CmdWebApi = &cobra.Command{
 	Use:     "api",
 	Run:     api,
 	Version: cmdcommon.Version,
+}
+
+// tlsFiles returns the files of the api: the files in the pki directory, unless a file is set explicitly
+func (c config) tlsFiles() (pki.TLSFiles, error) {
+	files := pki.APIFiles(c.pkiDir)
+	for _, override := range []struct {
+		value  string
+		target *string
+	}{
+		{c.tlsCertFile, &files.CertFile},
+		{c.tlsKeyFile, &files.KeyFile},
+		{c.tlsCAFile, &files.CAFile},
+	} {
+		if override.value != "" {
+			*override.target = override.value
+		}
+	}
+	return files.Expand()
+}
+
+func warnExpiring(ctx context.Context, files pki.TLSFiles) {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	expiring, err := files.ExpiringCertificates(time.Now(), pki.ExpiryWarning)
+	if err != nil {
+		logger.Error().AnErr(keyError, err).Msg("failed to check the expiry of the certificates")
+		return
+	}
+	for _, e := range expiring {
+		logger.Warn().Str("certificate", e).Msg("certificate expires soon; renew it with the cli")
+	}
+}
+
+func newMux(ctx context.Context, routes []Route) *http.ServeMux {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	mux := http.NewServeMux()
+	for _, route := range routes {
+		mux.HandleFunc(route.Pattern, route.Handler)
+		logger.Debug().Str("pattern", route.Pattern).Msg("registered route")
+	}
+	return mux
+}
+
+func listen(ctx context.Context, port uint) net.Listener {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	addr := net.JoinHostPort(cfg.baseURL, strconv.FormatUint(uint64(port), decimal))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Fatal().AnErr(keyError, err).Str("address", addr).Msg("binding failed")
+	}
+	return ln
 }
 
 func api(c *cobra.Command, _ []string) {
@@ -82,37 +152,64 @@ func api(c *cobra.Command, _ []string) {
 	}
 
 	if err := cmdcommon.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
+		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
+
+	files, err := cfg.tlsFiles()
+	if err != nil {
+		logger.Fatal().AnErr(keyError, err).Msg("")
+	}
+	if !files.Exist() {
+		logger.Fatal().
+			Str("cert", files.CertFile).
+			Str("key", files.KeyFile).
+			Str("ca", files.CAFile).
+			Msg("certificates not found: create them with `orion-cli pki init`, and copy the api files to " +
+				"--pki-dir (starting without certificates is not supported yet)")
+	}
+	tlsConfig, err := files.ServerConfig()
+	if err != nil {
+		logger.Fatal().AnErr(keyError, err).Msg("failed to load the certificates")
+	}
+	warnExpiring(ctx, files)
+	go func() {
+		for range time.Tick(expiryCheckPeriod) {
+			warnExpiring(ctx, files)
+		}
+	}()
+
 	cl, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
 	if err != nil {
-		logger.Fatal().AnErr("error", err).Msg("")
+		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
 
 	h := NewHandlers(cl, &ready)
-	mux := http.NewServeMux()
-
 	logger.Debug().Msg("registering routes")
-	for _, route := range h.Routes() {
-		mux.HandleFunc(route.Pattern, route.Handler)
-		logger.Debug().Str("pattern", route.Pattern).Msg("registered route")
+	srv := &http.Server{
+		Handler:           auth.Middleware(newMux(ctx, h.Routes()), auth.ClientCertAuthenticator{}),
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}
+	probe := &http.Server{
+		Handler:           newMux(ctx, h.ProbeRoutes()),
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
-	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Msg("starting server")
-	addr := fmt.Sprintf("%s:%d", cfg.baseURL, cfg.port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		logger.Fatal().AnErr("error", err).Msg("binding failed")
-	}
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
+	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Uint("probe-port", cfg.probePort).
+		Msg("starting server")
+	ln := listen(ctx, cfg.port)
+	probeLn := listen(ctx, cfg.probePort)
+
+	errs := make(chan error, 2)
+	go func() { errs <- probe.Serve(probeLn) }()
+	go func() { errs <- srv.ServeTLS(ln, "", "") }()
+
 	ready.Store(true)
-	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Msg("server ready")
-	err = srv.Serve(ln)
-	if err != nil {
-		logger.Fatal().AnErr("error", err).Msg("server failing")
+	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Uint("probe-port", cfg.probePort).
+		Str("mode", endpoints.ModeNormal).Msg("server ready")
+
+	if err = <-errs; err != nil {
+		logger.Fatal().AnErr(keyError, err).Msg("server failing")
 	}
 }
 

@@ -7,14 +7,15 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/pgvillage-tools/orion/internal/util"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
-	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
@@ -67,6 +68,16 @@ var _ = Describe("Smoke", Ordered, func() {
 		Ω(etcdErr).NotTo(HaveOccurred())
 		allContainers = []testcontainers.Container{etcdContainer}
 
+		// create the certificates for the api and the client of this test framework
+		pkiOpts := pki.InitOptions{
+			CLIDir: filepath.Join(GinkgoT().TempDir(), "cli"),
+			APIDir: filepath.Join(GinkgoT().TempDir(), "api"),
+		}
+		_, pkiErr := pki.Init(pkiOpts)
+		Ω(pkiErr).NotTo(HaveOccurred())
+		clientTLS, tlsErr := pki.CLIFiles(pkiOpts.CLIDir).ClientConfig()
+		Ω(tlsErr).NotTo(HaveOccurred())
+
 		// run api to control orion from this test framework
 		aliases := map[string][]string{}
 		apiCnt, apiErr := runAPI(
@@ -74,13 +85,18 @@ var _ = Describe("Smoke", Ordered, func() {
 			etcdEndpoints,
 			nw,
 			aliases,
+			pkiOpts.APIDir,
 		)
 		Ω(apiErr).NotTo(HaveOccurred())
 		allContainers = append(allContainers, apiCnt)
 		port, err := apiCnt.MappedPort(ctx,
 			fmt.Sprintf("%d/tcp", apiInternalPort))
 		Ω(err).NotTo(HaveOccurred())
-		apiClient = client.NewConnection(endpoints.HTTP, localHost, port.Num(), time.Second)
+		apiClient = client.NewTLSConnection(localHost, port.Num(), time.Second, clientTLS)
+		identity, httpCode, whoAmIErr := apiClient.WhoAmI()
+		Ω(whoAmIErr).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusOK))
+		Ω(identity.Name).To(Equal(pki.CLIClientName))
 		httpCode, initErr := apiClient.PostClusterSpec(&apiv1.Spec{
 			// DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessStrict),
 			DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
