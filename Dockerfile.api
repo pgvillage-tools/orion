@@ -35,12 +35,15 @@ LABEL MAINTAINER=Nibble-IT
 WORKDIR /
 COPY --from=builder /workspace/orion-api ./
 
+# The api needs its certificates (as created by orion-cli pki init) in ORIONAPI_PKI_DIR
 ENV ORIONAPI_CLUSTER_NAME=orion \
-    ORIONAPI_STORE_BACKEND=etcdv3
+    ORIONAPI_STORE_BACKEND=etcdv3 \
+    ORIONAPI_PKI_DIR=/etc/orion/api
 
 RUN useradd orion
 USER orion
 
-EXPOSE 8080
+# 8443: the api (TLS, a client certificate is required), 8080: /healthz, /readyz and /status
+EXPOSE 8443 8080
 
 ENTRYPOINT ["/orion-api"]
