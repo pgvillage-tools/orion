@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	etcdImage          = "quay.io/coreos/etcd:v3.6.7"
-	apiInternalPort    = 8443
-	apiPKIDir          = "/etc/orion/api"
+	etcdImage       = "quay.io/coreos/etcd:v3.6.7"
+	apiInternalPort = 8443
+	apiPKIDir       = "/etc/orion/api"
+	// apiPKIFileMode makes the api files readable for the api, which runs as orion (the files are owned by root)
+	apiPKIFileMode     = 0o644
 	proxyInternalPort  = 25432
 	keeperInternalPort = 5432
 	pgUser             = "postgres"
@@ -176,8 +178,7 @@ func runAPI(
 		files = append(files, testcontainers.ContainerFile{
 			HostFilePath:      filepath.Join(pkiDir, f),
 			ContainerFilePath: path.Join(apiPKIDir, f),
-			// The files are owned by root, and the api runs as orion
-			FileMode: 0o644,
+			FileMode:          apiPKIFileMode,
 		})
 	}
 	return testcontainers.GenericContainer(
