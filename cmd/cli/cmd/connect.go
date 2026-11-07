@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/logging"
-	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -37,7 +36,6 @@ type connectOptions struct {
 	file    string
 	Host    string        `mapstructure:"host"`
 	Port    uint16        `mapstructure:"port"`
-	TLS     bool          `mapstructure:"tls"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -45,10 +43,6 @@ var connOpts connectOptions
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	cmdConnect.PersistentFlags().BoolVarP(&connOpts.TLS, "tls", "t", true, "use tls")
-	if err := viper.BindPFlag("tls", cmdConnect.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	cmdConnect.PersistentFlags().Uint16VarP(&connOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", cmdConnect.PersistentFlags().Lookup("port")); err != nil {
@@ -72,20 +66,17 @@ func connectCluster(_ *cobra.Command, args []string) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	defer cancelFunc()
 
-	p := endpoints.HTTPS
-	if !viper.GetBool(flagTLS) {
-		p = endpoints.HTTP
-	}
-	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
-		viper.GetDuration(flagTimeout))
+	apiClient := defaultAPIClient(ctx)
 
-	if httpCode, healthErr := apiClient.Healthy(); healthErr != nil {
+	identity, httpCode, whoAmIErr := apiClient.WhoAmI()
+	if whoAmIErr != nil {
 		logger.Fatal().
-			AnErr(logging.KeyError, healthErr).
+			AnErr(logging.KeyError, whoAmIErr).
 			Int("http_code", httpCode).
-			Str("url", apiClient.EndpointURL(endpoints.HealthEndPoint)).
+			Str("url", apiClient.EndpointURL(endpoints.WhoAmIEndPoint)).
 			Msg("connecting to the api failed")
 	}
+	stdout("Connected to the api as %s (%s)", identity.Name, identity.Method)
 	if writeErr := viper.WriteConfig(); writeErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, writeErr).

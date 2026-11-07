@@ -20,8 +20,6 @@ import (
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/logging"
-	client "github.com/pgvillage-tools/orion/pkg/api_client"
-	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -29,7 +27,6 @@ import (
 type failKeeperOptions struct {
 	Host    string        `mapstructure:"host"`
 	Port    uint16        `mapstructure:"port"`
-	TLS     bool          `mapstructure:"tls"`
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
@@ -48,10 +45,6 @@ var failKeeperCmd = &cobra.Command{
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	failKeeperCmd.PersistentFlags().BoolVarP(&failKeeperOpts.TLS, "tls", "t", true, "use tls")
-	if err := viper.BindPFlag("tls", failKeeperCmd.PersistentFlags().Lookup("tls")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	failKeeperCmd.PersistentFlags().Uint16VarP(&failKeeperOpts.Port, "port", "p", defaultAPIPort,
 		"protocol for connecting to the api")
 	if err := viper.BindPFlag("port", failKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
@@ -82,12 +75,7 @@ func failKeeper(_ *cobra.Command, args []string) {
 	}
 	keeperID := args[0]
 
-	p := endpoints.HTTPS
-	if !viper.GetBool(flagTLS) {
-		p = endpoints.HTTP
-	}
-	apiClient := client.NewConnection(p, viper.GetString(flagHost), viper.GetUint16(flagPort),
-		viper.GetDuration(flagTimeout))
+	apiClient := defaultAPIClient(ctx)
 
 	httpCode, putErr := apiClient.PutFailKeeper(keeperID)
 	if putErr != nil {

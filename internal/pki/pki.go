@@ -115,15 +115,15 @@ func (o InitOptions) check() error {
 	if o.Force {
 		return nil
 	}
-	var existing []string
+	var dirs []string
 	for _, f := range o.Files() {
 		if _, err := os.Stat(f); err == nil {
-			existing = append(existing, f)
+			dirs = append(dirs, filepath.Dir(f))
 		}
 	}
-	if len(existing) > 0 {
-		return fmt.Errorf("refusing to overwrite existing files (use force to overwrite): %s",
-			strings.Join(existing, ", "))
+	if len(dirs) > 0 {
+		return fmt.Errorf("refusing to overwrite existing files in %s (use force to overwrite)",
+			strings.Join(uniqueValues(dirs), ", "))
 	}
 	return nil
 }
