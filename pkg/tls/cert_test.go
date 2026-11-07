@@ -62,6 +62,8 @@ var _ = Describe("Cert", func() {
 		invalidAltNames = []string{
 			stringBrokenIPv4s,
 			stringBrokenIPv6s,
+			"not a uri",
+			"no-scheme/path",
 		}
 	)
 	/*
@@ -89,6 +91,11 @@ var _ = Describe("Cert", func() {
 			Expect(result.uris).To(HaveLen(len(stringListURIs)))
 			Expect(result.uris).To(ContainElements(uri2))
 			Expect(result.uris).To(ContainElements(uri1))
+		})
+		It("Should accept wildcard dns names", func() {
+			result, err := splitAlternateNames([]string{"*.example.org"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.dnsNames).To(ConsistOf("*.example.org"))
 		})
 		It("Should not work with invalid values", func() {
 			for _, invalid := range invalidAltNames {

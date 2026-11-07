@@ -1,8 +1,26 @@
+// Copyright 2026 PgVillage
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tls
 
 import (
 	"crypto/x509/pkix"
+	"encoding/asn1"
 )
+
+// oidUserID is the object identifier of the UID attribute (RFC 4519)
+var oidUserID = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 1}
 
 // Subject can hold all fields that belong to the subject of a cert
 type Subject struct {
@@ -18,33 +36,34 @@ type Subject struct {
 	UserID             string `json:"UID"`
 }
 
-// SetCommonName will return a new Subject, but with another CommonName
+// SetCommonName returns a copy of the Subject, with another CommonName
 func (s Subject) SetCommonName(commonName string) Subject {
-	return Subject{
-		Country:            s.Country,
-		CommonName:         commonName,
-		Locality:           s.Locality,
-		Organisation:       s.Organisation,
-		OrganisationalUnit: s.OrganisationalUnit,
-		PostalCode:         s.PostalCode,
-		SerialNumber:       s.SerialNumber,
-		State:              s.State,
-		StreetAddress:      s.StreetAddress,
-		UserID:             s.UserID,
-	}
+	s.CommonName = commonName
+	return s
 }
 
-// AsPkixName will convert the Subject to a Pkix.Name
-func (s Subject) AsPkixName() pkix.Name {
-	return pkix.Name{
-		Country:            []string{s.Country},
-		CommonName:         s.CommonName,
-		Locality:           []string{s.Locality},
-		Organization:       []string{s.Organisation},
-		OrganizationalUnit: []string{s.OrganisationalUnit},
-		Province:           []string{s.State},
-		PostalCode:         []string{s.PostalCode},
-		SerialNumber:       s.SerialNumber,
-		StreetAddress:      []string{s.StreetAddress},
+func nonEmpty(value string) []string {
+	if value == "" {
+		return nil
 	}
+	return []string{value}
+}
+
+// AsPkixName converts the Subject to a pkix.Name. Empty fields are left out.
+func (s Subject) AsPkixName() pkix.Name {
+	name := pkix.Name{
+		Country:            nonEmpty(s.Country),
+		CommonName:         s.CommonName,
+		Locality:           nonEmpty(s.Locality),
+		Organization:       nonEmpty(s.Organisation),
+		OrganizationalUnit: nonEmpty(s.OrganisationalUnit),
+		Province:           nonEmpty(s.State),
+		PostalCode:         nonEmpty(s.PostalCode),
+		SerialNumber:       s.SerialNumber,
+		StreetAddress:      nonEmpty(s.StreetAddress),
+	}
+	if s.UserID != "" {
+		name.ExtraNames = append(name.ExtraNames, pkix.AttributeTypeAndValue{Type: oidUserID, Value: s.UserID})
+	}
+	return name
 }
