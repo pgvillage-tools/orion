@@ -20,14 +20,16 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pgvillage-tools/orion/internal/auth"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// HealthRoutes collect and return all health routes
-func (h *Handlers) HealthRoutes() []Route {
+// ProbeRoutes collect and return all routes of the probe port
+func (h *Handlers) ProbeRoutes() []Route {
 	return []Route{
 		{endpoints.HealthEndPoint.Route(endpoints.MethodGet), h.HealthzHandler},
 		{endpoints.ReadyEndPoint.Route(endpoints.MethodGet), h.ReadyzHandler},
+		{endpoints.ModeEndPoint.Route(endpoints.MethodGet), h.ModeHandler},
 	}
 }
 
@@ -42,6 +44,7 @@ func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.client.Healthy(ctx); err != nil {
 		handleError(ctx, err, w, "store is not healthy")
+		return
 	}
 	w.WriteHeader(status)
 	if _, err := w.Write(msg); err != nil {
@@ -63,4 +66,30 @@ func (h *Handlers) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(ctx, err, w, "unable to return readyz response")
 	}
+}
+
+// ModeHandler returns the mode of the api
+func (h *Handlers) ModeHandler(w http.ResponseWriter, r *http.Request) {
+	h.writeJSON(r.Context(), w, endpoints.ModeResponse{Mode: endpoints.ModeNormal})
+}
+
+// WhoAmIRoutes collect and return the whoami route
+func (h *Handlers) WhoAmIRoutes() []Route {
+	return []Route{
+		{endpoints.WhoAmIEndPoint.Route(endpoints.MethodGet), h.WhoAmIHandler},
+	}
+}
+
+// WhoAmIHandler returns the identity of the client
+func (h *Handlers) WhoAmIHandler(w http.ResponseWriter, r *http.Request) {
+	identity, ok := auth.FromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	h.writeJSON(r.Context(), w, endpoints.WhoAmIResponse{
+		Name:   identity.Name,
+		Groups: identity.Groups,
+		Method: identity.Method,
+	})
 }
