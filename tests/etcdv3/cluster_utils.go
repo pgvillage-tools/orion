@@ -66,6 +66,43 @@ type testCluster struct {
 // the cluster (e.g. fail or remove a keeper) should start their own cluster; tests that only read can use
 // sharedCluster.
 func (tc *testCluster) start(ctx context.Context, numKeepers int) {
+	tc.startAPI(ctx)
+
+	httpCode, err := tc.apiClient.PostClusterSpec(&apiv1.Spec{
+		DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
+		PGParameters:            apiv1.PGParameters{},
+		PGHBA:                   []string{},
+		InitMode:                util.ToPtr(apiv1.New),
+	})
+	Ω(err).NotTo(HaveOccurred())
+	Ω(httpCode).To(Equal(http.StatusAccepted))
+
+	tc.sentinel, err = runSentinel(ctx, tc.etcdEndpoints, tc.nw)
+	tc.add(tc.sentinel)
+	Ω(err).NotTo(HaveOccurred())
+
+	for i := range numKeepers {
+		alias := fmt.Sprintf("keeper_%d", i)
+		settings := map[string]string{
+			"pg-repl-password":  pgPassword,
+			"pg-su-password":    pgPassword,
+			"pg-listen-address": alias,
+		}
+		cnt, keeperErr := runKeeper(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {alias}},
+			maps.Clone(settings))
+		tc.add(cnt)
+		Ω(keeperErr).NotTo(HaveOccurred())
+		tc.keepers = append(tc.keepers, cnt)
+	}
+
+	tc.proxy, err = runProxy(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {"proxy"}})
+	tc.add(tc.proxy)
+	Ω(err).NotTo(HaveOccurred())
+}
+
+// startAPI starts the network, etcd and the api (with new certificates), and connects the clients of the tests to the
+// api. It is the first part of start; on its own, it is for tests of the api that need no keepers.
+func (tc *testCluster) startAPI(ctx context.Context) {
 	// RYUK requires permissions we don't need and don't want to implement
 	Ω(os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")).To(Succeed())
 
@@ -104,46 +141,26 @@ func (tc *testCluster) start(ctx context.Context, numKeepers int) {
 	Ω(err).NotTo(HaveOccurred())
 	tc.probeURL = fmt.Sprintf("http://%s:%s", localHost, probePort.Port())
 	tc.probeClient = client.NewConnection(endpoints.HTTP, localHost, probePort.Num(), apiTimeout)
-
-	httpCode, err := tc.apiClient.PostClusterSpec(&apiv1.Spec{
-		DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
-		PGParameters:            apiv1.PGParameters{},
-		PGHBA:                   []string{},
-		InitMode:                util.ToPtr(apiv1.New),
-	})
-	Ω(err).NotTo(HaveOccurred())
-	Ω(httpCode).To(Equal(http.StatusAccepted))
-
-	tc.sentinel, err = runSentinel(ctx, tc.etcdEndpoints, tc.nw)
-	tc.add(tc.sentinel)
-	Ω(err).NotTo(HaveOccurred())
-
-	for i := range numKeepers {
-		alias := fmt.Sprintf("keeper_%d", i)
-		settings := map[string]string{
-			"pg-repl-password":  pgPassword,
-			"pg-su-password":    pgPassword,
-			"pg-listen-address": alias,
-		}
-		cnt, keeperErr := runKeeper(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {alias}},
-			maps.Clone(settings))
-		tc.add(cnt)
-		Ω(keeperErr).NotTo(HaveOccurred())
-		tc.keepers = append(tc.keepers, cnt)
-	}
-
-	tc.proxy, err = runProxy(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {"proxy"}})
-	tc.add(tc.proxy)
-	Ω(err).NotTo(HaveOccurred())
 }
 
 // withOwnCluster starts a cluster for the specs of the (Ordered) container it is called in, and removes it after them.
 // Use it for tests that change the cluster, e.g. fail or remove a keeper.
 func withOwnCluster(numKeepers int) *testCluster {
+	return withOwn(func(tc *testCluster, ctx context.Context) { tc.start(ctx, numKeepers) })
+}
+
+// withOwnAPI starts etcd and the api (no sentinel, keepers or proxy) for the specs of the (Ordered) container it is
+// called in, and removes them after them. Use it for tests that break the api or its store, e.g. pause etcd.
+func withOwnAPI() *testCluster {
+	return withOwn((*testCluster).startAPI)
+}
+
+// withOwn registers the BeforeAll that starts a test cluster with start, and the AfterAll that removes it
+func withOwn(start func(tc *testCluster, ctx context.Context)) *testCluster {
 	tc := &testCluster{}
 	BeforeAll(func(ctx context.Context) {
 		failed = true
-		tc.start(ctx, numKeepers)
+		start(tc, ctx)
 		failed = false
 	}, NodeTimeout(clusterTimeout))
 	AfterAll(func(ctx context.Context) {
