@@ -16,6 +16,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mitchellh/copystructure v1.2.0
+	github.com/moby/moby/client v0.5.0
 	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/prometheus/client_golang v1.25.0
@@ -109,7 +110,6 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
 	github.com/moby/moby/api v1.55.0 // indirect
-	github.com/moby/moby/client v0.5.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
