@@ -4,7 +4,7 @@ ARG TARGETARCH=amd64
 ARG VERSION=v0.0.0-devel
 ARG PGVERSION=18
 
-FROM docker.io/golang:bookworm AS builder
+FROM docker.io/golang:1.27-bookworm AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests

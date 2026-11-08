@@ -17,7 +17,7 @@ concurrency:
 
 env:
   # Golang version to use across CI steps
-  GOLANG_VERSION: '1.26' # Updated to match go.mod requirement (go 1.26.0)
+  GOLANG_VERSION: '1.27' # matches the go directive in go.mod (go 1.27.0)
 
 permissions:
   contents: read
