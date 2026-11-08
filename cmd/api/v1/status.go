@@ -155,29 +155,43 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 		return apiv1.InfoCluster{}, err
 	}
 	s, err = h.sentinelInfo(ctx)
-
-	var clusterStatus apiv1.InfoGenericStatus
-
-	if cd.Cluster == nil || cd.DBs == nil {
-		clusterStatus = apiv1.InfoGenericStatus{"available": false}
-	} else if cd.Cluster.Status.Master == "" {
-		clusterStatus = apiv1.InfoGenericStatus{"available": true}
-	} else {
-		primary := cd.Cluster.Status.Master
-		primaryKeeper := cd.DBs[primary].Spec.KeeperUID
-		clusterStatus = apiv1.InfoGenericStatus{
-			"available":     true,
-			"primaryDB":     cd.DBs[primary].UID,
-			"primaryKeeper": cd.Keepers[primaryKeeper].UID,
-		}
+	if err != nil {
+		return apiv1.InfoCluster{}, err
 	}
 
 	return apiv1.InfoCluster{
 		Keepers:   k,
 		Proxies:   p,
 		Sentinels: s,
-		Status:    clusterStatus,
+		Status:    clusterStatus(cd),
 	}, nil
+}
+
+// clusterStatus returns the status of the cluster in cd:
+//   - available: true when the cluster has a primary db whose keeper is in the cluster data. In a standby cluster
+//     (role standby) that is the db that replicates from the external primary, and that the others replicate from.
+//   - primaryDB and primaryKeeper: the uids of that db and its keeper (only when available)
+//   - role: the role of the cluster, master or standby (only when the cluster data has a cluster)
+func clusterStatus(cd *apiv1.Data) apiv1.InfoGenericStatus {
+	status := apiv1.InfoGenericStatus{"available": false}
+	if cd == nil || cd.Cluster == nil {
+		return status
+	}
+	if role := cd.Cluster.DefSpec().Role; role != nil {
+		status["role"] = string(*role)
+	}
+	db, ok := cd.DBs[cd.Cluster.Status.Master]
+	if !ok || db == nil || db.Spec == nil {
+		return status
+	}
+	keeper, ok := cd.Keepers[db.Spec.KeeperUID]
+	if !ok || keeper == nil {
+		return status
+	}
+	status["available"] = true
+	status["primaryDB"] = db.UID
+	status["primaryKeeper"] = keeper.UID
+	return status
 }
 
 // StatusHandler handles a status request

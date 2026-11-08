@@ -207,18 +207,17 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 			tabFlush(ctx, tabOut)
 		}
 	}
-	primaryKeeper := ic.Status["primaryKeeper"]
-	if primaryKeeper == "" {
+	// the api only sets primaryKeeper when the cluster is available (it has a primary)
+	if primaryKeeper, ok := ic.Status["primaryKeeper"].(string); !ok || primaryKeeper == "" {
 		stdout("No cluster available")
 	} else {
 		stdout("")
 		stdout("=== Cluster Info ===")
 		stdout("")
-		if primaryKeeper != "" {
-			stdout("Master Keeper: %s", primaryKeeper)
-		} else {
-			stdout("Master Keeper: (none)")
+		if role, ok := ic.Status["role"].(string); ok {
+			stdout("Cluster role: %s", role)
 		}
+		stdout("Master Keeper: %s", primaryKeeper)
 	}
 
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
