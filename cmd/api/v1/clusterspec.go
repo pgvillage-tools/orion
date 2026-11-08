@@ -31,6 +31,28 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
+// errNoSpec is the error when there is no cluster spec (yet)
+var errNoSpec = errors.New("there is no cluster spec yet: create the cluster first")
+
+// statusError is an error with the status code the api answers it with
+type statusError struct {
+	status int
+	err    error
+}
+
+func (e statusError) Error() string { return e.err.Error() }
+func (e statusError) Unwrap() error { return e.err }
+
+// writeSpecError responds with the status of err when it is a statusError, and with 500 (and logs it) otherwise
+func writeSpecError(ctx context.Context, w http.ResponseWriter, err error, msg string) {
+	var se statusError
+	if errors.As(err, &se) {
+		endpoints.WriteProblem(w, se.status, se.Error())
+		return
+	}
+	handleError(ctx, err, w, msg)
+}
+
 // ClusterSpecRoutes adds all Cluster routes to the list of all routes
 func (h *Handlers) ClusterSpecRoutes() []Route {
 	return []Route{
@@ -64,7 +86,7 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 
 	newCSBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
 	if err != nil {
-		handleError(ctx, err, w, "failed to get spec definition")
+		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to read the spec: "+err.Error())
 		return
 	}
 	defer func() {
@@ -79,13 +101,17 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 	} else {
 		err = json.Unmarshal(newCSBytes, &cs)
 		if err != nil {
-			handleError(ctx, err, w, "failed to parse spec definition")
+			endpoints.WriteProblem(w, http.StatusBadRequest, "failed to parse the spec: "+err.Error())
+			return
+		}
+		if cs == nil {
+			endpoints.WriteProblem(w, http.StatusBadRequest, "the spec can't be null")
 			return
 		}
 	}
 
 	if err := cs.Validate(); err != nil {
-		handleError(ctx, err, w, "invalid spec")
+		endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: "+err.Error())
 		return
 	}
 
@@ -116,16 +142,8 @@ func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 		handleError(ctx, err, w, "failed to get cluster")
 		return
 	}
-	if cd == nil {
-		handleError(ctx, err, w, "no clusterdata")
-		return
-	}
-	if cd.Cluster == nil {
-		handleError(ctx, err, w, "no cluster available")
-		return
-	}
-	if cd.Cluster.Spec == nil {
-		handleError(ctx, err, w, "no cluster spec available")
+	if cd == nil || cd.Cluster == nil || cd.Cluster.Spec == nil {
+		endpoints.WriteProblem(w, http.StatusNotFound, errNoSpec.Error())
 		return
 	}
 	h.writeJSON(ctx, w, cd.Cluster.Spec)
@@ -137,9 +155,9 @@ func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Reques
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
 
-	patch, err := io.ReadAll(r.Body)
+	patch, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
 	if err != nil {
-		endpoints.WriteProblem(w, http.StatusBadRequest, err.Error())
+		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to read the body: "+err.Error())
 		return
 	}
 	defer func() {
@@ -149,10 +167,8 @@ func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 
-	err = updateSpecRetries(ctx, h.client, patch, false)
-	if err != nil {
-		handleError(ctx, err, w, "failed to patch cluster spec")
-		return
+	if err = updateSpecRetries(ctx, h.client, patch, false); err != nil {
+		writeSpecError(ctx, w, err, "failed to patch cluster spec")
 	}
 }
 
@@ -162,9 +178,9 @@ func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
 
-	patch, err := io.ReadAll(r.Body)
+	patch, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
 	if err != nil {
-		endpoints.WriteProblem(w, http.StatusBadRequest, err.Error())
+		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to read the body: "+err.Error())
 		return
 	}
 	defer func() {
@@ -173,10 +189,8 @@ func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}()
 
-	err = updateSpecRetries(ctx, h.client, patch, true)
-	if err != nil {
-		handleError(ctx, err, w, "failed to put cluster spec")
-		return
+	if err = updateSpecRetries(ctx, h.client, patch, true); err != nil {
+		writeSpecError(ctx, w, err, "failed to put cluster spec")
 	}
 }
 
@@ -204,42 +218,39 @@ func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, re
 	if err != nil {
 		return err
 	}
-	if cd == nil {
-		return errors.New("no cluster data available")
-	}
-	if cd.Cluster == nil {
-		return errors.New("no cluster available")
-	}
-	if cd.Cluster.Spec == nil {
-		return errors.New("no cluster spec available")
+	if cd == nil || cd.Cluster == nil || cd.Cluster.Spec == nil {
+		return statusError{http.StatusNotFound, errNoSpec}
 	}
 
 	logger.Debug().Any("cluster data", cd).Msg("")
 	var newcs *apiv1.Spec
 	if replace {
 		if err = json.Unmarshal(patch, &newcs); err != nil {
-			return fmt.Errorf("failed to unmarshal cluster spec: %v", err)
+			return statusError{http.StatusBadRequest, fmt.Errorf("failed to parse the spec: %w", err)}
 		}
 		if newcs == nil {
-			return errors.New("cluster spec cannot be null")
+			return statusError{http.StatusBadRequest, errors.New("the spec can't be null")}
 		}
 		logger.Debug().Any("new cluster spec", newcs).Msg("replaced")
 	} else {
 		newcs, err = patchClusterSpec(cd.Cluster.Spec, patch)
 		if err != nil {
-			return fmt.Errorf("failed to patch cluster spec: %v", err)
+			return statusError{http.StatusBadRequest, err}
 		}
 		logger.Debug().Any("patched cluster spec", newcs).Msg("patched")
 	}
+	if err = newcs.Validate(); err != nil {
+		return statusError{http.StatusBadRequest, fmt.Errorf("invalid spec: %w", err)}
+	}
+	// a valid spec that UpdateSpec refuses is a change that isn't allowed (e.g. another init mode)
 	if err = cd.Cluster.UpdateSpec(newcs); err != nil {
-		return fmt.Errorf("cannot update cluster spec: %v", err)
+		return statusError{http.StatusConflict, err}
 	}
 	logger.Debug().Any("new cluster data", cd).Msg("updated")
 
-	// retry if cd has been modified between reading and writing
-	_, err = client.AtomicPutClusterData(ctx, cd, pair)
-	if err != nil {
-		return fmt.Errorf("cannot store updated cluster spec: %v", err)
+	// updateSpecRetries retries when cd has been modified between reading and writing (ErrKeyModified)
+	if _, err = client.AtomicPutClusterData(ctx, cd, pair); err != nil {
+		return fmt.Errorf("cannot store updated cluster spec: %w", err)
 	}
 	logger.Debug().Msg("stored")
 	return nil
@@ -257,6 +268,10 @@ func updateSpecRetries(ctx context.Context, client consensus.Store, patch []byte
 			return nil
 		}
 		logger.Debug().AnErr("error", err).Msg("failed")
+		if !errors.Is(err, consensus.ErrKeyModified) {
+			// only a conflicting write is worth another try
+			return err
+		}
 		errs = append(errs, err)
 	}
 	return fmt.Errorf("failed to update in %d retries: %v", maxRetries, errors.Join(errs...))
