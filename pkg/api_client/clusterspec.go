@@ -25,7 +25,7 @@ func (c Connection) GetClusterSpec() (cd *apiv1.Spec, httpCode int, err error) {
 	if err != nil {
 		return nil, httpCode, err
 	}
-	return &myClusterSpec, httpClientNoError, nil
+	return &myClusterSpec, httpCode, nil
 }
 
 // PutClusterSpec uses the API to write the cluster spec
