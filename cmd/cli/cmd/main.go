@@ -65,10 +65,17 @@ var cfg config
 func init() {
 	cfg.IsCLI = true
 	cmd.AddCommonFlags(CmdCLI, &cfg.CommonConfig)
-	CmdCLI.PersistentFlags().String(flagPKIDir, defaultCLIPKIDir,
-		"directory with the client certificate of the cli, and the CA")
-	if err := viper.BindPFlag(flagPKIDir, CmdCLI.PersistentFlags().Lookup(flagPKIDir)); err != nil {
-		log.Fatal(err)
+	flags := CmdCLI.PersistentFlags()
+	flags.String(flagPKIDir, defaultCLIPKIDir, "directory with the client certificate of the cli, and the CA")
+	// The connection to the api, for every command. They are defined (and bound to viper) once, on the root: a flag
+	// bound to a viper key per command made only the last bound one work.
+	flags.StringP(flagHost, "H", defaultAPIIP, "hostname or ip of the api")
+	flags.Uint16P(flagPort, "p", defaultAPIPort, "port of the api")
+	flags.DurationP(flagTimeout, "T", defaultTimeout, "timeout for requests to the api")
+	for _, name := range []string{flagPKIDir, flagHost, flagPort, flagTimeout} {
+		if err := viper.BindPFlag(name, flags.Lookup(name)); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 

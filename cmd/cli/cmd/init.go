@@ -21,12 +21,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var cmdInit = &cobra.Command{
@@ -37,32 +35,13 @@ var cmdInit = &cobra.Command{
 
 // InitOptions is a struct which can contain initiation options
 type InitOptions struct {
-	file    string
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
+	file string
 }
 
 var initOpts InitOptions
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdInit.PersistentFlags().StringVarP(&initOpts.file, flagFile, "f", "-", "file to read as input, use - for stdin")
-	cmdInit.PersistentFlags().Uint16VarP(&initOpts.Port, flagPort, "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", cmdInit.PersistentFlags().Lookup(flagPort)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdInit.PersistentFlags().StringVarP(&initOpts.Host, flagHost, "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", cmdInit.PersistentFlags().Lookup(flagHost)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdInit.PersistentFlags().DurationVarP(&initOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, cmdInit.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 
 	CmdCLI.AddCommand(cmdInit)
 }

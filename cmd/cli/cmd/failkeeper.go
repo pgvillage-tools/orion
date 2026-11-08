@@ -17,20 +17,10 @@ package cmd
 
 import (
 	"context"
-	"time"
 
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
-
-type failKeeperOptions struct {
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
-}
-
-var failKeeperOpts failKeeperOptions
 
 // revive:disable
 
@@ -44,22 +34,6 @@ var failKeeperCmd = &cobra.Command{
 //revive:enable
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	failKeeperCmd.PersistentFlags().Uint16VarP(&failKeeperOpts.Port, "port", "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", failKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	failKeeperCmd.PersistentFlags().StringVarP(&failKeeperOpts.Host, "host", "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", failKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	failKeeperCmd.PersistentFlags().DurationVarP(&failKeeperOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, failKeeperCmd.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	CmdCLI.AddCommand(failKeeperCmd)
 }
 

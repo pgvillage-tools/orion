@@ -17,20 +17,10 @@ package cmd
 
 import (
 	"context"
-	"time"
 
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
-
-type promoteOptions struct {
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
-}
-
-var promoteOpts promoteOptions
 
 var cmdPromote = &cobra.Command{
 	Use:   "promote",
@@ -39,23 +29,6 @@ var cmdPromote = &cobra.Command{
 }
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	cmdPromote.PersistentFlags().Uint16VarP(&promoteOpts.Port, "port", "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", cmdPromote.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdPromote.PersistentFlags().StringVarP(&promoteOpts.Host, "host", "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", cmdPromote.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdPromote.PersistentFlags().DurationVarP(&promoteOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, cmdPromote.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-
 	CmdCLI.AddCommand(cmdPromote)
 }
 

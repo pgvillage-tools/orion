@@ -21,13 +21,11 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
-	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -41,30 +39,11 @@ var cmdStatus = &cobra.Command{
 }
 
 var statusOpts struct {
-	Format  string
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
+	Format string
 }
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Format, "format", "f", "", "output format")
-	cmdStatus.PersistentFlags().Uint16VarP(&statusOpts.Port, "port", "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", cmdStatus.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdStatus.PersistentFlags().StringVarP(&statusOpts.Host, "host", "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", cmdStatus.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdStatus.PersistentFlags().DurationVarP(&statusOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, cmdStatus.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	CmdCLI.AddCommand(cmdStatus)
 }
 
@@ -284,7 +263,7 @@ func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bo
 
 func generateStatus(ctx context.Context) (*cluster.InfoCluster, error) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	apiClient := newAPIClient(ctx, statusOpts.Host, statusOpts.Port)
+	apiClient := defaultAPIClient(ctx)
 	ic, httpCode, getClusterErr := apiClient.GetStatus()
 	if getClusterErr != nil {
 		logger.Fatal().

@@ -18,13 +18,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var cmdSpec = &cobra.Command{
@@ -35,33 +33,14 @@ var cmdSpec = &cobra.Command{
 
 type specOptions struct {
 	defaults bool
-	Host     string        `mapstructure:"host"`
-	Port     uint16        `mapstructure:"port"`
-	Timeout  time.Duration `mapstructure:"timeout"`
 }
 
 var specOpts specOptions
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdSpec.PersistentFlags().BoolVar(&specOpts.defaults, "defaults", false,
 		"also show default values")
 
-	cmdSpec.PersistentFlags().Uint16VarP(&specOpts.Port, "port", "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", cmdSpec.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdSpec.PersistentFlags().StringVarP(&specOpts.Host, "host", "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", cmdSpec.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdSpec.PersistentFlags().DurationVarP(&specOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, cmdSpec.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	CmdCLI.AddCommand(cmdSpec)
 }
 
