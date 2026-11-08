@@ -196,6 +196,14 @@ func (tc *testCluster) probeGet(ctx context.Context, ep endpoints.ProbeEndPoint)
 	return resp.StatusCode, string(body)
 }
 
+// addSentinel starts another sentinel in the cluster, and returns its container
+func (tc *testCluster) addSentinel(ctx context.Context) testcontainers.Container {
+	cnt, err := runSentinel(ctx, tc.etcdEndpoints, tc.nw)
+	tc.add(cnt)
+	Ω(err).NotTo(HaveOccurred())
+	return cnt
+}
+
 // add adds a container to the containers of the cluster (also when it failed to start, so it gets cleaned up)
 func (tc *testCluster) add(cnt testcontainers.Container) {
 	if cnt != nil {
