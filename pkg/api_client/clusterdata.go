@@ -25,7 +25,7 @@ func (c Connection) GetCluster() (cd *apiv1.Data, httpCode int, err error) {
 	if err != nil {
 		return nil, httpCode, err
 	}
-	return &myClusterData, httpClientNoError, nil
+	return &myClusterData, httpCode, nil
 }
 
 // PutCluster uses the API to write cluster data
@@ -33,9 +33,7 @@ func (c Connection) PutCluster(cd *apiv1.Data) (httpCode int, err error) {
 	return c.Put(endpoints.ClusterEndPoint, cd)
 }
 
-// TODO should there be a POST?
-
-// PostCluster uses the API to write cluster data
-func (c Connection) PostCluster(cd *apiv1.Data) (htpCode int, err error) {
-	return c.Post(endpoints.ClusterEndPoint, cd)
+// PostCluster uses the API to create a new cluster with spec cs. The API refuses it when there already is a cluster.
+func (c Connection) PostCluster(cs *apiv1.Spec) (httpCode int, err error) {
+	return c.Post(endpoints.ClusterEndPoint, cs)
 }

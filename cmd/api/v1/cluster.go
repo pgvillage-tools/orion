@@ -17,12 +17,14 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/util"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
@@ -66,16 +68,21 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 	var newCD apiv1.Data
 	err := json.NewDecoder(reader).Decode(&newCD)
 	if err != nil {
-		handleError(ctx, err, w, "failed to parse new cluster data definition")
+		http.Error(w, "failed to parse the cluster data: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	_, err = h.client.AtomicPutClusterData(ctx, &newCD, nil)
-	if err != nil {
+	if newCD.Cluster == nil {
+		http.Error(w, "the cluster data has no cluster", http.StatusBadRequest)
+		return
+	}
+	// replace the cluster data, whatever it is now (like stolonctl clusterdata write)
+	if err = h.client.PutClusterData(ctx, &newCD); err != nil {
 		handleError(ctx, err, w, "failed to write new cluster data definition")
 	}
 }
 
-// PostClusterHandler endpoint
+// PostClusterHandler creates a new cluster, from the spec in the body (an empty body creates a new cluster with the
+// default spec). It refuses (409) when there already is a cluster.
 func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
@@ -83,48 +90,32 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 	cd, _, err := h.client.GetClusterData(ctx)
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
-	} else if cd == nil {
-		_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-		logger.Debug().Msg("Cluster is nil")
-	} else if cd.Cluster != nil {
-		handleError(ctx, err, w, "cluster is already set")
+		return
 	}
-
-	cs := &apiv1.Spec{}
-
-	newCSReader := http.MaxBytesReader(w, r.Body, readMaxBytes)
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			handleError(ctx, err, w, "Failed to close Body")
-		}
-	}()
-	newCSBytes := []byte{}
-	n, err := newCSReader.Read(newCSBytes)
-	if err != nil {
-		handleError(ctx, err, w, "Failed to read Body")
-	}
-	if n == 0 {
-		newCluster := apiv1.New
-		cs.InitMode = &newCluster
-	} else {
-		err = json.Unmarshal(newCSBytes, &cs)
-		if err != nil {
-			handleError(ctx, err, w, "failed to parse spec definition")
-			return
-		}
-	}
-
-	if err := cs.Validate(); err != nil {
-		handleError(ctx, err, w, "invalid spec")
+	if cd != nil && cd.Cluster != nil {
+		http.Error(w, "cluster is already set", http.StatusConflict)
 		return
 	}
 
-	c := apiv1.NewCluster(common.UID(), cs)
-	cd = apiv1.NewClusterData(c)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
+	if err != nil {
+		http.Error(w, "failed to read the body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	cs := &apiv1.Spec{}
+	if len(body) == 0 {
+		cs.InitMode = util.ToPtr(apiv1.New)
+	} else if err = json.Unmarshal(body, cs); err != nil {
+		http.Error(w, "failed to parse the spec: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err = cs.Validate(); err != nil {
+		http.Error(w, "invalid spec: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	// We ignore if cd has been modified between reading and writing
-	if err := h.client.PutClusterData(ctx, cd); err != nil {
-		handleError(ctx, err, w, "cannot update spec")
+	if err = h.client.PutClusterData(ctx, apiv1.NewClusterData(apiv1.NewCluster(common.UID(), cs))); err != nil {
+		handleError(ctx, err, w, "cannot create the cluster")
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
