@@ -87,7 +87,7 @@ func (h *Handlers) WhoAmIRoutes() []Route {
 func (h *Handlers) WhoAmIHandler(w http.ResponseWriter, r *http.Request) {
 	identity, ok := auth.FromContext(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		endpoints.WriteProblem(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	h.writeJSON(r.Context(), w, endpoints.WhoAmIResponse{

@@ -40,11 +40,11 @@ const (
 
 // CmdCLI defines a cobra command to execute when running orion
 var CmdCLI = &cobra.Command{
-	Use:     "orion",
+	Use:     "orion-cli",
 	Short:   "orion command line interface",
 	Version: cmd.Version,
 	PersistentPreRun: func(c *cobra.Command, _ []string) {
-		if c.Name() != "orion" && c.Name() != "version" && !isPKICommand(c) {
+		if c.HasParent() && c.Name() != "version" && !isPKICommand(c) {
 			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 				_, logger := logging.GetLogComponent(c.Context(), logging.CmdComponent)
 				logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
@@ -65,17 +65,24 @@ var cfg config
 func init() {
 	cfg.IsCLI = true
 	cmd.AddCommonFlags(CmdCLI, &cfg.CommonConfig)
-	CmdCLI.PersistentFlags().String(flagPKIDir, defaultCLIPKIDir,
-		"directory with the client certificate of the cli, and the CA")
-	if err := viper.BindPFlag(flagPKIDir, CmdCLI.PersistentFlags().Lookup(flagPKIDir)); err != nil {
-		log.Fatal(err)
+	flags := CmdCLI.PersistentFlags()
+	flags.String(flagPKIDir, defaultCLIPKIDir, "directory with the client certificate of the cli, and the CA")
+	// The connection to the api, for every command. They are defined (and bound to viper) once, on the root: a flag
+	// bound to a viper key per command made only the last bound one work.
+	flags.StringP(flagHost, "H", defaultAPIIP, "hostname or ip of the api")
+	flags.Uint16P(flagPort, "p", defaultAPIPort, "port of the api")
+	flags.DurationP(flagTimeout, "T", defaultTimeout, "timeout for requests to the api")
+	for _, name := range []string{flagPKIDir, flagHost, flagPort, flagTimeout} {
+		if err := viper.BindPFlag(name, flags.Lookup(name)); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
 var cmdVersion = &cobra.Command{
 	Use: "version",
 	Run: func(_ *cobra.Command, _ []string) {
-		stdout("orion version %s", cmd.Version)
+		stdout("orion-cli version %s", cmd.Version)
 	},
 	Short: "Display the version",
 }

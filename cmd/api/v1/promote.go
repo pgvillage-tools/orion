@@ -21,6 +21,7 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
@@ -41,25 +42,26 @@ func (h *Handlers) PutPromoteReplicaSetHandler(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
-	} else if cd == nil {
-		handleError(ctx, errors.New("cluster data is nil"), w, "cluster data is not set")
-		return
-	} else if cd.Cluster == nil {
-		handleError(ctx, errors.New("cluster is nil"), w, "cluster is not set")
-		return
-	} else if cd.Cluster.Spec == nil {
-		handleError(ctx, errors.New("cluster spec is nil"), w, "cluster spec is not set")
+	}
+	if cd == nil || cd.Cluster == nil || cd.Cluster.Spec == nil {
+		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster yet")
 		return
 	}
+	// without a role in the spec, the cluster has the default role (primary)
+	if *cd.Cluster.DefSpec().Role == apiv1.Primary {
+		// nothing to do
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	newCd := cd.DeepCopy()
-
-	if newCd.Cluster.Spec.Role != nil && *newCd.Cluster.Spec.Role == apiv1.Primary {
-		return
-	}
-
 	newCd.Cluster.Spec.Role = util.ToPtr(apiv1.Primary)
-	_, err = h.client.AtomicPutClusterData(ctx, newCd, pair)
-	if err != nil {
+	if _, err = h.client.AtomicPutClusterData(ctx, newCd, pair); err != nil {
+		if errors.Is(err, consensus.ErrKeyModified) {
+			endpoints.WriteProblem(w, http.StatusConflict,
+				"the cluster data changed while promoting the cluster; try again")
+			return
+		}
 		handleError(ctx, err, w, "failed to promote this replicaset")
 		return
 	}

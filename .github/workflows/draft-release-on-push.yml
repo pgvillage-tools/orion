@@ -21,7 +21,7 @@ jobs:
       # otherwise, read permission is required at least
       pull-requests: write
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Drafts the next release notes as PRs are merged into main (config: .github/release-drafter.yml)
       - uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0

@@ -2,13 +2,16 @@ package etcdv3_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/util"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 var _ = Describe("/v1/cluster/spec", Ordered, func() {
@@ -54,10 +57,28 @@ var _ = Describe("/v1/cluster/spec", Ordered, func() {
 			return pgSetting(ctx, "log_min_duration_statement")
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Equal("1500ms"))
 	})
-	It("PATCH refuses an invalid spec", func() {
-		httpCode, err := tc.apiClient.PatchClusterSpec([]byte(`{"sleepInterval":"-1s"}`))
+	It("PATCH refuses an invalid spec, invalid JSON and a change of the init mode", func() {
+		for patch, expected := range map[string]int{
+			`{"sleepInterval":"-1s"}`: http.StatusBadRequest,
+			`{"sleepInterval":`:       http.StatusBadRequest,
+			`{"initMode":"existing","existingConfig":{"keeperUID":"keeper0"}}`: http.StatusConflict,
+		} {
+			httpCode, err := tc.apiClient.PatchClusterSpec([]byte(patch))
+			Ω(err).To(HaveOccurred(), patch)
+			Ω(httpCode).To(Equal(expected), patch)
+		}
+	})
+	It("PUT refuses an invalid spec and null", func() {
+		spec, _, err := tc.apiClient.GetClusterSpec()
+		Ω(err).NotTo(HaveOccurred())
+		spec.SleepInterval = &apiv1.Duration{Duration: -time.Second}
+		httpCode, err := tc.apiClient.PutClusterSpec(spec)
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusBadRequest))
+
+		httpCode, err = tc.apiClient.PutClusterSpec(nil)
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusBadRequest))
 	})
 	It("PUT replaces the spec", func(ctx context.Context) {
 		spec, _, err := tc.apiClient.GetClusterSpec()
@@ -77,5 +98,44 @@ var _ = Describe("/v1/cluster/spec", Ordered, func() {
 		Eventually(func() (string, error) {
 			return pgSetting(ctx, "work_mem")
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Equal("8MB"))
+	})
+})
+
+var _ = Describe("/v1/cluster/spec without a cluster", Ordered, func() {
+	// only etcd and the api: no cluster data yet
+	tc := withOwnAPI()
+
+	It("GET, PATCH and PUT return 404", func() {
+		_, httpCode, err := tc.apiClient.GetClusterSpec()
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusNotFound))
+		var p endpoints.Problem
+		Ω(errors.As(err, &p)).To(BeTrue())
+		Ω(p.Detail).To(ContainSubstring("no cluster spec"))
+
+		httpCode, err = tc.apiClient.PatchClusterSpec([]byte(`{"pgParameters":{"work_mem":"8MB"}}`))
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusNotFound))
+
+		httpCode, err = tc.apiClient.PutClusterSpec(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusNotFound))
+	})
+	It("POST refuses null, something that isn't a spec, and an invalid spec", func() {
+		for name, body := range map[string]any{
+			"null":         nil,
+			"not a spec":   "not a spec",
+			"invalid spec": &apiv1.Spec{SleepInterval: &apiv1.Duration{Duration: -time.Second}},
+		} {
+			httpCode, err := tc.apiClient.Post(endpoints.ClusterSpecEndPoint, body)
+			Ω(err).To(HaveOccurred(), name)
+			Ω(httpCode).To(Equal(http.StatusBadRequest), name)
+		}
+	})
+	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+		pauseContainer(ctx, tc.etcd)
+		_, httpCode, err := tc.apiClient.GetClusterSpec()
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
 })

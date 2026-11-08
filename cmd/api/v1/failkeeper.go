@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
@@ -41,27 +42,26 @@ func (h *Handlers) PutFailKeeperHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
-	} else if cd == nil {
-		handleError(ctx, errors.New("cluster data is nil"), w, "cluster data is not set")
-		return
-	} else if cd.Cluster == nil {
-		handleError(ctx, errors.New(""), w, "cluster is not set")
-		return
-	} else if cd.Cluster.Spec == nil {
-		handleError(ctx, err, w, "cluster spec is not set")
+	}
+	if cd == nil || cd.Cluster == nil || cd.Cluster.Spec == nil {
+		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster yet")
 		return
 	}
 	newCd := cd.DeepCopy()
 	keeperInfo := newCd.Keepers[keeperID]
 	if keeperInfo == nil {
-		http.Error(w, "keeper "+keeperID+" doesn't exist", http.StatusNotFound)
+		endpoints.WriteProblem(w, http.StatusNotFound, "keeper "+keeperID+" doesn't exist")
 		return
 	}
 
 	keeperInfo.Status.ForceFail = true
 
-	_, err = h.client.AtomicPutClusterData(ctx, newCd, pair)
-	if err != nil {
+	if _, err = h.client.AtomicPutClusterData(ctx, newCd, pair); err != nil {
+		if errors.Is(err, consensus.ErrKeyModified) {
+			endpoints.WriteProblem(w, http.StatusConflict,
+				"the cluster data changed while failing the keeper; try again")
+			return
+		}
 		handleError(ctx, err, w, "failed to store cluster data")
 		return
 	}

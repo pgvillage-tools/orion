@@ -21,13 +21,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
@@ -38,37 +36,18 @@ var cmdUpdate = &cobra.Command{
 }
 
 type updateOptions struct {
-	patch   bool
-	file    string
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
+	patch bool
+	file  string
 }
 
 var updateOpts updateOptions
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, flagPatch, "P", false,
 		"patch the current cluster specification instead of replacing it")
 	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, flagFile, "f", "",
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
-	cmdUpdate.PersistentFlags().Uint16VarP(&updateOpts.Port, "port", "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", cmdUpdate.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.Host, "host", "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", cmdUpdate.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdUpdate.PersistentFlags().DurationVarP(&updateOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, cmdUpdate.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	CmdCLI.AddCommand(cmdUpdate)
 }
 

@@ -17,44 +17,21 @@ package cmd
 
 import (
 	"context"
-	"time"
 
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
-
-type deleteKeeperOptions struct {
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
-}
-
-var deleteKeeperOpts deleteKeeperOptions
 
 var removeKeeperCmd = &cobra.Command{
 	Use:   "removekeeper [keeper uid]",
-	Short: "Removes keeper from cluster data",
-	Run:   removeKeeper,
+	Short: "Removes a keeper that is gone for good from the cluster data",
+	Long: "Removes a keeper, and its database, from the cluster data, for a keeper that is gone for good (e.g. its " +
+		"node is lost). A keeper that still runs registers itself again. The keeper of the primary can't be removed: " +
+		"fail it first (orion-cli failkeeper), and remove it once another keeper runs the primary.",
+	Run: removeKeeper,
 }
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
-	removeKeeperCmd.PersistentFlags().Uint16VarP(&deleteKeeperOpts.Port, "port", "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag("port", removeKeeperCmd.PersistentFlags().Lookup("port")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	removeKeeperCmd.PersistentFlags().StringVarP(&deleteKeeperOpts.Host, "host", "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag("host", removeKeeperCmd.PersistentFlags().Lookup("host")); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	removeKeeperCmd.PersistentFlags().DurationVarP(&deleteKeeperOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, removeKeeperCmd.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
 

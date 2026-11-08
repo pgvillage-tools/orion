@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build:
     name: Build and publish documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # mike pushes the built docs to the gh-pages branch
     steps:

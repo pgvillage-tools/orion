@@ -12,16 +12,18 @@ permissions: {}
 # workflow being trigger a number of times. This limits it
 # to one run per PR.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref }}
+  # by PR number: two PRs (e.g. from forks) can have the same branch name
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   validate:
     permissions:
       contents: read
-      pull-requests: read
+      # to add (and remove) the "title needs formatting" label
+      pull-requests: write
     name: Validate PR Title
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: thehanimo/pr-title-checker@b69bc3a841cf4e3cfef2d822625d8c90a588e9da # v2.0.0
         with:
