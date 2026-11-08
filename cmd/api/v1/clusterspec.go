@@ -50,12 +50,13 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 	cd, _, err := h.client.GetClusterData(ctx)
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
+		return
 	} else if cd == nil {
 		logger.Debug().Msg("Clusterdata is nil")
 	} else if cd.Cluster == nil {
 		logger.Debug().Msg("Cluster is nil")
 	} else if cd.Cluster.Spec != nil {
-		handleError(ctx, err, w, "cluster spec is already set")
+		http.Error(w, "cluster spec is already set; use PUT or PATCH to change it", http.StatusConflict)
 		return
 	}
 
