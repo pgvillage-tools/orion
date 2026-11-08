@@ -24,12 +24,13 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// ProbeRoutes collect and return all routes of the probe port
-func (h *Handlers) ProbeRoutes() []Route {
+// ProbeRoutes collect and return all routes of the probe port. metrics serves /metrics.
+func (h *Handlers) ProbeRoutes(metrics http.Handler) []Route {
 	return []Route{
 		{endpoints.HealthEndPoint.Route(endpoints.MethodGet), h.HealthzHandler},
 		{endpoints.ReadyEndPoint.Route(endpoints.MethodGet), h.ReadyzHandler},
 		{endpoints.ModeEndPoint.Route(endpoints.MethodGet), h.ModeHandler},
+		{endpoints.MetricsEndPoint.Route(endpoints.MethodGet), metrics.ServeHTTP},
 	}
 }
 

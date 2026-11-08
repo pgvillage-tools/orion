@@ -78,7 +78,7 @@ The api certificate is always valid for `localhost`, `127.0.0.1` and `::1`.
 | Option | Environment variable | Default | Description |
 |--------|----------------------|---------|-------------|
 | `--port` | `ORIONAPI_PORT` | `8443` | The api: TLS, a client certificate is required. |
-| `--probe-port` | `ORIONAPI_PROBE_PORT` | `8080` | `/healthz`, `/readyz` and `/status`: plain HTTP, no authentication. |
+| `--probe-port` | `ORIONAPI_PROBE_PORT` | `8080` | `/healthz`, `/readyz`, `/status` and `/metrics`: plain HTTP, no authentication. |
 | `--pki-dir` | `ORIONAPI_PKI_DIR` | `~/.orion/api` | The directory with `server.crt`, `server.key` and `client-ca.crt`. |
 | `--tls-cert-file` | `ORIONAPI_TLS_CERT_FILE` | `<pki-dir>/server.crt` | Use another file for the server certificate. |
 | `--tls-key-file` | `ORIONAPI_TLS_KEY_FILE` | `<pki-dir>/server.key` | Use another file for the private key. |
@@ -97,6 +97,35 @@ The api certificate is always valid for `localhost`, `127.0.0.1` and `::1`.
 | `/healthz` | 200 when the api and its store are healthy. |
 | `/readyz` | 200 when the api serves. |
 | `/status` | The mode of the api, e.g. `{"mode":"normal"}`. |
+| `/metrics` | Prometheus metrics, see below. |
+
+### Metrics
+
+`/metrics` on the probe port returns the metrics of the api in the Prometheus format. The api doesn't use
+`--metrics-listen-address`, which the other components use for their metrics.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `orion_api_certificate_expiry_timestamp_seconds` | gauge | `common_name`, `serial`, `ca` | Expiry of each certificate the api loaded at start (its certificate, its chain and the CA of the clients), in seconds since the unix epoch. |
+| `orion_api_requests_total` | counter | `method`, `route`, `code` | Requests on the api port, after authentication. `route` is the path of the route, e.g. `/v1/cluster/keepers/{id}`. |
+| `orion_api_request_duration_seconds` | histogram | `method`, `route` | Duration of those requests. |
+| `orion_cluster_identifier` | gauge | `cluster_name`, `component` | Always 1, with `component="api"`. The other components have it too. |
+
+The api also serves the standard Go and process metrics (`go_*`, `process_*`).
+
+To alert on certificates that expire within 30 days:
+
+```yaml
+- alert: OrionAPICertificateExpiresSoon
+  expr: orion_api_certificate_expiry_timestamp_seconds - time() < 30 * 24 * 3600
+  labels:
+    severity: warning
+  annotations:
+    summary: "Certificate {{ $labels.common_name }} of the orion api expires within 30 days"
+```
+
+Because the api reads its certificates at start, the metric shows the certificates it uses, not the files on disk.
+After you renew the certificates and restart the api, the alert clears.
 
 ## Using the cli
 
