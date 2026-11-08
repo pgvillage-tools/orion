@@ -163,12 +163,23 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 		return apiv1.InfoCluster{}, err
 	}
 
-	return apiv1.InfoCluster{
-		Keepers:   k,
-		Proxies:   p,
-		Sentinels: s,
-		Status:    clusterStatus(cd),
-	}, nil
+	return newInfoCluster(k, p, s, clusterStatus(cd)), nil
+}
+
+// newInfoCluster returns the cluster info, with empty lists instead of nil ones, so they are encoded as [] and not as
+// null
+func newInfoCluster(k apiv1.InfoKeepers, p apiv1.InfoProxies, s apiv1.InfoSentinels,
+	status apiv1.InfoGenericStatus) apiv1.InfoCluster {
+	if k == nil {
+		k = apiv1.InfoKeepers{}
+	}
+	if p == nil {
+		p = apiv1.InfoProxies{}
+	}
+	if s == nil {
+		s = apiv1.InfoSentinels{}
+	}
+	return apiv1.InfoCluster{Keepers: k, Proxies: p, Sentinels: s, Status: status}
 }
 
 // clusterStatus returns the status of the cluster in cd:
