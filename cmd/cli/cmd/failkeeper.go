@@ -51,7 +51,7 @@ func failKeeper(_ *cobra.Command, args []string) {
 
 	apiClient := defaultAPIClient(ctx)
 
-	httpCode, putErr := apiClient.PutFailKeeper(keeperID)
+	httpCode, putErr := apiClient.FailKeeper(keeperID)
 	if putErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, putErr).

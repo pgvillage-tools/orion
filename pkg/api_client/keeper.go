@@ -17,13 +17,13 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// PutFailKeeper uses the API to trigger a Failover for a Keeper
-func (c Connection) PutFailKeeper(keeper string) (httpCode int, err error) {
+// FailKeeper marks keeper as failed, so the sentinel fails over when it runs the primary
+func (c Connection) FailKeeper(keeper string) (httpCode int, err error) {
 	specificEP, specError := endpoints.FailKeeperEndPoint.Specific(map[string]string{"id": keeper})
 	if specError != nil {
 		return httpClientError, specError
 	}
-	return c.Put(specificEP, nil)
+	return c.Action(specificEP)
 }
 
 // DeleteKeeper uses the API to delete all info regarding a Keeper

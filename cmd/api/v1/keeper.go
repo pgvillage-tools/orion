@@ -58,7 +58,8 @@ func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	if db := newCd.FindDB(keeper); db != nil {
 		if db.UID == newCd.Cluster.Status.Master {
 			endpoints.WriteProblem(w, http.StatusConflict, fmt.Sprintf("keeper %[1]s runs the primary: fail it first "+
-				"(PUT /v1/cluster/keepers/%[1]s/fail), and remove it once another keeper runs the primary", keeperID))
+				"(POST /v1/cluster/keepers/%[1]s/actions/fail), and remove it once another keeper runs the primary",
+				keeperID))
 			return
 		}
 		delete(newCd.DBs, db.UID)

@@ -104,4 +104,11 @@ var _ = Describe("Connection", func() {
 		_, err := c.Get(endpoints.ModeEndPoint, &mode)
 		Ω(err).To(MatchError(ContainSubstring("failed to decode the response")))
 	})
+	It("sends an action as a POST without a body", func() {
+		c := connect(ok)
+		httpCode, err := c.Action(endpoints.PromoteClusterEndPoint)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusAccepted))
+		Ω(last).To(Equal(request{http.MethodPost, "/v1/cluster/actions/promote", "", ""}))
+	})
 })
