@@ -100,9 +100,9 @@ func (c Connection) Post(ep endpoints.EndPoint, o any) (httpCode int, err error)
 	return c.do(http.MethodPost, ep, body, contentTypeJSON, nil)
 }
 
-// Patch issues a PATCH request for ep with patch as the body
+// Patch issues a PATCH request for ep with patch, a JSON merge patch (RFC 7386), as the body
 func (c Connection) Patch(ep endpoints.EndPoint, patch []byte) (httpCode int, err error) {
-	return c.do(http.MethodPatch, ep, patch, contentTypeJSON, nil)
+	return c.do(http.MethodPatch, ep, patch, endpoints.ContentTypeMergePatch, nil)
 }
 
 // Delete issues a DELETE request for ep

@@ -20,8 +20,12 @@ import (
 	"net/http"
 )
 
-// ContentTypeProblem is the content type of a Problem (RFC 9457)
-const ContentTypeProblem = "application/problem+json"
+const (
+	// ContentTypeProblem is the content type of a Problem (RFC 9457)
+	ContentTypeProblem = "application/problem+json"
+	// ContentTypeMergePatch is the content type of a JSON merge patch (RFC 7386), e.g. for PATCH /v1/cluster/spec
+	ContentTypeMergePatch = "application/merge-patch+json"
+)
 
 // Problem is the body of every error response of the api: a problem details object (RFC 9457). The api uses the
 // default type (about:blank), so title is the text of the status code and detail explains this occurrence.

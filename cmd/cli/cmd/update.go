@@ -18,7 +18,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 
@@ -26,7 +25,6 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
 var cmdUpdate = &cobra.Command{
@@ -49,23 +47,6 @@ func init() {
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
 	CmdCLI.AddCommand(cmdUpdate)
-}
-
-func patchClusterSpec(cs *cluster.Spec, p []byte) (*cluster.Spec, error) {
-	csj, err := json.Marshal(cs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal cluster spec: %v", err)
-	}
-
-	newcsj, err := strategicpatch.StrategicMergePatch(csj, p, &cluster.Spec{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to merge patch cluster spec: %v", err)
-	}
-	var newcs *cluster.Spec
-	if err := json.Unmarshal(newcsj, &newcs); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal patched cluster spec: %v", err)
-	}
-	return newcs, nil
 }
 
 func update(_ *cobra.Command, args []string) {
