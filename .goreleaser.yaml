@@ -98,10 +98,12 @@ sboms:
     documents:
       - '{{ .Binary }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}.sbom.json'
     cmd: cyclonedx-gomod
-    # changes: xml instead of json, and assert-licenses to add licen info per component
+    # a CycloneDX SBOM of the module per binary, as JSON (the document is named .json; without -json it was XML),
+    # with the license of every component (-assert-licenses, as dependency-track requires)
     args:
       [
         'mod',
+        '-json',
         '-licenses',
         '-assert-licenses',
         '-std',
