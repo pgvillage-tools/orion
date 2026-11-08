@@ -51,7 +51,7 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 
 	It("shows a stopped standby as unhealthy, and keeps the primary", func(ctx context.Context) {
 		primary := tc.waitForPrimary()
-		// wait until both keepers run, so the stopped one was healthy before
+		// wait until both keepers run and reported their listen address, so the stopped one was healthy before
 		var standby, listenAddress string
 		Eventually(func(g Gomega) {
 			status, _, err := tc.apiClient.GetStatus()
@@ -59,6 +59,8 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 			g.Ω(status.Keepers).To(HaveLen(numKeepers))
 			for _, k := range status.Keepers {
 				g.Ω(k.Healthy).To(BeTrue(), "keeper %s", k.UID)
+				// it is "(unknown)" until the db of the keeper reports it
+				g.Ω(k.ListenAddress).To(MatchRegexp(`^keeper_\d+:\d+$`), "keeper %s", k.UID)
 				if k.UID != primary {
 					standby, listenAddress = k.UID, k.ListenAddress
 				}
