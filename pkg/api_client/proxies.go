@@ -19,8 +19,8 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// GetProxiesStatus uses the API to fetch the info of the proxies, by uid
-func (c Connection) GetProxiesStatus() (proxies apiv1.ProxiesInfo, httpCode int, err error) {
-	httpCode, err = c.Get(endpoints.ProxyStatusEndPoint, &proxies)
-	return proxies, httpCode, err
+// GetProxies returns the proxies, sorted on uid
+func (c Connection) GetProxies() (list apiv1.InfoProxies, httpCode int, err error) {
+	httpCode, err = c.Get(endpoints.ProxiesEndPoint, &list)
+	return list, httpCode, err
 }

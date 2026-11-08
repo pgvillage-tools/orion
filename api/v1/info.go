@@ -28,11 +28,11 @@ type InfoKeepers []InfoKeeper
 // InfoKeeper defines the keeper info tht will be returned by the API
 type InfoKeeper struct {
 	UID                 string `json:"uid"`
-	ListenAddress       string `json:"listen_address"`
+	ListenAddress       string `json:"listenAddress"`
 	Healthy             bool   `json:"healthy"`
-	PgHealthy           bool   `json:"pg_healthy"`
-	PgWantedGeneration  int64  `json:"pg_wanted_generation"`
-	PgCurrentGeneration int64  `json:"pg_current_generation"`
+	PgHealthy           bool   `json:"pgHealthy"`
+	PgWantedGeneration  int64  `json:"pgWantedGeneration"`
+	PgCurrentGeneration int64  `json:"pgCurrentGeneration"`
 }
 
 // InfoSentinels defines the sentinels info tht will be returned by the API

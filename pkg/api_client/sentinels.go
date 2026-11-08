@@ -19,8 +19,8 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// GetSentinelsStatus uses the API to fetch the info of the sentinels
-func (c Connection) GetSentinelsStatus() (sentinels apiv1.SentinelsInfo, httpCode int, err error) {
-	httpCode, err = c.Get(endpoints.SentinelStatusEndPoint, &sentinels)
-	return sentinels, httpCode, err
+// GetSentinels returns the sentinels, sorted on uid, with the leader
+func (c Connection) GetSentinels() (list apiv1.InfoSentinels, httpCode int, err error) {
+	httpCode, err = c.Get(endpoints.SentinelsEndPoint, &list)
+	return list, httpCode, err
 }

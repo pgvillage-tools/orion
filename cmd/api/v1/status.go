@@ -31,37 +31,51 @@ import (
 func (h *Handlers) StatusRoutes() []Route {
 	return []Route{
 		{endpoints.StatusEndPoint.Route(endpoints.MethodGet), h.StatusHandler},
-		{endpoints.ProxyStatusEndPoint.Route(endpoints.MethodGet), h.ProxyStatusHandler},
-		{endpoints.SentinelStatusEndPoint.Route(endpoints.MethodGet), h.SentinelStatusHandler},
+		{endpoints.ProxiesEndPoint.Route(endpoints.MethodGet), h.ProxiesHandler},
+		{endpoints.SentinelsEndPoint.Route(endpoints.MethodGet), h.SentinelsHandler},
 	}
 }
 
-// ProxyStatusHandler endpoint
-func (h *Handlers) ProxyStatusHandler(w http.ResponseWriter, r *http.Request) {
+// ProxiesHandler returns the proxies, sorted on uid (the same list as in the cluster status)
+func (h *Handlers) ProxiesHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
-	if proxiesInfo, err := h.client.GetProxiesInfo(ctx); err != nil {
-		handleError(ctx, err, w, "failed to get proxy info")
-	} else {
-		h.writeJSON(ctx, w, proxiesInfo)
+	proxies, err := h.proxyInfo(ctx)
+	if err != nil {
+		handleError(ctx, err, w, "failed to get the proxies")
+		return
 	}
+	if proxies == nil {
+		proxies = apiv1.InfoProxies{}
+	}
+	h.writeJSON(ctx, w, proxies)
 }
 
-// SentinelStatusHandler endpoint
-func (h *Handlers) SentinelStatusHandler(w http.ResponseWriter, r *http.Request) {
+// SentinelsHandler returns the sentinels, sorted on uid, with the leader (the same list as in the cluster status)
+func (h *Handlers) SentinelsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
-	if sentinelsInfo, err := h.client.GetSentinelsInfo(ctx); err != nil {
-		handleError(ctx, err, w, "failed to get sentinel status")
-	} else {
-		h.writeJSON(ctx, w, sentinelsInfo)
+	sentinels, err := h.sentinelInfo(ctx)
+	if err != nil {
+		handleError(ctx, err, w, "failed to get the sentinels")
+		return
 	}
+	if sentinels == nil {
+		sentinels = apiv1.InfoSentinels{}
+	}
+	h.writeJSON(ctx, w, sentinels)
 }
 
 func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, err error) {
-	var ssi apiv1.SentinelsInfo
+	// Read the sentinels first: that honours the deadline of ctx, so an unreachable store fails fast. Setting up the
+	// election client (for the leader) can take much longer then.
+	ssi, err := h.client.GetSentinelsInfo(ctx)
+	if err != nil {
+		handleError(ctx, err, nil, "failed to get sentinels info")
+		return nil, err
+	}
 	election, err := cmdcommon.NewElection(ctx, &cfg.CommonConfig, "")
 	if err != nil {
 		handleError(ctx, err, nil, "failed to get election info")
@@ -72,10 +86,6 @@ func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, er
 		handleError(ctx, err, nil, "failed to get leader info")
 		return nil, err
 	}
-	if ssi, err = h.client.GetSentinelsInfo(ctx); err != nil {
-		handleError(ctx, err, nil, "failed to get sentinels info")
-		return nil, err
-	}
 	for _, si := range ssi {
 		leader := lsid != "" && si.UID == lsid
 		is = append(is, apiv1.InfoSentinel{
@@ -83,6 +93,7 @@ func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, er
 			Leader: leader,
 		})
 	}
+	sort.Slice(is, func(i, j int) bool { return is[i].UID < is[j].UID })
 	return is, nil
 }
 

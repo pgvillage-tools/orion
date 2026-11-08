@@ -5,22 +5,21 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-var _ = Describe("GetProxiesStatus", func() {
-	It("returns the proxies by uid", func() {
-		c := serve(endpoints.ProxyStatusEndPoint, http.StatusOK,
-			`{"p1":{"UID":"p1","Generation":3},"p2":{"UID":"p2","Generation":1}}`)
-		proxies, httpCode, err := c.GetProxiesStatus()
+var _ = Describe("GetProxies", func() {
+	It("returns the proxies", func() {
+		c := serve(endpoints.ProxiesEndPoint, http.StatusOK, `[{"uid":"p1","generation":3},{"uid":"p2","generation":1}]`)
+		proxies, httpCode, err := c.GetProxies()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
-		Ω(proxies).To(HaveLen(2))
-		Ω(proxies).To(HaveKeyWithValue("p1", HaveField("Generation", int64(3))))
+		Ω(proxies).To(Equal(apiv1.InfoProxies{{UID: "p1", Generation: 3}, {UID: "p2", Generation: 1}}))
 	})
 	It("returns the http code of an error", func() {
-		c := serve(endpoints.ProxyStatusEndPoint, http.StatusInternalServerError, "ERROR")
-		_, httpCode, err := c.GetProxiesStatus()
+		c := serve(endpoints.ProxiesEndPoint, http.StatusInternalServerError, "ERROR")
+		_, httpCode, err := c.GetProxies()
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})

@@ -9,28 +9,26 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-var _ = Describe("GET /v1/cluster/sentinels/status", func() {
+var _ = Describe("GET /v1/cluster/sentinels", func() {
 	It("returns the sentinel", func() {
 		Eventually(func(g Gomega) {
-			sentinels, httpCode, err := sharedCluster.apiClient.GetSentinelsStatus()
+			sentinels, httpCode, err := sharedCluster.apiClient.GetSentinels()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(httpCode).To(Equal(http.StatusOK))
 			g.Ω(sentinels).To(ConsistOf(HaveField("UID", Not(BeEmpty()))))
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
 	})
-	It("matches the sentinels in /v1/cluster/status", func() {
-		sentinels, _, err := sharedCluster.apiClient.GetSentinelsStatus()
+	It("returns the same sentinels as /v1/cluster/status, with the leader", func() {
+		sentinels, _, err := sharedCluster.apiClient.GetSentinels()
 		Ω(err).NotTo(HaveOccurred())
 		status, _, err := sharedCluster.apiClient.GetStatus()
 		Ω(err).NotTo(HaveOccurred())
-		Ω(sentinels).To(HaveLen(len(status.Sentinels)))
-		for i, s := range status.Sentinels {
-			Ω(sentinels).To(ContainElement(HaveField("UID", s.UID)), "sentinel %d", i)
-		}
+		Ω(sentinels).To(Equal(status.Sentinels))
+		Ω(sentinels).To(ContainElement(HaveField("Leader", BeTrue())))
 	})
 })
 
-var _ = Describe("GET /v1/cluster/sentinels/status when sentinels stop", Ordered, func() {
+var _ = Describe("GET /v1/cluster/sentinels when sentinels stop", Ordered, func() {
 	// these tests stop sentinels and pause etcd, so they get their own cluster (with one sentinel, so it is the leader)
 	tc := withOwnCluster(1)
 	var first string
@@ -45,7 +43,7 @@ var _ = Describe("GET /v1/cluster/sentinels/status when sentinels stop", Ordered
 
 		second = tc.addSentinel(ctx)
 		Eventually(func(g Gomega) {
-			sentinels, httpCode, err := tc.apiClient.GetSentinelsStatus()
+			sentinels, httpCode, err := tc.apiClient.GetSentinels()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(httpCode).To(Equal(http.StatusOK))
 			g.Ω(sentinels).To(HaveLen(2))
@@ -55,7 +53,7 @@ var _ = Describe("GET /v1/cluster/sentinels/status when sentinels stop", Ordered
 		Ω(tc.sentinel.Stop(ctx, nil)).To(Succeed())
 		// a sentinel registers itself with a TTL of 2 sleep intervals (10s by default)
 		Eventually(func(g Gomega) {
-			sentinels, _, err := tc.apiClient.GetSentinelsStatus()
+			sentinels, _, err := tc.apiClient.GetSentinels()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(sentinels).To(ConsistOf(HaveField("UID", Not(Equal(first)))))
 			status, _, err := tc.apiClient.GetStatus()
@@ -69,7 +67,7 @@ var _ = Describe("GET /v1/cluster/sentinels/status when sentinels stop", Ordered
 	It("returns no sentinels when none runs", func(ctx context.Context) {
 		Ω(second.Stop(ctx, nil)).To(Succeed())
 		Eventually(func(g Gomega) {
-			sentinels, httpCode, err := tc.apiClient.GetSentinelsStatus()
+			sentinels, httpCode, err := tc.apiClient.GetSentinels()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(httpCode).To(Equal(http.StatusOK))
 			g.Ω(sentinels).To(BeEmpty())
@@ -77,18 +75,18 @@ var _ = Describe("GET /v1/cluster/sentinels/status when sentinels stop", Ordered
 	})
 	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
 		pauseContainer(ctx, tc.etcd)
-		_, httpCode, err := tc.apiClient.GetSentinelsStatus()
+		_, httpCode, err := tc.apiClient.GetSentinels()
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
 })
 
-var _ = Describe("GET /v1/cluster/sentinels/status without a cluster", Ordered, func() {
+var _ = Describe("GET /v1/cluster/sentinels without a cluster", Ordered, func() {
 	// only etcd and the api: no cluster, no sentinels
 	tc := withOwnAPI()
 
 	It("returns no sentinels", func() {
-		sentinels, httpCode, err := tc.apiClient.GetSentinelsStatus()
+		sentinels, httpCode, err := tc.apiClient.GetSentinels()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
 		Ω(sentinels).To(BeEmpty())
