@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -246,17 +247,32 @@ func (tc *testCluster) terminate(ctx context.Context, failed bool) {
 	}
 }
 
-// dumpLogs writes the logs of all containers of the cluster to the GinkgoWriter
+// logTailLines is the number of lines of every container's log that dumpLogs shows
+const logTailLines = 300
+
+// dumpLogs writes the last logTailLines lines of the logs of all containers of the cluster to stdout, in a collapsible
+// group in GitHub Actions. It writes to stdout and not to the GinkgoWriter: it runs in AfterAll, which succeeds, and
+// Ginkgo only shows the GinkgoWriter output of nodes that fail (unless it runs verbose).
 func (tc *testCluster) dumpLogs(ctx context.Context) {
+	group, endGroup := "===== logs of %s (last %d lines) =====\n", ""
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		group, endGroup = "::group::logs of %s (last %d lines)\n", "::endgroup::\n"
+	}
 	for _, cnt := range tc.all {
 		name, _ := cnt.Name(ctx)
 		logs, err := cnt.Logs(ctx)
 		if err != nil {
-			GinkgoWriter.Printf("no logs for %s: %v\n", name, err)
+			fmt.Printf("no logs for %s: %v\n", name, err)
 			continue
 		}
 		data, _ := io.ReadAll(logs)
 		_ = logs.Close()
-		GinkgoWriter.Printf("===== logs of %s =====\n%s\n", name, data)
+		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+		if len(lines) > logTailLines {
+			lines = lines[len(lines)-logTailLines:]
+		}
+		fmt.Printf(group, name, logTailLines)
+		fmt.Println(strings.Join(lines, "\n"))
+		fmt.Print(endGroup)
 	}
 }
