@@ -110,6 +110,11 @@ func (c Connection) Delete(ep endpoints.EndPoint) (httpCode int, err error) {
 	return c.do(http.MethodDelete, ep, nil, "", nil)
 }
 
+// Action issues a POST request without a body for an action endpoint (e.g. .../actions/fail)
+func (c Connection) Action(ep endpoints.EndPoint) (httpCode int, err error) {
+	return c.do(http.MethodPost, ep, nil, "", nil)
+}
+
 // do sends a request with method and body (when not nil) to ep, and decodes the response into o (when o isn't nil).
 // It returns the status code of the response, or httpClientError when there is no response (or it can't be decoded).
 // A response that isn't 2xx is returned as an error: the api's problem (RFC 9457), or a problem with the status and

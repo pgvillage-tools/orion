@@ -22,18 +22,19 @@ import (
 )
 
 const (
-	// KeeperEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
+	// KeeperEndPoint is a keeper (DELETE removes it from the cluster data)
 	KeeperEndPoint EndPoint = "cluster/keepers/{id}"
 	// ClusterEndPoint is the endpoint config for Cluster
 	ClusterEndPoint EndPoint = "cluster"
 	// ClusterSpecEndPoint is the endpoint config for Cluster spec
 	ClusterSpecEndPoint EndPoint = "cluster/spec"
-	// FailKeeperEndPoint is the config for the failkeeper endpoint
-	FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/fail"
+	// FailKeeperEndPoint is the action that fails a keeper (POST), so the sentinel fails over when it runs the primary
+	FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/actions/fail"
 	// WhoAmIEndPoint returns the identity of the client
 	WhoAmIEndPoint EndPoint = "whoami"
-	// PromoteReplicaSetEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
-	PromoteReplicaSetEndPoint EndPoint = "cluster/promote"
+	// PromoteClusterEndPoint is the action that promotes a standby cluster to a primary cluster (POST); a primary
+	// cluster stays as it is (200)
+	PromoteClusterEndPoint EndPoint = "cluster/actions/promote"
 	// StatusEndPoint configures how to handle status requests
 	StatusEndPoint EndPoint = "cluster/status"
 	// ProxyStatusEndPoint configures how to handle proxy status requests

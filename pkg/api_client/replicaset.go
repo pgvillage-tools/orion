@@ -17,7 +17,7 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// PutPromoteReplicaSet uses the API to write replicaset config
-func (c Connection) PutPromoteReplicaSet() (httpCode int, err error) {
-	return c.Put(endpoints.PromoteReplicaSetEndPoint, nil)
+// PromoteCluster promotes a standby cluster to a primary cluster (a primary cluster stays as it is)
+func (c Connection) PromoteCluster() (httpCode int, err error) {
+	return c.Action(endpoints.PromoteClusterEndPoint)
 }

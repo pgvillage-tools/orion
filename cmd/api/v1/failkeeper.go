@@ -27,12 +27,13 @@ import (
 // FailKeeperRoutes returns the routes to be added for the FailKeeper code
 func (h *Handlers) FailKeeperRoutes() []Route {
 	return []Route{
-		{endpoints.FailKeeperEndPoint.Route(endpoints.MethodPut), h.PutFailKeeperHandler},
+		{endpoints.FailKeeperEndPoint.Route(endpoints.MethodPost), h.FailKeeperHandler},
 	}
 }
 
-// PutFailKeeperHandler endpoint
-func (h *Handlers) PutFailKeeperHandler(w http.ResponseWriter, r *http.Request) {
+// FailKeeperHandler marks a keeper as failed (POST .../keepers/{id}/actions/fail), so the sentinel fails over when it
+// runs the primary
+func (h *Handlers) FailKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
