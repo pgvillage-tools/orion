@@ -66,13 +66,15 @@ markdown_extensions:
 
 plugins:
   - search
+  # Not needed yet; enable them (and their dependencies in docs-requirements.txt and the workflows) when a PR needs them
   # Social cards need the imaging dependencies (cairo, pngquant, see mkdocs-material[imaging])
-  - social
-  - tags
+  # - social
+  # - tags
   # Downloads external assets (like Google fonts) at build time, so they are served from the site itself
-  - privacy
-  - kroki:
-      http_method: POST
+  # - privacy
+  # Diagrams (plantuml, mermaid, ...) rendered by kroki.io
+  # - kroki:
+  #     http_method: POST
 
 # The stolon docs in docs/stolon are not published yet: they still describe stolon, and come in one by one, reviewed,
 # before the first release

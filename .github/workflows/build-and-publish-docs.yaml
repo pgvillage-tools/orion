@@ -52,21 +52,23 @@ jobs:
           cache-dependency-path: |
             docs-requirements.txt
 
-      - name: Install system libraries for the social cards
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcairo2
+      # Only needed for the social plugin (not enabled yet)
+      # - name: Install system libraries for the social cards
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y --no-install-recommends libcairo2
 
       - name: Install Python dependencies
         run: pip install -r docs-requirements.txt
 
-      - name: Set up build cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: mkdocs-material-${{ hashfiles('.cache/**') }}
-          path: .cache
-          restore-keys: |
-            mkdocs-material-
+      # The cache (.cache) is only filled by the social and privacy plugins (not enabled yet)
+      # - name: Set up build cache
+      #   uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      #   with:
+      #     key: mkdocs-material-${{ hashfiles('.cache/**') }}
+      #     path: .cache
+      #     restore-keys: |
+      #       mkdocs-material-
 
       - name: Configure Git user
         run: |
@@ -100,8 +102,9 @@ jobs:
         if: steps.gh_pages.outputs.exists == 'false'
         run: mike set-default --push --branch=gh-pages latest
 
-      - name: Save build cache
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: mkdocs-material-${{ hashfiles('.cache/**') }}
-          path: .cache
+      # The cache (.cache) is only filled by the social and privacy plugins (not enabled yet)
+      # - name: Save build cache
+      #   uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      #   with:
+      #     key: mkdocs-material-${{ hashfiles('.cache/**') }}
+      #     path: .cache

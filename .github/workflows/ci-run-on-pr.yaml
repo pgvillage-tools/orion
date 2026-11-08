@@ -186,10 +186,11 @@ jobs:
           python-version: 3.x
           cache: pip
           cache-dependency-path: docs-requirements.txt
-      - name: Install system libraries for the social cards
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcairo2
+      # Only needed for the social plugin (not enabled yet)
+      # - name: Install system libraries for the social cards
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y --no-install-recommends libcairo2
       - name: Install Python dependencies
         run: pip install -r docs-requirements.txt
       - name: Build the docs, failing on warnings (like broken links)
