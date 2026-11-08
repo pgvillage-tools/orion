@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/pgvillage-tools/orion/internal/auth"
+	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
@@ -92,7 +94,9 @@ func TestAPIWithClientCertificates(t *testing.T) {
 
 func TestProbeRoutes(t *testing.T) {
 	var isReady atomic.Bool
-	h := NewHandlers(nil, &isReady)
+	store := mockconsensus.NewMockStore(gomock.NewController(t))
+	store.EXPECT().Healthy(gomock.Any()).Return(nil).AnyTimes()
+	h := NewHandlers(store, &isReady)
 	probe := httptest.NewServer(newMux(t.Context(), h.ProbeRoutes(http.NotFoundHandler())))
 	defer probe.Close()
 
@@ -106,8 +110,8 @@ func TestProbeRoutes(t *testing.T) {
 
 	resp := get(endpoints.ReadyEndPoint)
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected readyz to fail before the api is ready, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected readyz to return 503 before the api is ready, got %d", resp.StatusCode)
 	}
 	isReady.Store(true)
 	resp = get(endpoints.ReadyEndPoint)

@@ -20,7 +20,7 @@ import (
 const (
 	etcdImage       = "quay.io/coreos/etcd:v3.6.7"
 	apiInternalPort = 8443
-	// apiProbeInternalPort is the probe port of the api (/healthz, /readyz, /status)
+	// apiProbeInternalPort is the probe port of the api (/livez, /readyz, /status, /metrics)
 	apiProbeInternalPort = 8080
 	// clusterTimeout is the time to start a test cluster
 	clusterTimeout = 10 * time.Minute

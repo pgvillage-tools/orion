@@ -44,7 +44,7 @@ ENV ORIONAPI_CLUSTER_NAME=orion \
 RUN useradd orion
 USER orion
 
-# 8443: the api (TLS, a client certificate is required), 8080: /healthz, /readyz and /status
+# 8443: the api (TLS, a client certificate is required), 8080: /livez, /readyz, /status and /metrics
 EXPOSE 8443 8080
 
 ENTRYPOINT ["/orion-api"]
