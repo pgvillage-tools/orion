@@ -74,3 +74,20 @@ var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail without a cluster, 
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
 })
+
+var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail on the only keeper", Ordered, func() {
+	// one keeper: it runs the primary, and nothing can take over
+	tc := withOwnCluster(1)
+
+	It("refuses to fail it (409), and the primary stays", func() {
+		primary := tc.waitForPrimary()
+		httpCode, err := tc.apiClient.FailKeeper(primary)
+		Ω(err).To(MatchError(ContainSubstring("no other keeper can take over")))
+		Ω(httpCode).To(Equal(http.StatusConflict))
+
+		cd, _, err := tc.apiClient.GetCluster()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(cd.Keepers[primary].Status.ForceFail).To(BeFalse(), "the keeper isn't marked as failed")
+		Ω(tc.waitForPrimary()).To(Equal(primary))
+	})
+})
