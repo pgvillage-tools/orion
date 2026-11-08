@@ -85,6 +85,11 @@ jobs:
           if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
             # Run everything in the merge queue, on main, when started by hand, and when this workflow changes
             go=true e2e=true shell=true all_pg=true
+            # The merge queue tests the oldest and the newest PostgreSQL version, like PRs: a PR that changes keeper
+            # or PostgreSQL code already tested all versions, and main tests all versions after the merge
+            if [ "${EVENT}" = merge_group ]; then
+              all_pg=false
+            fi
           else
             go=${GO_CHANGED:-false}
             shell=${SHELL_CHANGED:-false}
@@ -98,7 +103,8 @@ jobs:
           if [ "${DRAFT}" = true ]; then
             e2e=false
           fi
-          # PRs test the oldest and the newest PostgreSQL version, unless keeper or PostgreSQL code changed
+          # PRs and the merge queue test the oldest and the newest PostgreSQL version, unless keeper or PostgreSQL code
+          # changed (PRs), or on main
           if [ "${all_pg}" = true ]; then
             pgversions='["14","15","16","17","18"]'
           else
