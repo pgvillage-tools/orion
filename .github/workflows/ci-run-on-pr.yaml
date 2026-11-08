@@ -2,7 +2,9 @@ name: CI run on PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # On main (and when started by hand) everything runs, with e2e tests on all PostgreSQL versions
+  # In the merge queue, on main (and when started by hand) everything runs, with e2e tests on all
+  # PostgreSQL versions
+  merge_group:
   push:
     branches:
       - main
@@ -77,7 +79,7 @@ jobs:
           ALL_PG_CHANGED: ${{ steps.filter.outputs.all_pg_any_changed }}
         run: |
           if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
-            # Run everything on main, when started by hand, and when this workflow changes
+            # Run everything in the merge queue, on main, when started by hand, and when this workflow changes
             go=true e2e=true shell=true all_pg=true
           else
             go=${GO_CHANGED:-false}
