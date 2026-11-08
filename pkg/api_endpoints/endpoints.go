@@ -39,8 +39,14 @@ const (
 	StatusEndPoint EndPoint = "cluster/status"
 	// ProxiesEndPoint is the list of proxies, sorted on uid
 	ProxiesEndPoint EndPoint = "cluster/proxies"
+	// ProxyEndPoint is a single proxy, by uid
+	ProxyEndPoint EndPoint = "cluster/proxies/{uid}"
 	// SentinelsEndPoint is the list of sentinels, sorted on uid
 	SentinelsEndPoint EndPoint = "cluster/sentinels"
+	// SentinelEndPoint is a single sentinel, by uid
+	SentinelEndPoint EndPoint = "cluster/sentinels/{uid}"
+	// KeepersEndPoint is the list of keepers, sorted on uid
+	KeepersEndPoint EndPoint = "cluster/keepers"
 )
 
 const (
