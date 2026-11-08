@@ -116,3 +116,17 @@ var _ = Describe("GET /v1/whoami", func() {
 		Ω(err).To(MatchError(ContainSubstring("unknown certificate authority")))
 	})
 })
+
+var _ = Describe("GET /v1/whoami without the store", Ordered, func() {
+	// this test pauses etcd, so it gets its own api
+	tc := withOwnAPI()
+
+	It("still returns the identity while the store doesn't respond: whoami doesn't use the store",
+		func(ctx context.Context) {
+			pauseContainer(ctx, tc.etcd)
+			identity, httpCode, err := tc.apiClient.WhoAmI()
+			Ω(err).NotTo(HaveOccurred())
+			Ω(httpCode).To(Equal(http.StatusOK))
+			Ω(identity.Name).To(Equal(pki.CLIClientName))
+		})
+})
