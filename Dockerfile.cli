@@ -21,7 +21,7 @@ COPY internal/ internal/
 COPY pkg/ pkg/
 
 # Build
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -a -ldflags="-X 'github.com/pgvillage-tools/orion/cmd.Version=$VERSION'" -o orion ./cmd/cli
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -a -ldflags="-X 'github.com/pgvillage-tools/orion/cmd.Version=$VERSION'" -o orion-cli ./cmd/cli
 
 FROM docker.io/debian:bookworm-slim
 
@@ -32,9 +32,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
-COPY --from=builder /workspace/orion ./
+COPY --from=builder /workspace/orion-cli ./
 
 ENV ORIONCLI_CLUSTER_NAME=orion \
     ORIONCLI_STORE_BACKEND=etcdv3
 
-ENTRYPOINT ["/orion"]
+ENTRYPOINT ["/orion-cli"]

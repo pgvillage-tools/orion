@@ -219,7 +219,7 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 
 func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bool) {
 	// skip not existing db: specified as a follower but not available in the
-	// cluster spec (this should happen only when doing an `orion removekeeper`)
+	// cluster spec (this should happen only when doing an `orion-cli removekeeper`)
 	if _, ok := cd.DBs[dbuid]; !ok {
 		return
 	}

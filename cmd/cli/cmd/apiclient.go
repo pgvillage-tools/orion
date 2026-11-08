@@ -46,7 +46,7 @@ func newAPIClient(ctx context.Context, host string, port uint16) client.Connecti
 			Str("cert", files.CertFile).
 			Str("key", files.KeyFile).
 			Str("ca", files.CAFile).
-			Msg("client certificate not found: create it with `orion pki init`")
+			Msg("client certificate not found: create it with `orion-cli pki init`")
 	}
 	tlsConfig, err := files.ClientConfig()
 	if err != nil {
