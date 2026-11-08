@@ -15,10 +15,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # Golang version to use across CI steps
-  GOLANG_VERSION: '1.27' # matches the go directive in go.mod (go 1.27.0)
-
 permissions:
   contents: read
 
@@ -134,7 +130,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GOLANG_VERSION }}
+          go-version-file: go.mod
       - name: Download all Go modules
         run: |
           go mod download
@@ -158,7 +154,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GOLANG_VERSION }}
+          go-version-file: go.mod
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
@@ -221,7 +217,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GOLANG_VERSION }}
+          go-version-file: go.mod
       - name: Test
         run: make test
       - name: check test coverage
@@ -236,25 +232,25 @@ jobs:
         with:
           name: unittests-coverage
           path: cover.out
-      - name: find pull request ID
-        if: github.event_name == 'pull_request'
-        run: echo "pull_request_id=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
       - name: create badge
+        # the badge is pushed to the badges branch, on main only
+        if: github.event_name == 'push' && github.ref_name == 'main'
         uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
         continue-on-error: true # 'finally check coverage' fails the job when the coverage is too low
         with:
           config: .testcoverage.yaml
           profile: cover.out
-          git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
+          git-token: ${{ secrets.GITHUB_TOKEN }}
           git-branch: badges
       - name: post coverage report
-        if: env.pull_request_id
+        if: github.event_name == 'pull_request'
         uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
-        continue-on-error: true #we need pull_request_target or this will fail when not running pr in BD organisation
+        # PRs from forks get a read-only token, so they can't comment
+        continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           comment-tag: coverage-report
-          pr-number: ${{ env.pull_request_id }}
+          pr-number: ${{ github.event.pull_request.number }}
           message: |
             go-test-coverage report:
             ```
@@ -280,17 +276,6 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Docker meta
-        id: keeper-meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: |
-            name=keeper-${{ matrix.pgversion }},enable=true
-          tags: |
-            type=semver,pattern={{raw}}
-            type=raw,value=latest
-            type=sha
-
       - name: Build keeper images
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -302,8 +287,8 @@ jobs:
           cache-from: type=gha,scope=keeper-${{ matrix.pgversion }}
           cache-to: type=gha,mode=max,scope=keeper-${{ matrix.pgversion }}
           platforms: linux/amd64
-          tags: ${{ steps.keeper-meta.outputs.tags }}
-          labels: ${{ steps.keeper-meta.outputs.labels }}
+          # the e2e tests use keeper-<pgversion>:latest
+          tags: keeper-${{ matrix.pgversion }}:latest
 
       - name: Save image to tar
         run: docker save keeper-${{ matrix.pgversion }} > keeper-${{ matrix.pgversion }}.tar
@@ -333,17 +318,6 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: |
-            name=${{ matrix.image }},enable=true
-          tags: |
-            type=semver,pattern={{raw}}
-            type=raw,value=latest
-            type=sha
-
       - name: Build images
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -354,8 +328,8 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # the e2e tests use <image>:latest
+          tags: ${{ matrix.image }}:latest
 
       - name: Save image to tar
         run: docker save ${{ matrix.image }} > ${{ matrix.image }}.tar
@@ -384,7 +358,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GOLANG_VERSION }}
+          go-version-file: go.mod
 
       - name: Download keeper artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
