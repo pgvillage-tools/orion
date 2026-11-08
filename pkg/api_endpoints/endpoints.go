@@ -49,6 +49,8 @@ const (
 	ReadyEndPoint ProbeEndPoint = "readyz"
 	// ModeEndPoint defines the endpoint on the probe port that returns the mode of the api
 	ModeEndPoint ProbeEndPoint = "status"
+	// MetricsEndPoint defines the endpoint on the probe port that returns the Prometheus metrics of the api
+	MetricsEndPoint ProbeEndPoint = "metrics"
 )
 
 const (

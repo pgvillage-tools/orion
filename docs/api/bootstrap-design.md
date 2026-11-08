@@ -98,7 +98,7 @@ names (`orion-api.<namespace>.svc`, ...).
 | Port | Protocol | Bootstrap mode | Normal mode |
 |------|----------|----------------|-------------|
 | api (`--port`, default 8443) | TLS | Temporary self-signed certificate, no client certificate, only the bootstrap endpoints (protected with HMAC) | Server certificate from the PKI, client certificate required, the normal api |
-| probe (`--probe-port`, default 8080) | HTTP | `/healthz`, `/readyz`, `/status` reports `bootstrap` | `/healthz`, `/readyz`, `/status` reports `normal`, later `/metrics` |
+| probe (`--probe-port`, default 8080) | HTTP | `/healthz`, `/readyz`, `/status` reports `bootstrap` | `/healthz`, `/readyz`, `/metrics`, `/status` reports `normal` |
 
 The api port has one mode at a time:
 
@@ -116,7 +116,7 @@ The probe port has no TLS and no authentication, and it serves nothing sensitive
 | `/healthz` | 200 when the process is alive (liveness). |
 | `/readyz` | 200 when the api port serves, in either mode. In bootstrap mode the api must be ready too, or Kubernetes doesn't route the bootstrap traffic to it. |
 | `/status` | The mode, e.g. `{"mode":"bootstrap"}` or `{"mode":"normal"}`. The cli checks it before it bootstraps. |
-| `/metrics` | Prometheus metrics (later), e.g. the expiry of the certificates. |
+| `/metrics` | Prometheus metrics, e.g. the expiry of the certificates. |
 
 ## Bootstrap
 
@@ -269,6 +269,7 @@ Implemented in the first PR:
 - [x] The api with your own certificates: mTLS on the api port, the identity of the client in the request context.
 - [x] The probe port with `/healthz`, `/readyz` and `/status`.
 - [x] The cli connects to the api with mTLS.
+- [x] `/metrics` on the probe port, with the expiry of the certificates.
 
 Later, each in its own PR:
 
@@ -276,7 +277,6 @@ Later, each in its own PR:
   for the owner only.
 - [ ] Bootstrap mode, with the shared secret, the HMAC, the archive, the confirmation and `--rebootstrap`.
 - [ ] Certificate management in the cli and the api (issue, renew, list), and automatic renewal.
-- [ ] `/metrics` on the probe port.
 - [ ] Server and client certificates for PostgreSQL, etcd, RustFS and the other components.
 - [ ] Several api instances (HA), with the bootstrap state in shared storage and a lock.
 - [ ] Kubernetes: certificates created by the cli, mounted from Secrets.

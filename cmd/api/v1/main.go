@@ -31,6 +31,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/pki"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 )
 
@@ -69,7 +70,7 @@ func init() {
 	CmdWebApi.PersistentFlags().UintVar(&cfg.port, "port", defaultPort,
 		"port for the api (TLS, a client certificate is required)")
 	CmdWebApi.PersistentFlags().UintVar(&cfg.probePort, "probe-port", defaultProbePort,
-		"port for /healthz, /readyz and /status (plain HTTP, no authentication)")
+		"port for /healthz, /readyz, /status and /metrics (plain HTTP, no authentication)")
 	CmdWebApi.PersistentFlags().BoolVar(&cfg.debug, "debug", false,
 		"enable debug logging")
 	CmdWebApi.PersistentFlags().StringVar(&cfg.pkiDir, "pki-dir", defaultPKIDir,
@@ -173,6 +174,9 @@ func api(c *cobra.Command, _ []string) {
 	if err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("failed to load the certificates")
 	}
+	metrics := newAPIMetrics(prometheus.NewRegistry())
+	metrics.setCertificates(certs)
+	cmdcommon.SetMetrics(&cfg.CommonConfig, "api")
 	warnExpiring(ctx, certs)
 	go func() {
 		for range time.Tick(expiryCheckPeriod) {
@@ -187,13 +191,17 @@ func api(c *cobra.Command, _ []string) {
 
 	h := NewHandlers(cl, &ready)
 	logger.Debug().Msg("registering routes")
+	routes := h.Routes()
+	for i := range routes {
+		routes[i].Handler = metrics.instrument(routes[i])
+	}
 	srv := &http.Server{
-		Handler:           auth.Middleware(newMux(ctx, h.Routes()), auth.ClientCertAuthenticator{}),
+		Handler:           auth.Middleware(newMux(ctx, routes), auth.ClientCertAuthenticator{}),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	probe := &http.Server{
-		Handler:           newMux(ctx, h.ProbeRoutes()),
+		Handler:           newMux(ctx, h.ProbeRoutes(metrics.handler(prometheus.DefaultGatherer))),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

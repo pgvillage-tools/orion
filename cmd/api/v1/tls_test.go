@@ -93,7 +93,7 @@ func TestAPIWithClientCertificates(t *testing.T) {
 func TestProbeRoutes(t *testing.T) {
 	var isReady atomic.Bool
 	h := NewHandlers(nil, &isReady)
-	probe := httptest.NewServer(newMux(t.Context(), h.ProbeRoutes()))
+	probe := httptest.NewServer(newMux(t.Context(), h.ProbeRoutes(http.NotFoundHandler())))
 	defer probe.Close()
 
 	get := func(ep endpoints.ProbeEndPoint) *http.Response {
