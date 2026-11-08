@@ -4,7 +4,7 @@ ARG PGVERSION=18
 # Build on the native platform of the builder and cross-compile for the target platform.
 # TARGETOS and TARGETARCH are set by buildx (from --platform), and must not have a default here,
 # or that default overrides the value from buildx and every image ends up with the same binary.
-FROM --platform=$BUILDPLATFORM docker.io/golang:bookworm AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27-bookworm AS builder
 
 ARG TARGETOS
 ARG TARGETARCH

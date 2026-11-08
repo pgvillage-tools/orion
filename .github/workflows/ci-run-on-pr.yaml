@@ -2,14 +2,22 @@ name: CI run on PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  # In the merge queue, on main (and when started by hand) everything runs, with e2e tests on all
+  # PostgreSQL versions
+  merge_group:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# A new push to a PR cancels the run of the previous push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Golang version to use across CI steps
-  GOLANG_VERSION: '1.26' # Updated to match go.mod requirement (go 1.26.0)
-  DOWNLOAD_URL: https://github.com/etcd-io/etcd/releases/download
-  ETCD_VER: v3.6.8
-  ETCD_PATH: /usr/local/bin/
-  ETCD_BIN: /usr/local/bin/etcd
+  GOLANG_VERSION: '1.27' # matches the go directive in go.mod (go 1.27.0)
 
 permissions:
   contents: read
@@ -18,31 +26,102 @@ jobs:
   codechanges:
     runs-on: ubuntu-22.04
     outputs:
-      backend: ${{ steps.filter.outputs.backend_any_changed }}
-      ci: ${{ steps.filter.outputs.ci_any_changed }}
+      go: ${{ steps.decide.outputs.go }}
+      e2e: ${{ steps.decide.outputs.e2e }}
+      shell: ${{ steps.decide.outputs.shell }}
+      docs: ${{ steps.decide.outputs.docs }}
+      pgversions: ${{ steps.decide.outputs.pgversions }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        if: github.event_name == 'pull_request'
       - uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         id: filter
+        if: github.event_name == 'pull_request'
         with:
-          # Any file which is not under docs/, examples/, or is not a markdown file is counted as a backend file
-          # Also run when ci-run-on-pr has been changed to validate it is working
           files_yaml: |
-            backend:
-              - '!**.md'
-              - '!**/*.md'
-              - '!docs/**'
-              - '!examples/**'
-              - '!.github/**'
             ci:
               - '.github/workflows/ci-run-on-pr.yaml'
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.golangci.yaml'
+              - '.testcoverage.yaml'
+              - 'Makefile'
+            e2e_src:
+              - '**/*.go'
+              - '!**/*_test.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Dockerfile.*'
+              - 'Makefile'
+            e2e_tests:
+              - 'tests/**'
+            shell:
+              - '**/*.sh'
+            docs:
+              - 'docs/**'
+              - 'mkdocs.yml'
+              - 'mkdocs_overrides/**'
+              - 'docs-requirements.txt'
+              - '.github/workflows/build-and-publish-docs.yaml'
+            all_pg:
+              - 'Dockerfile.keeper'
+              - 'cmd/keeper/**'
+              - 'internal/postgresql/**'
+      - name: Decide which jobs to run
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          CI_CHANGED: ${{ steps.filter.outputs.ci_any_changed }}
+          GO_CHANGED: ${{ steps.filter.outputs.go_any_changed }}
+          DOCS_CHANGED: ${{ steps.filter.outputs.docs_any_changed }}
+          E2E_SRC_CHANGED: ${{ steps.filter.outputs.e2e_src_any_changed }}
+          E2E_TESTS_CHANGED: ${{ steps.filter.outputs.e2e_tests_any_changed }}
+          SHELL_CHANGED: ${{ steps.filter.outputs.shell_any_changed }}
+          ALL_PG_CHANGED: ${{ steps.filter.outputs.all_pg_any_changed }}
+        run: |
+          if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
+            # Run everything in the merge queue, on main, when started by hand, and when this workflow changes
+            go=true e2e=true shell=true all_pg=true
+          else
+            go=${GO_CHANGED:-false}
+            shell=${SHELL_CHANGED:-false}
+            all_pg=${ALL_PG_CHANGED:-false}
+            e2e=false
+            if [ "${E2E_SRC_CHANGED}" = true ] || [ "${E2E_TESTS_CHANGED}" = true ]; then
+              e2e=true
+            fi
+          fi
+          # Drafts get the quick checks only; the images and e2e tests run once the PR is ready for review
+          if [ "${DRAFT}" = true ]; then
+            e2e=false
+          fi
+          # PRs test the oldest and the newest PostgreSQL version, unless keeper or PostgreSQL code changed
+          if [ "${all_pg}" = true ]; then
+            pgversions='["14","15","16","17","18"]'
+          else
+            pgversions='["14","18"]'
+          fi
+          docs=${DOCS_CHANGED:-false}
+          if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
+            docs=true
+          fi
+          {
+            echo "go=${go}"
+            echo "e2e=${e2e}"
+            echo "shell=${shell}"
+            echo "docs=${docs}"
+            echo "pgversions=${pgversions}"
+          } | tee -a "${GITHUB_OUTPUT}"
 
   check-go:
     name: Ensure Go modules synchronicity
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -63,7 +142,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     permissions:
       contents: read # for actions/checkout to fetch code
       pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
@@ -77,18 +156,49 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
+          # Built with go install (from the Go module proxy) instead of downloaded from GitHub releases
+          version: v2.15.0
+          install-mode: goinstall
           args: --verbose --timeout=10m
 
   shellcheck:
     name: Shellcheck
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.shell == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      # shellcheck is preinstalled on the ubuntu runners, so this doesn't depend on a download from GitHub releases
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@master
+        run: |
+          shellcheck --version
+          git ls-files -z '*.sh' '*.bash' | xargs -0 --no-run-if-empty shellcheck
+
+  check-docs:
+    name: Build the docs
+    runs-on: ubuntu-latest
+    needs:
+      - codechanges
+    if: ${{ needs.codechanges.outputs.docs == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      - name: Set up Python runtime
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: 3.x
+          cache: pip
+          cache-dependency-path: docs-requirements.txt
+      # Only needed for the social plugin (not enabled yet)
+      # - name: Install system libraries for the social cards
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y --no-install-recommends libcairo2
+      - name: Install Python dependencies
+        run: pip install -r docs-requirements.txt
+      - name: Build the docs, failing on warnings (like broken links)
+        run: mkdocs build --strict
 
   unit-test:
     name: Run unit tests
@@ -96,8 +206,9 @@ jobs:
     needs:
       - codechanges
     permissions:
+      contents: write # to push the coverage badge to the badges branch (on main)
       pull-requests: write
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -109,31 +220,25 @@ jobs:
         run: make test
       - name: check test coverage
         id: coverage
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
+        continue-on-error: true # Should fail after coverage comment is posted
         with:
           config: .testcoverage.yaml
           profile: cover.out
-          continue-on-error: true # Should fail after coverage comment is posted
       - name: Generate test results artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unittests-coverage
           path: cover.out
       - name: find pull request ID
-        run: |
-          PR_ID=${GITHUB_REF_NAME%%/merge}
-          echo "PR_ID: $PR_ID"
-
-          if [ "$PR_ID" != "null" ]; then
-            echo "pull_request_id=$PR_ID" >> $GITHUB_ENV
-          else
-            echo "No open pull request found for this branch."
-          fi
+        if: github.event_name == 'pull_request'
+        run: echo "pull_request_id=${{ github.event.pull_request.number }}" >> "$GITHUB_ENV"
       - name: create badge
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
+        continue-on-error: true # 'finally check coverage' fails the job when the coverage is too low
         with:
+          config: .testcoverage.yaml
           profile: cover.out
-          threshold-total: 21
           git-token: ${{ github.ref_name == 'main' && secrets.GITHUB_TOKEN || '' }}
           git-branch: badges
       - name: post coverage report
@@ -158,10 +263,10 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
     strategy:
       matrix:
-        pgversion: ['14','15','16','17','18']
+        pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -188,6 +293,8 @@ jobs:
           context: .
           file: ./Dockerfile.keeper
           push: false
+          cache-from: type=gha,scope=keeper-${{ matrix.pgversion }}
+          cache-to: type=gha,mode=max,scope=keeper-${{ matrix.pgversion }}
           platforms: linux/amd64
           tags: ${{ steps.keeper-meta.outputs.tags }}
           labels: ${{ steps.keeper-meta.outputs.labels }}
@@ -205,7 +312,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
     strategy:
       matrix:
         image:
@@ -238,6 +345,8 @@ jobs:
           context: .
           file: ./Dockerfile.${{ matrix.image }}
           push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -258,10 +367,10 @@ jobs:
       - codechanges
       - e2e-keeper-images
       - e2e-other-images
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
     strategy:
       matrix:
-        pgversion: ['14','15','16','17','18']
+        pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -270,12 +379,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GOLANG_VERSION }}
-
-      - name: installe etcd
-        run: |
-          curl -L ${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz -o /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
-          tar xzvf /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz -C "${ETCD_PATH}" --strip-components=1 --no-same-owner
-          rm -f /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
 
       - name: Download keeper artifact
         uses: actions/download-artifact@v8
@@ -305,32 +408,50 @@ jobs:
         env:
           PGVERSION: ${{ matrix.pgversion }}
 
+  # The required check for the e2e tests. It must always run: when e2e tests are not needed it passes, and when they
+  # are, it only passes when the images were built and the e2e tests passed on every PostgreSQL version (a failed image
+  # build makes e2e-test skipped, which must not count as a pass).
   check-e2e-status:
     runs-on: ubuntu-latest
-    needs: e2e-test
-    if: always() # Cruciaal: moet altijd draaien
+    needs:
+      - codechanges
+      - e2e-keeper-images
+      - e2e-other-images
+      - e2e-test
+    if: always()
     steps:
       - name: Evaluate e2e status
+        env:
+          E2E_NEEDED: ${{ needs.codechanges.outputs.e2e }}
+          CODECHANGES: ${{ needs.codechanges.result }}
+          KEEPER_IMAGES: ${{ needs.e2e-keeper-images.result }}
+          OTHER_IMAGES: ${{ needs.e2e-other-images.result }}
+          E2E_TEST: ${{ needs.e2e-test.result }}
         run: |
-          RESULT="${{ needs.e2e-test.result }}"
-          
-          echo "E2E result: $RESULT"
-
-          if [ "$RESULT" = "failure" ]; then
-            exit 1
-          elif [ "$RESULT" = "success" ] || [ "$RESULT" = "skipped" ]; then
-            exit 0
-          else
-            echo "Tests were cancelled."
+          echo "codechanges: ${CODECHANGES}, e2e needed: ${E2E_NEEDED:-unknown}"
+          echo "keeper images: ${KEEPER_IMAGES}, other images: ${OTHER_IMAGES}, e2e tests: ${E2E_TEST}"
+          if [ "${CODECHANGES}" != success ]; then
+            echo "::error::Could not determine whether the e2e tests are needed"
             exit 1
           fi
+          if [ "${E2E_NEEDED}" != true ]; then
+            echo "No e2e tests needed for these changes"
+            exit 0
+          fi
+          for result in "${KEEPER_IMAGES}" "${OTHER_IMAGES}" "${E2E_TEST}"; do
+            if [ "${result}" != success ]; then
+              echo "::error::The image builds and e2e tests must all succeed"
+              exit 1
+            fi
+          done
+          echo "Images built and e2e tests passed"
 
   license-header-test:
     name: License header test
     runs-on: ubuntu-22.04
     needs:
       - codechanges
-    if: ${{ (needs.codechanges.outputs.backend == 'true' || needs.codechanges.outputs.ci == 'true') && github.event.pull_request.draft == false}}
+    if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0

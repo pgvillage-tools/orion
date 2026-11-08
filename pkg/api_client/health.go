@@ -17,11 +17,24 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// Healthy checks the API to be in healthy state (includes and etcd roundtrip)
+// Healthy checks the API to be in healthy state (includes and etcd roundtrip). Use it on a connection to the probe
+// port.
 func (c Connection) Healthy() (httpCode int, err error) {
 	httpCode, err = c.Get(endpoints.HealthEndPoint, nil)
 	if err != nil {
 		return httpCode, err
 	}
 	return httpClientNoError, nil
+}
+
+// Mode returns the mode of the API. Use it on a connection to the probe port.
+func (c Connection) Mode() (mode endpoints.ModeResponse, httpCode int, err error) {
+	httpCode, err = c.Get(endpoints.ModeEndPoint, &mode)
+	return mode, httpCode, err
+}
+
+// WhoAmI returns the identity of the client, as the API sees it
+func (c Connection) WhoAmI() (identity endpoints.WhoAmIResponse, httpCode int, err error) {
+	httpCode, err = c.Get(endpoints.WhoAmIEndPoint, &identity)
+	return identity, httpCode, err
 }

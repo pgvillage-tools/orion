@@ -1,0 +1,88 @@
+site_name: Orion
+site_url: https://pgvillage-tools.github.io/orion
+site_author: PgVillage
+site_description: Orion, a cluster manager for PostgreSQL
+
+# Repository
+repo_name: orion
+repo_url: https://github.com/pgvillage-tools/orion
+edit_uri: edit/main/docs
+
+theme:
+  name: material
+  custom_dir: mkdocs_overrides
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  language: en
+  palette:
+    # The logo is dark blue, so a light header keeps it readable
+    primary: white
+    accent: indigo
+  features:
+    - content.action.edit
+    - content.code.copy
+    - navigation.expand
+    - navigation.path
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.indexes
+    - navigation.top
+    - navigation.prune
+    - search.suggest
+    - search.share
+    - toc.follow
+
+copyright: >
+  Copyright &copy; 2026 PgVillage
+
+extra:
+  version:
+    provider: mike
+    alias: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      title: On this page
+      permalink: true
+      toc_depth: 3
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      auto_title: false
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+  # Not needed yet; enable them (and their dependencies in docs-requirements.txt and the workflows) when a PR needs them
+  # Social cards need the imaging dependencies (cairo, pngquant, see mkdocs-material[imaging])
+  # - social
+  # - tags
+  # Downloads external assets (like Google fonts) at build time, so they are served from the site itself
+  # - privacy
+  # Diagrams (plantuml, mermaid, ...) rendered by kroki.io
+  # - kroki:
+  #     http_method: POST
+
+# The stolon docs in docs/stolon are not published yet: they still describe stolon, and come in one by one, reviewed,
+# before the first release
+exclude_docs: |
+  stolon/
+
+nav:
+  - Home: index.md
+  - API:
+      - Certificates: api/certificates.md
+      - Bootstrap design: api/bootstrap-design.md

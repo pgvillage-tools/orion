@@ -3,7 +3,7 @@ ARG VERSION=v0.0.0-devel
 # Build on the native platform of the builder and cross-compile for the target platform.
 # TARGETOS and TARGETARCH are set by buildx (from --platform), and must not have a default here,
 # or that default overrides the value from buildx and every image ends up with the same binary.
-FROM --platform=$BUILDPLATFORM docker.io/golang:bookworm AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27-bookworm AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -36,12 +36,15 @@ RUN apt-get update && \
 WORKDIR /
 COPY --from=builder /workspace/orion-api ./
 
+# The api needs its certificates (as created by orion-cli pki init) in ORIONAPI_PKI_DIR
 ENV ORIONAPI_CLUSTER_NAME=orion \
-    ORIONAPI_STORE_BACKEND=etcdv3
+    ORIONAPI_STORE_BACKEND=etcdv3 \
+    ORIONAPI_PKI_DIR=/etc/orion/api
 
 RUN useradd orion
 USER orion
 
-EXPOSE 8080
+# 8443: the api (TLS, a client certificate is required), 8080: /healthz, /readyz and /status
+EXPOSE 8443 8080
 
 ENTRYPOINT ["/orion-api"]

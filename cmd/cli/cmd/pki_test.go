@@ -1,0 +1,71 @@
+package cmd
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/pgvillage-tools/orion/internal/pki"
+	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
+	"github.com/spf13/viper"
+)
+
+func TestPKIInitOptions(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := pkiInitOptions{
+		apiDir:               "~/api",
+		apiSANs:              []string{"orion-api.example.org"},
+		keyAlgorithm:         string(oriontls.KeyAlgorithmRSA2048),
+		rootValidity:         "10y",
+		intermediateValidity: "1000d",
+		leafValidity:         "720h",
+	}
+	opts, err := o.initOptions("/cli", "api.example.org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.APIDir != filepath.Join(home, "api") || opts.CLIDir != "/cli" {
+		t.Errorf("unexpected directories %s and %s", opts.APIDir, opts.CLIDir)
+	}
+	if len(opts.APISANs) != 2 || opts.APISANs[0] != "api.example.org" || opts.APISANs[1] != "orion-api.example.org" {
+		t.Errorf("unexpected SANs %v", opts.APISANs)
+	}
+	if opts.RootExpiry != 10*oriontls.Year || opts.IntermediateExpiry != 1000*oriontls.Day ||
+		opts.LeafExpiry != 720*time.Hour {
+		t.Errorf("unexpected validities %s, %s, %s", opts.RootExpiry, opts.IntermediateExpiry, opts.LeafExpiry)
+	}
+	if opts.KeyAlgorithm != oriontls.KeyAlgorithmRSA2048 {
+		t.Errorf("unexpected key algorithm %s", opts.KeyAlgorithm)
+	}
+
+	o.leafValidity = "forever"
+	if _, err = o.initOptions("/cli", "localhost"); err == nil {
+		t.Error("expected an invalid validity to be refused")
+	}
+}
+
+func TestIsPKICommand(t *testing.T) {
+	if !isPKICommand(cmdPKIInit) || !isPKICommand(cmdPKI) {
+		t.Error("expected the pki commands to be recognized")
+	}
+	if isPKICommand(cmdConnect) || isPKICommand(CmdCLI) {
+		t.Error("expected other commands not to be recognized as pki commands")
+	}
+}
+
+func TestCLITLSFiles(t *testing.T) {
+	dir := t.TempDir()
+	viper.Set(flagPKIDir, dir)
+	defer viper.Set(flagPKIDir, defaultCLIPKIDir)
+	files, err := cliTLSFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != pki.CLIFiles(dir) {
+		t.Errorf("unexpected files %+v", files)
+	}
+}

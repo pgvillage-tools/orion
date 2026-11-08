@@ -15,7 +15,9 @@ package api_endpoints
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -28,10 +30,8 @@ const (
 	ClusterSpecEndPoint EndPoint = "cluster/spec"
 	// FailKeeperEndPoint is the config for the failkeeper endpoint
 	FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/fail"
-	// HealthEndPoint defines the endpoint to check on health (including consensus)
-	HealthEndPoint EndPoint = "healthz"
-	// ReadyEndPoint defines the endpoint to check on ready (only that we are serving)
-	ReadyEndPoint EndPoint = "readyz"
+	// WhoAmIEndPoint returns the identity of the client
+	WhoAmIEndPoint EndPoint = "whoami"
 	// PromoteReplicaSetEndPoint will promote a ReplicaCluster to primary (or return OK when it already is)
 	PromoteReplicaSetEndPoint EndPoint = "cluster/promote"
 	// StatusEndPoint configures how to handle status requests
@@ -41,6 +41,36 @@ const (
 	// SentinelStatusEndPoint configures how to handle sentinel status requests
 	SentinelStatusEndPoint EndPoint = "cluster/sentinels/status"
 )
+
+const (
+	// HealthEndPoint defines the endpoint on the probe port to check on health (including consensus)
+	HealthEndPoint ProbeEndPoint = "healthz"
+	// ReadyEndPoint defines the endpoint on the probe port to check on ready (only that we are serving)
+	ReadyEndPoint ProbeEndPoint = "readyz"
+	// ModeEndPoint defines the endpoint on the probe port that returns the mode of the api
+	ModeEndPoint ProbeEndPoint = "status"
+	// MetricsEndPoint defines the endpoint on the probe port that returns the Prometheus metrics of the api
+	MetricsEndPoint ProbeEndPoint = "metrics"
+)
+
+const (
+	// ModeNormal is the mode of the api when it serves the api with mTLS
+	ModeNormal = "normal"
+	// ModeBootstrap is the mode of the api while it bootstraps its certificates
+	ModeBootstrap = "bootstrap"
+)
+
+// ModeResponse is returned by the ModeEndPoint
+type ModeResponse struct {
+	Mode string `json:"mode"`
+}
+
+// WhoAmIResponse is returned by the WhoAmIEndPoint
+type WhoAmIResponse struct {
+	Name   string   `json:"name"`
+	Groups []string `json:"groups"`
+	Method string   `json:"method"`
+}
 
 // Protocol defines a protocol (basically either http or https in our case)
 type Protocol string
@@ -95,7 +125,12 @@ func (ep EndPoint) clean() string {
 
 // URL can be used to retrieve the URL to use this endpoint
 func (ep EndPoint) URL(protocol Protocol, ip string, port uint16) string {
-	return fmt.Sprintf("%s://%s:%d/%s", protocol, ip, port, ep.clean())
+	return fmt.Sprintf("%s://%s/%s", protocol, hostPort(ip, port), ep.clean())
+}
+
+// hostPort joins host and port, and brackets IPv6 addresses (unless they already are)
+func hostPort(host string, port uint16) string {
+	return net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(int(port)))
 }
 
 // Route can be used to get the route definition for adding this endpoint to the API
@@ -106,4 +141,17 @@ func (ep EndPoint) Route(method Method, vars ...string) string {
 		r += fmt.Sprintf("/{%s}", v)
 	}
 	return r
+}
+
+// ProbeEndPoint defines an endpoint on the probe port. Unlike an EndPoint, it has no version prefix.
+type ProbeEndPoint string
+
+// URL can be used to retrieve the URL to use this endpoint
+func (ep ProbeEndPoint) URL(protocol Protocol, ip string, port uint16) string {
+	return fmt.Sprintf("%s://%s/%s", protocol, hostPort(ip, port), strings.Trim(string(ep), "/"))
+}
+
+// Route can be used to get the route definition for adding this endpoint to the probe server
+func (ep ProbeEndPoint) Route(method Method) string {
+	return fmt.Sprintf("%s /%s", method, strings.Trim(string(ep), "/"))
 }

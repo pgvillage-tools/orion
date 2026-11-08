@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
+	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
@@ -14,8 +18,15 @@ import (
 )
 
 const (
-	etcdImage          = "quay.io/coreos/etcd:v3.6.7"
-	apiInternalPort    = 8080
+	etcdImage       = "quay.io/coreos/etcd:v3.6.7"
+	apiInternalPort = 8443
+	// apiProbeInternalPort is the probe port of the api (/healthz, /readyz, /status)
+	apiProbeInternalPort = 8080
+	// clusterTimeout is the time to start a test cluster
+	clusterTimeout = 10 * time.Minute
+	apiPKIDir      = "/etc/orion/api"
+	// apiPKIFileMode makes the api files readable for the api, which runs as orion (the files are owned by root)
+	apiPKIFileMode     = 0o644
 	proxyInternalPort  = 25432
 	keeperInternalPort = 5432
 	pgUser             = "postgres"
@@ -154,21 +165,37 @@ func runProxy(
 		})
 }
 
+// runAPI runs the api, with the api files (as created by pki.Init) from pkiDir
 func runAPI(
 	ctx context.Context,
 	etcdEndpoints string,
 	nw *testcontainers.DockerNetwork,
 	aliasses map[string][]string,
+	pkiDir string,
 ) (testcontainers.Container, error) {
 	envSettings := map[string]string{
 		"ORIONAPI_STORE_ENDPOINTS": etcdEndpoints,
 		"ORIONAPI_LOG_LEVEL":       "debug",
+		"ORIONAPI_PKI_DIR":         apiPKIDir,
+	}
+	var files []testcontainers.ContainerFile
+	for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
+		files = append(files, testcontainers.ContainerFile{
+			HostFilePath:      filepath.Join(pkiDir, f),
+			ContainerFilePath: path.Join(apiPKIDir, f),
+			FileMode:          apiPKIFileMode,
+		})
 	}
 	return testcontainers.GenericContainer(
 		ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
-				Env:            envSettings,
-				Image:          "api",
+				Env:   envSettings,
+				Image: "api",
+				Files: files,
+				ExposedPorts: []string{
+					fmt.Sprintf("%d/tcp", apiInternalPort),
+					fmt.Sprintf("%d/tcp", apiProbeInternalPort),
+				},
 				Networks:       []string{nw.Name},
 				NetworkAliases: aliasses,
 				WaitingFor: wait.ForLog(
