@@ -2,6 +2,7 @@ package etcdv3_test
 
 import (
 	"net/http"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -66,5 +67,25 @@ var _ = Describe("PUT and POST /v1/cluster", Ordered, func() {
 		after, _, err := tc.apiClient.GetCluster()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(after.Cluster).NotTo(BeNil())
+	})
+	It("PUT refuses a cluster without a spec, or with an invalid spec", func() {
+		cd, _, err := tc.apiClient.GetCluster()
+		Ω(err).NotTo(HaveOccurred())
+
+		invalid := cd.DeepCopy()
+		invalid.Cluster.Spec.SleepInterval = &apiv1.Duration{Duration: -time.Second}
+		httpCode, err := tc.apiClient.PutCluster(invalid)
+		Ω(err).To(MatchError(ContainSubstring("invalid spec")))
+		Ω(httpCode).To(Equal(http.StatusBadRequest))
+
+		noSpec := cd.DeepCopy()
+		noSpec.Cluster.Spec = nil
+		httpCode, err = tc.apiClient.PutCluster(noSpec)
+		Ω(err).To(MatchError(ContainSubstring("no spec")))
+		Ω(httpCode).To(Equal(http.StatusBadRequest))
+
+		after, _, err := tc.apiClient.GetCluster()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(after.Cluster.Spec).To(Equal(cd.Cluster.Spec), "the stored spec doesn't change")
 	})
 })
