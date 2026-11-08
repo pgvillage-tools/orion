@@ -24,8 +24,11 @@ import (
 
 var removeKeeperCmd = &cobra.Command{
 	Use:   "removekeeper [keeper uid]",
-	Short: "Removes keeper from cluster data",
-	Run:   removeKeeper,
+	Short: "Removes a keeper that is gone for good from the cluster data",
+	Long: "Removes a keeper, and its database, from the cluster data, for a keeper that is gone for good (e.g. its " +
+		"node is lost). A keeper that still runs registers itself again. The keeper of the primary can't be removed: " +
+		"fail it first (orion-cli failkeeper), and remove it once another keeper runs the primary.",
+	Run: removeKeeper,
 }
 
 func init() {
