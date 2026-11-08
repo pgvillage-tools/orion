@@ -17,9 +17,11 @@ package v1
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
@@ -30,7 +32,9 @@ func (h *Handlers) KeeperRoutes() []Route {
 	}
 }
 
-// DeleteKeeperHandler endpoint
+// DeleteKeeperHandler removes a keeper, and its db, from the cluster data. It is meant for a keeper that is gone for
+// good: a keeper that still runs registers itself again, and the sentinel adds it back. The keeper of the primary
+// can't be removed (409): fail it first, and remove it once another keeper runs the primary.
 func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
@@ -39,25 +43,33 @@ func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
-	} else if cd == nil {
-		handleError(ctx, errors.New("cd is nil"), w, "cluster data is not set")
-		return
-	} else if cd.Cluster == nil {
-		handleError(ctx, errors.New("cd.Cluster is nil"), w, "cluster is not set")
-		return
-	} else if cd.Cluster.Spec == nil {
-		handleError(ctx, errors.New("cluster spec is nil"), w, "cluster spec is not set")
+	}
+	if cd == nil || cd.Cluster == nil || cd.Cluster.Spec == nil {
+		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster yet")
 		return
 	}
 	keeperID := r.PathValue("id")
 	newCd := cd.DeepCopy()
-	if _, exists := newCd.Keepers[keeperID]; !exists {
+	keeper, exists := newCd.Keepers[keeperID]
+	if !exists {
 		endpoints.WriteProblem(w, http.StatusNotFound, "keeper "+keeperID+" doesn't exist")
 		return
 	}
+	if db := newCd.FindDB(keeper); db != nil {
+		if db.UID == newCd.Cluster.Status.Master {
+			endpoints.WriteProblem(w, http.StatusConflict, fmt.Sprintf("keeper %[1]s runs the primary: fail it first "+
+				"(PUT /v1/cluster/keepers/%[1]s/fail), and remove it once another keeper runs the primary", keeperID))
+			return
+		}
+		delete(newCd.DBs, db.UID)
+	}
 	delete(newCd.Keepers, keeperID)
-	_, err = h.client.AtomicPutClusterData(ctx, newCd, pair)
-	if err != nil {
+	if _, err = h.client.AtomicPutClusterData(ctx, newCd, pair); err != nil {
+		if errors.Is(err, consensus.ErrKeyModified) {
+			endpoints.WriteProblem(w, http.StatusConflict,
+				"the cluster data changed while removing the keeper; try again")
+			return
+		}
 		handleError(ctx, err, w, "failed to delete the keeper")
 		return
 	}
