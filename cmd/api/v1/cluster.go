@@ -17,12 +17,14 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/util"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
@@ -87,7 +89,7 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 
-	cd, _, err := h.client.GetClusterData(ctx)
+	cd, pair, err := h.client.GetClusterData(ctx)
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
@@ -114,7 +116,14 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = h.client.PutClusterData(ctx, apiv1.NewClusterData(apiv1.NewCluster(common.UID(), cs))); err != nil {
+	// only write when the cluster data didn't change since it was read (pair is nil when there was none: then it
+	// is only written when there still is none), so two clients creating a cluster at the same time can't both win
+	newCD := apiv1.NewClusterData(apiv1.NewCluster(common.UID(), cs))
+	if _, err = h.client.AtomicPutClusterData(ctx, newCD, pair); err != nil {
+		if errors.Is(err, consensus.ErrKeyModified) {
+			endpoints.WriteProblem(w, http.StatusConflict, "the cluster data changed while creating the cluster")
+			return
+		}
 		handleError(ctx, err, w, "cannot create the cluster")
 		return
 	}

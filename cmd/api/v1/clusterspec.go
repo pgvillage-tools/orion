@@ -69,7 +69,7 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 	defer cancelFunc()
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 
-	cd, _, err := h.client.GetClusterData(ctx)
+	cd, pair, err := h.client.GetClusterData(ctx)
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
@@ -124,8 +124,12 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 		cd.Cluster.Spec = cs
 	}
 
-	// We ignore if cd has been modified between reading and writing
-	if err := h.client.PutClusterData(ctx, cd); err != nil {
+	// only write when the cluster data didn't change since it was read (or, when there was none, there still is none)
+	if _, err := h.client.AtomicPutClusterData(ctx, cd, pair); err != nil {
+		if errors.Is(err, consensus.ErrKeyModified) {
+			endpoints.WriteProblem(w, http.StatusConflict, "the cluster data changed while setting the spec")
+			return
+		}
 		handleError(ctx, err, w, "cannot update spec")
 		return
 	}
