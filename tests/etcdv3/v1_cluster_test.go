@@ -70,9 +70,11 @@ var _ = Describe("PUT and POST /v1/cluster", Ordered, func() {
 	})
 })
 
-// createConcurrently calls create n times at the same time, and returns the status codes of the calls
-func createConcurrently(n int, create func() (int, error)) []int {
+// createConcurrently calls create n times at the same time, and returns the status codes of the calls, and their
+// errors (as text, for the failure message)
+func createConcurrently(n int, create func() (int, error)) ([]int, []string) {
 	codes := make([]int, n)
+	errs := make([]string, n)
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range n {
@@ -81,12 +83,16 @@ func createConcurrently(n int, create func() (int, error)) []int {
 			defer GinkgoRecover()
 			defer wg.Done()
 			<-start
-			codes[i], _ = create()
+			var err error
+			codes[i], err = create()
+			if err != nil {
+				errs[i] = err.Error()
+			}
 		}()
 	}
 	close(start)
 	wg.Wait()
-	return codes
+	return codes, errs
 }
 
 var _ = Describe("POST /v1/cluster from several clients at the same time", Ordered, func() {
@@ -94,10 +100,10 @@ var _ = Describe("POST /v1/cluster from several clients at the same time", Order
 	tc := withOwnAPI()
 
 	It("creates the cluster once: one client gets 202, the others 409", func() {
-		codes := createConcurrently(10, func() (int, error) {
+		codes, errs := createConcurrently(10, func() (int, error) {
 			return tc.apiClient.PostCluster(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
 		})
-		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v", codes)
+		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v, errors %q", codes, errs)
 		accepted := 0
 		for _, c := range codes {
 			if c == http.StatusAccepted {
@@ -117,10 +123,10 @@ var _ = Describe("POST /v1/cluster/spec from several clients at the same time", 
 	tc := withOwnAPI()
 
 	It("sets the spec once: one client gets 202, the others 409", func() {
-		codes := createConcurrently(10, func() (int, error) {
+		codes, errs := createConcurrently(10, func() (int, error) {
 			return tc.apiClient.PostClusterSpec(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
 		})
-		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v", codes)
+		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v, errors %q", codes, errs)
 		accepted := 0
 		for _, c := range codes {
 			if c == http.StatusAccepted {
