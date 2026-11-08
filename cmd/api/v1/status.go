@@ -69,7 +69,13 @@ func (h *Handlers) SentinelsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, err error) {
-	var ssi apiv1.SentinelsInfo
+	// Read the sentinels first: that honours the deadline of ctx, so an unreachable store fails fast. Setting up the
+	// election client (for the leader) can take much longer then.
+	ssi, err := h.client.GetSentinelsInfo(ctx)
+	if err != nil {
+		handleError(ctx, err, nil, "failed to get sentinels info")
+		return nil, err
+	}
 	election, err := cmdcommon.NewElection(ctx, &cfg.CommonConfig, "")
 	if err != nil {
 		handleError(ctx, err, nil, "failed to get election info")
@@ -78,10 +84,6 @@ func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, er
 	lsid, err := election.Leader()
 	if err != nil && err != consensus.ErrElectionNoLeader {
 		handleError(ctx, err, nil, "failed to get leader info")
-		return nil, err
-	}
-	if ssi, err = h.client.GetSentinelsInfo(ctx); err != nil {
-		handleError(ctx, err, nil, "failed to get sentinels info")
 		return nil, err
 	}
 	for _, si := range ssi {
