@@ -26,6 +26,7 @@ jobs:
       e2e: ${{ steps.decide.outputs.e2e }}
       shell: ${{ steps.decide.outputs.shell }}
       docs: ${{ steps.decide.outputs.docs }}
+      workflows: ${{ steps.decide.outputs.workflows }}
       pgversions: ${{ steps.decide.outputs.pgversions }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,6 +56,8 @@ jobs:
               - 'tests/**'
             shell:
               - '**/*.sh'
+            workflows:
+              - '.github/workflows/**'
             docs:
               - 'docs/**'
               - 'mkdocs.yml'
@@ -76,6 +79,7 @@ jobs:
           E2E_SRC_CHANGED: ${{ steps.filter.outputs.e2e_src_any_changed }}
           E2E_TESTS_CHANGED: ${{ steps.filter.outputs.e2e_tests_any_changed }}
           SHELL_CHANGED: ${{ steps.filter.outputs.shell_any_changed }}
+          WORKFLOWS_CHANGED: ${{ steps.filter.outputs.workflows_any_changed }}
           ALL_PG_CHANGED: ${{ steps.filter.outputs.all_pg_any_changed }}
         run: |
           if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
@@ -106,6 +110,10 @@ jobs:
           else
             pgversions='["14","18"]'
           fi
+          workflows=${WORKFLOWS_CHANGED:-false}
+          if [ "${EVENT}" != pull_request ]; then
+            workflows=true
+          fi
           docs=${DOCS_CHANGED:-false}
           if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
             docs=true
@@ -114,6 +122,7 @@ jobs:
             echo "go=${go}"
             echo "e2e=${e2e}"
             echo "shell=${shell}"
+            echo "workflows=${workflows}"
             echo "docs=${docs}"
             echo "pgversions=${pgversions}"
           } | tee -a "${GITHUB_OUTPUT}"
@@ -176,6 +185,26 @@ jobs:
         run: |
           shellcheck --version
           git ls-files -z '*.sh' '*.bash' | xargs -0 --no-run-if-empty shellcheck
+
+  actionlint:
+    name: Lint the workflows
+    needs:
+      - codechanges
+    if: ${{ needs.codechanges.outputs.workflows == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # GitHub rejects some workflows that are valid YAML (e.g. an empty env:); actionlint finds those, and checks the
+      # run scripts with the preinstalled shellcheck. Built with go install, not downloaded from GitHub releases.
+      - name: Run actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "$(go env GOPATH)/bin/actionlint" -version
+          "$(go env GOPATH)/bin/actionlint"
 
   check-docs:
     name: Build the docs
