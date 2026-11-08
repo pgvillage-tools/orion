@@ -25,7 +25,7 @@ all: build
 .PHONY: build
 build: sentinel keeper proxy cli api
 
-.PHONY: sentinel keeper proxy cli api docker
+.PHONY: sentinel keeper proxy cli api
 
 keeper:
 	GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-keeper $(REPO_PATH)/cmd/keeper
@@ -41,11 +41,6 @@ cli:
 
 api:
 	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-api $(REPO_PATH)/cmd/api
-
-.PHONY: docker
-docker:
-	if [ -z $${TAG} ]; then echo 'TAG is undefined'; exit 1; fi; \
-	docker build --build-arg PGVERSION=${PGVERSION} -t ${TAG} -f examples/kubernetes/image/docker/Dockerfile .
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
