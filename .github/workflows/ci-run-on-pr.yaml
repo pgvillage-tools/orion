@@ -153,8 +153,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      # shellcheck is preinstalled on the ubuntu runners, so this doesn't depend on a download from GitHub releases
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master (2024-06-20)
+        run: |
+          shellcheck --version
+          git ls-files -z '*.sh' '*.bash' | xargs -0 --no-run-if-empty shellcheck
 
   unit-test:
     name: Run unit tests
