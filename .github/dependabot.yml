@@ -7,6 +7,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # one PR per week for all updates of this ecosystem, instead of one per dependency
+    groups:
+      go-modules:
+        patterns: ["*"]
     commit-message:
       prefix: "fix"
       prefix-development: "chore"
@@ -15,6 +19,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # one PR per week for all updates of this ecosystem, instead of one per dependency
+    groups:
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: "fix"
       prefix-development: "chore"
@@ -23,6 +31,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # one PR per week for all updates of this ecosystem, instead of one per dependency
+    groups:
+      docker-images:
+        patterns: ["*"]
     commit-message:
       prefix: "fix"
       prefix-development: "chore"
