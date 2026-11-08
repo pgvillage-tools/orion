@@ -19,3 +19,7 @@ bin/
 cover.out
 
 .vscode
+
+# mkdocs build output and cache (social cards, privacy downloads)
+site/
+.cache/

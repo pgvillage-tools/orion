@@ -29,6 +29,7 @@ jobs:
       go: ${{ steps.decide.outputs.go }}
       e2e: ${{ steps.decide.outputs.e2e }}
       shell: ${{ steps.decide.outputs.shell }}
+      docs: ${{ steps.decide.outputs.docs }}
       pgversions: ${{ steps.decide.outputs.pgversions }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
@@ -58,6 +59,12 @@ jobs:
               - 'tests/**'
             shell:
               - '**/*.sh'
+            docs:
+              - 'docs/**'
+              - 'mkdocs.yml'
+              - 'mkdocs_overrides/**'
+              - 'docs-requirements.txt'
+              - '.github/workflows/build-and-publish-docs.yaml'
             all_pg:
               - 'Dockerfile.keeper'
               - 'cmd/keeper/**'
@@ -69,6 +76,7 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
           CI_CHANGED: ${{ steps.filter.outputs.ci_any_changed }}
           GO_CHANGED: ${{ steps.filter.outputs.go_any_changed }}
+          DOCS_CHANGED: ${{ steps.filter.outputs.docs_any_changed }}
           E2E_SRC_CHANGED: ${{ steps.filter.outputs.e2e_src_any_changed }}
           E2E_TESTS_CHANGED: ${{ steps.filter.outputs.e2e_tests_any_changed }}
           SHELL_CHANGED: ${{ steps.filter.outputs.shell_any_changed }}
@@ -96,10 +104,15 @@ jobs:
           else
             pgversions='["14","18"]'
           fi
+          docs=${DOCS_CHANGED:-false}
+          if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
+            docs=true
+          fi
           {
             echo "go=${go}"
             echo "e2e=${e2e}"
             echo "shell=${shell}"
+            echo "docs=${docs}"
             echo "pgversions=${pgversions}"
           } | tee -a "${GITHUB_OUTPUT}"
 
@@ -161,6 +174,31 @@ jobs:
         run: |
           shellcheck --version
           git ls-files -z '*.sh' '*.bash' | xargs -0 --no-run-if-empty shellcheck
+
+  check-docs:
+    name: Build the docs
+    runs-on: ubuntu-latest
+    needs:
+      - codechanges
+    if: ${{ needs.codechanges.outputs.docs == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      - name: Set up Python runtime
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: 3.x
+          cache: pip
+          cache-dependency-path: docs-requirements.txt
+      # Only needed for the social plugin (not enabled yet)
+      # - name: Install system libraries for the social cards
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y --no-install-recommends libcairo2
+      - name: Install Python dependencies
+        run: pip install -r docs-requirements.txt
+      - name: Build the docs, failing on warnings (like broken links)
+        run: mkdocs build --strict
 
   unit-test:
     name: Run unit tests
