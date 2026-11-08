@@ -90,9 +90,14 @@ func (h *Handlers) WhoAmIHandler(w http.ResponseWriter, r *http.Request) {
 		endpoints.WriteProblem(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	groups := identity.Groups
+	if groups == nil {
+		// encoded as [] instead of null
+		groups = []string{}
+	}
 	h.writeJSON(r.Context(), w, endpoints.WhoAmIResponse{
 		Name:   identity.Name,
-		Groups: identity.Groups,
+		Groups: groups,
 		Method: identity.Method,
 	})
 }

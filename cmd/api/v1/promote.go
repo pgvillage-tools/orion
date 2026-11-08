@@ -29,12 +29,13 @@ import (
 // PromoteReplicaSetRoutes returns the routes to be added for the PromoteReplicaSet code
 func (h *Handlers) PromoteReplicaSetRoutes() []Route {
 	return []Route{
-		{endpoints.PromoteReplicaSetEndPoint.Route(endpoints.MethodPut), h.PutPromoteReplicaSetHandler},
+		{endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), h.PromoteClusterHandler},
 	}
 }
 
-// PutPromoteReplicaSetHandler endpoint
-func (h *Handlers) PutPromoteReplicaSetHandler(w http.ResponseWriter, r *http.Request) {
+// PromoteClusterHandler promotes a standby cluster to a primary cluster (POST /v1/cluster/actions/promote); a primary
+// cluster stays as it is (200)
+func (h *Handlers) PromoteClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
 

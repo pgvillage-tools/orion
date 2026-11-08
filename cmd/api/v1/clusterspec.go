@@ -20,15 +20,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
 // errNoSpec is the error when there is no cluster spec (yet)
@@ -153,11 +154,20 @@ func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 	h.writeJSON(ctx, w, cd.Cluster.Spec)
 }
 
-// PatchClusterSpecHandler endpoint
+// PatchClusterSpecHandler applies a JSON merge patch (RFC 7386, Content-Type application/merge-patch+json) to the
+// cluster spec
 func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
 	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
 	defer cancelFunc()
+
+	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if mediaType != endpoints.ContentTypeMergePatch {
+		w.Header().Set("Accept-Patch", endpoints.ContentTypeMergePatch)
+		endpoints.WriteProblem(w, http.StatusUnsupportedMediaType,
+			"the patch must be a JSON merge patch (Content-Type: "+endpoints.ContentTypeMergePatch+")")
+		return
+	}
 
 	patch, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
 	if err != nil {
@@ -204,7 +214,8 @@ func patchClusterSpec(cs *apiv1.Spec, p []byte) (*apiv1.Spec, error) {
 		return nil, fmt.Errorf("failed to marshal cluster spec: %v", err)
 	}
 
-	newcsj, err := strategicpatch.StrategicMergePatch(csj, p, &apiv1.Spec{})
+	// a JSON merge patch (RFC 7386): objects are merged, null removes a field, everything else replaces it
+	newcsj, err := jsonpatch.MergePatch(csj, p)
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge patch cluster spec: %v", err)
 	}

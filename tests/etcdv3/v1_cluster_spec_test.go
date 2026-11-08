@@ -57,6 +57,16 @@ var _ = Describe("/v1/cluster/spec", Ordered, func() {
 			return pgSetting(ctx, "log_min_duration_statement")
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Equal("1500ms"))
 	})
+	It("PATCH is a JSON merge patch (RFC 7386): null removes a parameter", func() {
+		httpCode, err := tc.apiClient.PatchClusterSpec([]byte(`{"pgParameters":{"log_min_duration_statement":null}}`))
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusOK))
+
+		spec, _, err := tc.apiClient.GetClusterSpec()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(spec.PGParameters).NotTo(HaveKey("log_min_duration_statement"))
+		Ω(spec.InitMode).To(HaveValue(Equal(apiv1.New)), "PATCH keeps the rest of the spec")
+	})
 	It("PATCH refuses an invalid spec, invalid JSON and a change of the init mode", func() {
 		for patch, expected := range map[string]int{
 			`{"sleepInterval":"-1s"}`: http.StatusBadRequest,

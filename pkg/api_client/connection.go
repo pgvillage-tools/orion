@@ -100,14 +100,19 @@ func (c Connection) Post(ep endpoints.EndPoint, o any) (httpCode int, err error)
 	return c.do(http.MethodPost, ep, body, contentTypeJSON, nil)
 }
 
-// Patch issues a PATCH request for ep with patch as the body
+// Patch issues a PATCH request for ep with patch, a JSON merge patch (RFC 7386), as the body
 func (c Connection) Patch(ep endpoints.EndPoint, patch []byte) (httpCode int, err error) {
-	return c.do(http.MethodPatch, ep, patch, contentTypeJSON, nil)
+	return c.do(http.MethodPatch, ep, patch, endpoints.ContentTypeMergePatch, nil)
 }
 
 // Delete issues a DELETE request for ep
 func (c Connection) Delete(ep endpoints.EndPoint) (httpCode int, err error) {
 	return c.do(http.MethodDelete, ep, nil, "", nil)
+}
+
+// Action issues a POST request without a body for an action endpoint (e.g. .../actions/fail)
+func (c Connection) Action(ep endpoints.EndPoint) (httpCode int, err error) {
+	return c.do(http.MethodPost, ep, nil, "", nil)
 }
 
 // do sends a request with method and body (when not nil) to ep, and decodes the response into o (when o isn't nil).

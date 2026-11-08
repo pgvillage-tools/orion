@@ -87,7 +87,7 @@ var _ = Describe("Connection", func() {
 
 		_, err = c.Patch(endpoints.ClusterSpecEndPoint, []byte(`{"c":3}`))
 		Ω(err).NotTo(HaveOccurred())
-		Ω(last).To(Equal(request{http.MethodPatch, "/v1/cluster/spec", "application/json", `{"c":3}`}))
+		Ω(last).To(Equal(request{http.MethodPatch, "/v1/cluster/spec", endpoints.ContentTypeMergePatch, `{"c":3}`}))
 	})
 	It("decodes the response of a GET", func() {
 		c := connect(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"mode":"normal"}`)) })
@@ -103,5 +103,12 @@ var _ = Describe("Connection", func() {
 		var mode endpoints.ModeResponse
 		_, err := c.Get(endpoints.ModeEndPoint, &mode)
 		Ω(err).To(MatchError(ContainSubstring("failed to decode the response")))
+	})
+	It("sends an action as a POST without a body", func() {
+		c := connect(ok)
+		httpCode, err := c.Action(endpoints.PromoteClusterEndPoint)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusAccepted))
+		Ω(last).To(Equal(request{http.MethodPost, "/v1/cluster/actions/promote", "", ""}))
 	})
 })

@@ -42,7 +42,7 @@ func promote(_ *cobra.Command, args []string) {
 
 	apiClient := defaultAPIClient(ctx)
 
-	httpCode, putErr := apiClient.PutPromoteReplicaSet()
+	httpCode, putErr := apiClient.PromoteCluster()
 	if putErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, putErr).

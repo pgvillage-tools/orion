@@ -15,6 +15,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"maps"
 	"testing"
 
@@ -77,5 +78,16 @@ func TestClusterStatus(t *testing.T) {
 				t.Errorf("expected %v, got %v", tc.expected, got)
 			}
 		})
+	}
+}
+
+func TestNewInfoClusterEncodesEmptyLists(t *testing.T) {
+	data, err := json.Marshal(newInfoCluster(nil, nil, nil, apiv1.InfoGenericStatus{"available": false}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `{"proxies":[],"keepers":[],"sentinels":[],"status":{"available":false}}`
+	if string(data) != expected {
+		t.Errorf("expected %s, got %s", expected, data)
 	}
 }

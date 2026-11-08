@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("PUT /v1/cluster/keepers/{id}/fail", Ordered, func() {
+var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail", Ordered, func() {
 	// these tests fail over the primary, so they get their own cluster
 	tc := withOwnCluster(2)
 
@@ -37,7 +37,7 @@ var _ = Describe("PUT /v1/cluster/keepers/{id}/fail", Ordered, func() {
 			}
 		}).WithTimeout(10 * time.Second).WithPolling(pollInterval).Should(Succeed())
 
-		httpCode, err := tc.apiClient.PutFailKeeper(primary)
+		httpCode, err := tc.apiClient.FailKeeper(primary)
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusAccepted))
 
@@ -52,24 +52,24 @@ var _ = Describe("PUT /v1/cluster/keepers/{id}/fail", Ordered, func() {
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed(), "the proxy follows the new primary")
 	})
 	It("returns 404 for an unknown keeper", func() {
-		httpCode, err := tc.apiClient.PutFailKeeper("unknown")
+		httpCode, err := tc.apiClient.FailKeeper("unknown")
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
 })
 
-var _ = Describe("PUT /v1/cluster/keepers/{id}/fail without a cluster, or without the store", Ordered, func() {
+var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail without a cluster, or without the store", Ordered, func() {
 	// only etcd and the api: no cluster data yet
 	tc := withOwnAPI()
 
 	It("returns 404 without a cluster", func() {
-		httpCode, err := tc.apiClient.PutFailKeeper("keeper0")
+		httpCode, err := tc.apiClient.FailKeeper("keeper0")
 		Ω(err).To(MatchError(ContainSubstring("no cluster yet")))
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
 	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
 		pauseContainer(ctx, tc.etcd)
-		httpCode, err := tc.apiClient.PutFailKeeper("keeper0")
+		httpCode, err := tc.apiClient.FailKeeper("keeper0")
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})

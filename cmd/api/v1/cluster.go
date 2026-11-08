@@ -77,6 +77,14 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 		endpoints.WriteProblem(w, http.StatusBadRequest, "the cluster data has no cluster")
 		return
 	}
+	if newCD.Cluster.Spec == nil {
+		endpoints.WriteProblem(w, http.StatusBadRequest, "the cluster has no spec")
+		return
+	}
+	if err = newCD.Cluster.Spec.Validate(); err != nil {
+		endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: "+err.Error())
+		return
+	}
 	// replace the cluster data, whatever it is now (like stolonctl clusterdata write)
 	if err = h.client.PutClusterData(ctx, &newCD); err != nil {
 		handleError(ctx, err, w, "failed to write new cluster data definition")
