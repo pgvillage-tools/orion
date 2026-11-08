@@ -1,0 +1,107 @@
+name: Build and publish documentation
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release to publish the docs as (e.g. v0.19.7); defaults to the latest tag'
+        required: false
+        default: ''
+
+env:
+  PYTHON_VERSION: 3.x
+
+permissions:
+  contents: read
+
+# Only one deploy at a time, as every deploy pushes to the gh-pages branch
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # mike pushes the built docs to the gh-pages branch
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # all tags, to find the latest release when started by hand
+          fetch-depth: 0
+
+      - name: Fetch gh-pages branch
+        id: gh_pages
+        run: |
+          if git fetch origin gh-pages --depth=1; then
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "There is no gh-pages branch yet; mike will create it"
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Set up Python runtime
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            docs-requirements.txt
+
+      - name: Install system libraries for the social cards
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2
+
+      - name: Install Python dependencies
+        run: pip install -r docs-requirements.txt
+
+      - name: Set up build cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: mkdocs-material-${{ hashfiles('.cache/**') }}
+          path: .cache
+          restore-keys: |
+            mkdocs-material-
+
+      - name: Configure Git user
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Determine the docs version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          TAG="${RELEASE_TAG:-${INPUT_VERSION}}"
+          if [ -z "${TAG}" ]; then
+            TAG="$(git describe --tags --abbrev=0)"
+          fi
+          # v0.19.7 -> 0.19.x
+          SHORT_TAG="$(echo "${TAG#v}" | sed -E 's/^([0-9]+\.[0-9]+).*/\1.x/')"
+          echo "Publishing ${TAG} as ${SHORT_TAG}"
+          echo "SHORT_TAG=${SHORT_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy with mike
+        env:
+          SHORT_TAG: ${{ steps.version.outputs.SHORT_TAG }}
+        run: |
+          mike --version
+          mike deploy --update-aliases --push --branch=gh-pages "${SHORT_TAG}" latest
+
+      - name: Make latest the default version
+        # Only needed once, when this run created the gh-pages branch
+        if: steps.gh_pages.outputs.exists == 'false'
+        run: mike set-default --push --branch=gh-pages latest
+
+      - name: Save build cache
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: mkdocs-material-${{ hashfiles('.cache/**') }}
+          path: .cache
