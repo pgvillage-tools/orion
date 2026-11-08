@@ -1,0 +1,1502 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Orion, a cluster manager for PostgreSQL">
+      
+      
+        <meta name="author" content="PgVillage">
+      
+      
+        <link rel="canonical" href="https://pgvillage-tools.github.io/orion/0.2.x/api/bootstrap-design/">
+      
+      
+        <link rel="prev" href="../certificates/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>TLS and bootstrap design - Orion</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tls-and-bootstrap-design" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  You're not viewing the latest version.
+  <a href="../../.."> 
+    <strong>Click here to go to latest.</strong>
+  </a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Orion" class="md-header__button md-logo" aria-label="Orion" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Orion
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              TLS and bootstrap design
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pgvillage-tools/orion" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    orion
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../certificates/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  API
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Orion" class="md-nav__button md-logo" aria-label="Orion" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Orion
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pgvillage-tools/orion" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    orion
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+      
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../certificates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Certificates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bootstrap design
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bootstrap design
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-pki" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The PKI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The PKI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#names-on-the-api-certificate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Names on the api certificate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ports-and-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ports and modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bootstrap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bootstrap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-shared-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The shared secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-safe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is safe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State and recovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bring-your-own-pki" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bring your own PKI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cryptography" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cryptography
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roadmap
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alternatives-that-were-not-chosen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternatives that were not chosen
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+  
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-pki" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The PKI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The PKI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#names-on-the-api-certificate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Names on the api certificate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ports-and-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ports and modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bootstrap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bootstrap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-shared-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The shared secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-safe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is safe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#state-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State and recovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bring-your-own-pki" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bring your own PKI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cryptography" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cryptography
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roadmap
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alternatives-that-were-not-chosen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternatives that were not chosen
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Home
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../certificates/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    API
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/pgvillage-tools/orion/edit/main/docs/api/bootstrap-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="tls-and-bootstrap-design">TLS and bootstrap design<a class="headerlink" href="#tls-and-bootstrap-design" title="Permanent link">&para;</a></h1>
+<p>This page describes how Orion secures the connections between its components with TLS, and how the api and the cli get
+their certificates. Most of it is not implemented yet: see <a href="#roadmap">Roadmap</a> for what is done and what is planned.</p>
+<h2 id="tldr">TL;DR<a class="headerlink" href="#tldr" title="Permanent link">&para;</a></h2>
+<ul>
+<li>All connections use TLS, and clients log in with a client certificate (mTLS). There is no plain HTTP api, and no
+  bearer token.</li>
+<li>Orion has its own CA: a root, one intermediate for all server certificates, and a separate client intermediate per
+  service (api, PostgreSQL, etcd, RustFS, ...).</li>
+<li>The private keys of the root and the intermediates live with the cli, encrypted, and never stay next to the api.</li>
+<li>You can start the api without any certificates. It then starts in <strong>bootstrap mode</strong>: the cli connects with a shared
+  secret, gets all certificates, and the api switches to <strong>normal mode</strong> with mTLS.</li>
+<li>You can also bring your own certificates (e.g. created with <code>orion-cli pki init</code>, or mounted from Kubernetes
+  Secrets). The api then never sees a CA key.</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Generate the CA, the intermediates, the api server certificate and the cli client certificate</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>orion-cli<span class="w"> </span>pki<span class="w"> </span>init<span class="w"> </span>--host<span class="w"> </span>orion-api.example.com
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Copy ~/.orion/api to the api host, and start the api with it</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>orion-api<span class="w"> </span>--pki-dir<span class="w"> </span>~/.orion/api
+</code></pre></div>
+<h2 id="goals">Goals<a class="headerlink" href="#goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Zero configuration</strong>: the api can start without any certificates and create everything it needs.</li>
+<li><strong>Server and client certificates for everything</strong>: the api, the cli, PostgreSQL, etcd, RustFS and the other Orion
+  components all use TLS, with server certificates for the servers and client certificates for the clients.</li>
+<li><strong>CA keys away from the api</strong>: the api is the component that is exposed the most. The private keys of the root and the
+  intermediates are with the cli, encrypted with a passphrase. New certificates and renewals go through the cli.</li>
+<li><strong>The cli and the api manage the certificates</strong>: no external tooling is needed (but you can use it, see
+  <a href="#bring-your-own-pki">Bring your own PKI</a>).</li>
+</ul>
+<h2 id="the-pki">The PKI<a class="headerlink" href="#the-pki" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Root CA (5y)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── Server intermediate (3y)
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>│   ├── api server certificate (1y)          CN=orion-api
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>│   ├── PostgreSQL server certificates       (later)
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>│   ├── etcd server certificates             (later)
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│   └── RustFS server certificates           (later)
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>├── api client intermediate (3y)
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>│   └── cli client certificate (1y)          CN=orion-cli
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>├── PostgreSQL client intermediate           (later)
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>├── etcd client intermediate                 (later)
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>└── RustFS client intermediate               (later)
+</code></pre></div>
+<ul>
+<li>All server certificates can share the server intermediate.</li>
+<li>Client certificates get a separate intermediate per service. A server trusts only the client intermediate of its own
+  service, so a client certificate for etcd can't be used to log in to the api, or to PostgreSQL.</li>
+<li>The CN of a client certificate is the identity of the client (e.g. <code>orion-cli</code>).</li>
+</ul>
+<h3 id="validity">Validity<a class="headerlink" href="#validity" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Certificate</th>
+<th>Validity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Root CA</td>
+<td>5 years</td>
+</tr>
+<tr>
+<td>Intermediates</td>
+<td>3 years</td>
+</tr>
+<tr>
+<td>Server and client certificates</td>
+<td>1 year</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A certificate never outlives its parent: its expiry is capped at the expiry of the certificate that signs it.</li>
+<li>The start of the validity (<code>NotBefore</code>) is 5 minutes in the past, so hosts with a slightly late clock accept a new
+  certificate.</li>
+<li>All validities can be configured (e.g. <code>orion-cli pki init --root-validity 5y --leaf-validity 1y</code>).</li>
+<li>The api logs a warning when its certificate, or a certificate in its chain, expires within 30 days.</li>
+</ul>
+<p>The root is valid for 5 years instead of the usual 10, which leaves time to move to post-quantum signatures (see
+<a href="#cryptography">Cryptography</a>). Shorter lifetimes for the server and client certificates may follow, together with
+automatic renewal.</p>
+<h3 id="names-on-the-api-certificate">Names on the api certificate<a class="headerlink" href="#names-on-the-api-certificate" title="Permanent link">&para;</a></h3>
+<p>A client only accepts a server certificate if the name it connects to is on it, as a Subject Alternative Name (SAN).
+The api certificate always gets <code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code>, plus:</p>
+<table>
+<thead>
+<tr>
+<th>How the certificate is made</th>
+<th>Detected names</th>
+<th>Extra names</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>orion-cli pki init</code></td>
+<td>The api host of the cli (<code>--host</code>)</td>
+<td><code>--api-san</code> (repeatable)</td>
+</tr>
+<tr>
+<td>Bootstrap mode</td>
+<td>The hostname and IP addresses of the api host, and the host of <code>--base-url</code></td>
+<td>Sent by the cli</td>
+</tr>
+</tbody>
+</table>
+<p>In most cases the detected names are enough; the extra names are for load balancers, DNS aliases or Kubernetes Service
+names (<code>orion-api.&lt;namespace&gt;.svc</code>, ...).</p>
+<h2 id="ports-and-modes">Ports and modes<a class="headerlink" href="#ports-and-modes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Protocol</th>
+<th>Bootstrap mode</th>
+<th>Normal mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>api (<code>--port</code>, default 8443)</td>
+<td>TLS</td>
+<td>Temporary self-signed certificate, no client certificate, only the bootstrap endpoints (protected with HMAC)</td>
+<td>Server certificate from the PKI, client certificate required, the normal api</td>
+</tr>
+<tr>
+<td>probe (<code>--probe-port</code>, default 8080)</td>
+<td>HTTP</td>
+<td><code>/livez</code>, <code>/readyz</code>, <code>/status</code> reports <code>bootstrap</code></td>
+<td><code>/livez</code>, <code>/readyz</code>, <code>/metrics</code>, <code>/status</code> reports <code>normal</code></td>
+</tr>
+</tbody>
+</table>
+<p>The api port has one mode at a time:</p>
+<ul>
+<li>In normal mode, the api port requires a valid client certificate during the TLS handshake
+  (<code>RequireAndVerifyClientCert</code>). There are no exceptions: a connection without a valid client certificate never
+  reaches an api handler.</li>
+<li>When the api switches from bootstrap mode to normal mode, it stops the bootstrap server, which closes all its
+  connections, and starts the normal server on the same port. A bootstrap connection (without a client certificate)
+  can't stay open into normal mode.</li>
+</ul>
+<p>The probe port has no TLS and no authentication, and it serves nothing sensitive:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/livez</code></td>
+<td>200 when the process is alive (liveness; it doesn't check the store).</td>
+</tr>
+<tr>
+<td><code>/readyz</code></td>
+<td>200 when the api port serves, in either mode, isn't shutting down and the store answers; 503 otherwise. In bootstrap mode the api must be ready too, or Kubernetes doesn't route the bootstrap traffic to it.</td>
+</tr>
+<tr>
+<td><code>/status</code></td>
+<td>The mode, e.g. <code>{"mode":"bootstrap"}</code> or <code>{"mode":"normal"}</code>. The cli checks it before it bootstraps.</td>
+</tr>
+<tr>
+<td><code>/metrics</code></td>
+<td>Prometheus metrics, e.g. the expiry of the certificates.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="bootstrap">Bootstrap<a class="headerlink" href="#bootstrap" title="Permanent link">&para;</a></h2>
+<p>When the api starts without certificates, it starts in bootstrap mode.</p>
+<h3 id="the-shared-secret">The shared secret<a class="headerlink" href="#the-shared-secret" title="Permanent link">&para;</a></h3>
+<p>The api and the cli prove to each other that they know a shared secret.</p>
+<ul>
+<li>Give the secret to the api in an environment variable or a file, not as a command-line argument (arguments are visible
+  in <code>ps</code>).</li>
+<li>Without a secret, the api generates one (at least 128 bits) and logs it once.</li>
+<li>A secret you choose yourself must have a minimum length: with an active man in the middle, a weak secret can be
+  guessed offline.</li>
+<li>The secret can be used once, expires (e.g. after 24 hours), and failed attempts are rate limited.</li>
+</ul>
+<h3 id="the-flow">The flow<a class="headerlink" href="#the-flow" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>cli                                                    api (bootstrap mode)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a> |                                                      |
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a> |-- GET /status (probe port) -------------------------&gt;|
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a> |&lt;-------------------------------- {"mode":"bootstrap"}|
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a> |                                                      |
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a> |== TLS (self-signed api certificate) ================&gt;|
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a> |&lt;-- challenge (api nonce) ----------------------------|
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a> |-- HMAC(secret, api nonce, TLS exporter), cli nonce -&gt;|
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a> |&lt;-------------- HMAC(secret, cli nonce, TLS exporter)-|
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a> |                                                      |
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a> |-- cli public key, extra SANs -----------------------&gt;|  generate root, intermediates,
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a> |                                                      |  api and cli certificates
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a> |&lt;-- archive ------------------------------------------|
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a> |-- stored --------------------------------------------&gt;|
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a> |                                                      |  switch to normal mode
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a> |== mTLS (cli client certificate) ====================&gt;|
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a> |-- confirm ------------------------------------------&gt;|  delete CA keys and archive
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a> |&lt;-- ok -----------------------------------------------|
+</code></pre></div>
+<ol>
+<li>The cli checks on the probe port that the api is in bootstrap mode.</li>
+<li>The cli generates its key pair in <code>~/.orion/cli/</code>, with the private key encrypted with a passphrase.</li>
+<li>The cli connects to the api port. The api has a temporary self-signed certificate, so the cli can't verify it.</li>
+<li>The api and the cli prove to each other that they know the secret, with HMAC. The HMAC also covers keying material
+   exported from the TLS session (<code>ConnectionState.ExportKeyingMaterial</code>, see
+   <a href="https://www.rfc-editor.org/rfc/rfc9266">RFC 9266</a>). The secret itself is never sent.</li>
+<li>The cli sends its public key, and optionally extra names for the api certificate.</li>
+<li>The api generates the root, the intermediates, its own server certificate and the cli client certificate, and sends
+   the archive:</li>
+<li>all certificates and chains, as they are (they are public);</li>
+<li>the private key of the cli certificate and the private keys of the root and the intermediates, encrypted with the
+     public key of the cli.</li>
+<li>The cli stores the archive and reports <code>stored</code>.</li>
+<li>The api switches to normal mode, but keeps the CA keys.</li>
+<li>The cli connects again, now with mTLS and its new client certificate, and confirms. This proves that its certificate
+   works. The confirmation can be repeated.</li>
+<li>The api deletes the CA keys and the archive.</li>
+</ol>
+<p>After the bootstrap, the api has only its own server certificate and key, and the chains to verify clients. It can't
+issue or renew any certificate by itself; that goes through the cli.</p>
+<h3 id="why-this-is-safe">Why this is safe<a class="headerlink" href="#why-this-is-safe" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>A man in the middle can't take over the bootstrap.</strong> The api certificate is self-signed, so the cli can't verify it,
+  and a man in the middle could set up a TLS session with each side. But the HMAC covers keying material of the TLS
+  session, which differs between the two sessions, so he can't forward the proofs. And he never sees the secret.</li>
+<li><strong>The api proves itself too.</strong> Both sides prove that they know the secret, so the cli knows it talks to the real api.
+  It doesn't need to pin a CA fingerprint.</li>
+<li><strong>The CA keys are encrypted to the cli.</strong> Only the holder of the private key of the cli can read them, also when the
+  archive is intercepted or recorded.</li>
+<li><strong>The api deletes the CA keys</strong> as soon as the cli has proven that it can use its certificate.</li>
+</ul>
+<h3 id="state-and-recovery">State and recovery<a class="headerlink" href="#state-and-recovery" title="Permanent link">&para;</a></h3>
+<p>The api stores the state of the bootstrap, so it can continue after a restart:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>api port</th>
+<th>CA keys on the api</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bootstrapping</code></td>
+<td>Bootstrap mode</td>
+<td>Not yet, or generated but not handed over</td>
+</tr>
+<tr>
+<td><code>handed-over</code></td>
+<td>Normal mode</td>
+<td>Yes, until the cli confirms</td>
+</tr>
+<tr>
+<td><code>confirmed</code></td>
+<td>Normal mode</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>After a restart, the api continues in the state it was in. The secret stays valid until it expires, and a CA that was
+  already generated is reused.</li>
+<li>If the cli never confirms (e.g. it lost the archive), nobody can connect to the api. Restart the api with
+  <code>--rebootstrap</code> to start over. The api doesn't fall back to bootstrap mode by itself.</li>
+</ul>
+<h2 id="bring-your-own-pki">Bring your own PKI<a class="headerlink" href="#bring-your-own-pki" title="Permanent link">&para;</a></h2>
+<p>When you give the api a certificate, a key and a CA (<code>--tls-cert-file</code>, <code>--tls-key-file</code> and <code>--tls-ca-file</code>), it uses
+them and generates nothing: there is no bootstrap mode, and the api never has a CA key.</p>
+<p>Use it to:</p>
+<ul>
+<li>create the certificates with the cli, so the CA keys never touch the api host:</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>orion-cli<span class="w"> </span>pki<span class="w"> </span>init<span class="w"> </span>--host<span class="w"> </span>orion-api.example.com
+</code></pre></div>
+<ul>
+<li>run the api on Kubernetes, with the certificates (created by the cli) mounted from Secrets;</li>
+<li>use certificates from your own PKI (e.g. cert-manager or Vault).</li>
+</ul>
+<h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
+<ul>
+<li>In normal mode, the api port requires a client certificate signed by the api client intermediate.</li>
+<li>The api puts the identity of the client (the CN of its certificate) in the request context. The authentication is a
+  chain of authenticators that all return the same identity (a name and groups), so other methods can be added without
+  changing the handlers.</li>
+<li>The <code>--token</code> flag is removed (it was never checked), and so is <code>--tls=false</code>: TLS is always on.</li>
+</ul>
+<p>OIDC/OAuth can be added later as another authenticator, for people who log in with an identity provider (Keycloak, Entra
+ID, Okta, ...): the api checks JWT bearer tokens, and the cli logs in with the device flow. OIDC tokens come without a
+client certificate, so the api port then verifies a client certificate only when it is given, and a middleware requires
+either a certificate or a token.</p>
+<h2 id="cryptography">Cryptography<a class="headerlink" href="#cryptography" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Algorithm</th>
+<th>Quantum safe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Certificate keys and signatures</td>
+<td>ECDSA P-256, keys in PKCS#8 (configurable, e.g. RSA)</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Key pair of the cli, encryption of the archive</td>
+<td>HPKE with ML-KEM-768 + X25519 (<code>crypto/hpke</code>, <code>MLKEM768X25519</code>)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Private key of the cli on disk</td>
+<td>Passphrase → scrypt or Argon2id → AES-256-GCM</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>TLS key exchange</td>
+<td>The Go default: X25519MLKEM768 and SecP256r1MLKEM768</td>
+<td>✅ (Go clients and servers)</td>
+</tr>
+<tr>
+<td>HMAC in the bootstrap</td>
+<td>HMAC-SHA256</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Encryption</strong> must be quantum safe now: an attacker can record the archive today and decrypt it when quantum
+  computers exist ("harvest now, decrypt later"), and the archive holds the CA keys. The hybrid HPKE is safe as long as
+  either ML-KEM or X25519 holds, and it is in the Go standard library.</li>
+<li><strong>Signatures</strong> only need to hold while a certificate is valid, and they can't be broken afterwards. Go has no ML-DSA
+  (FIPS 204) in <code>crypto/x509</code> yet, and most clients (libpq, JDBC, ...) can't use ML-DSA certificates. Orion uses ECDSA
+  P-256 for now and moves to ML-DSA when Go and the clients support it.</li>
+</ul>
+<h2 id="storage">Storage<a class="headerlink" href="#storage" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Directory</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>api</td>
+<td><code>~/.orion/api/</code> (<code>--pki-dir</code>)</td>
+<td>Its server certificate and key, the chains to verify clients, and during the bootstrap the bootstrap state and the archive</td>
+</tr>
+<tr>
+<td>cli</td>
+<td><code>~/.orion/cli/</code></td>
+<td>Its key pair, its client certificate, the chains, and the encrypted CA keys</td>
+</tr>
+</tbody>
+</table>
+<p>The directories are only readable for their owner, and private keys are stored with mode <code>0600</code>.</p>
+<h2 id="roadmap">Roadmap<a class="headerlink" href="#roadmap" title="Permanent link">&para;</a></h2>
+<p>Implemented in the first PR:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The PKI library (<code>pkg/tls</code>): root, server intermediate, client intermediate, server and client certificates,
+  ECDSA P-256, validity rules.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> <code>orion-cli pki init</code>: generates the CA, the intermediates, the api server certificate and the cli client
+  certificate.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The api with your own certificates: mTLS on the api port, the identity of the client in the request context.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The probe port with <code>/livez</code>, <code>/readyz</code> and <code>/status</code> (Kubernetes conventions; graceful shutdown on SIGTERM).</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The cli connects to the api with mTLS.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> <code>/metrics</code> on the probe port, with the expiry of the certificates.</li>
+</ul>
+<p>Later, each in its own PR:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Encrypt the CA keys on the cli with a passphrase. For now, <code>orion-cli pki init</code> stores them unencrypted, readable
+  for the owner only.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Bootstrap mode, with the shared secret, the HMAC, the archive, the confirmation and <code>--rebootstrap</code>.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Certificate management in the cli and the api (issue, renew, list), and automatic renewal.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Server and client certificates for PostgreSQL, etcd, RustFS and the other components.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Several api instances (HA), with the bootstrap state in shared storage and a lock.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> Kubernetes: certificates created by the cli, mounted from Secrets.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> OIDC/OAuth authentication.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> ML-DSA signatures, when Go and the clients support them.</li>
+</ul>
+<h2 id="alternatives-that-were-not-chosen">Alternatives that were not chosen<a class="headerlink" href="#alternatives-that-were-not-chosen" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Alternative</th>
+<th>Why not</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bootstrap on the api, copy the certificates to the cli with ssh</td>
+<td>Needs ssh access and manual steps.</td>
+</tr>
+<tr>
+<td>Pin the fingerprint of the CA in the cli (like <code>kubeadm join</code>)</td>
+<td>The shared secret also authenticates the api, so it is not needed.</td>
+</tr>
+<tr>
+<td>Prove the cli key with an encrypted nonce</td>
+<td>The shared secret replaces it.</td>
+</tr>
+<tr>
+<td>Write the cli key pair on the api host when no cli key is given</td>
+<td>The CA keys would be next to the key that decrypts them. A local cli bootstraps over <code>localhost</code> instead.</td>
+</tr>
+<tr>
+<td>A separate bootstrap port</td>
+<td>One api port with two modes is simpler, and a connection can't move from one mode to the other.</td>
+</tr>
+<tr>
+<td>One port with a middleware that allows some endpoints without a client certificate</td>
+<td>The TLS handshake can enforce mTLS by itself; the health endpoints are on the probe port.</td>
+</tr>
+<tr>
+<td>Fall back to bootstrap mode automatically when the cli doesn't confirm</td>
+<td>Hard to predict; <code>--rebootstrap</code> is explicit.</td>
+</tr>
+<tr>
+<td>RSA or Ed25519 for the certificates</td>
+<td>RSA is slow and large; Ed25519 is not supported by all PostgreSQL clients.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2026 PgVillage
+
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.action.edit", "content.code.copy", "navigation.expand", "navigation.path", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.top", "navigation.prune", "search.suggest", "search.share", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
