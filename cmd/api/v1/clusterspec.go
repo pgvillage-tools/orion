@@ -76,6 +76,7 @@ func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 		endpoints.WriteProblem(w, http.StatusNotFound, errNoSpec.Error())
 		return
 	}
+	setETag(w, etagOfSpec(cd.Cluster.Spec))
 	h.writeJSON(ctx, w, cd.Cluster.Spec)
 }
 
@@ -106,9 +107,12 @@ func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 
-	if err = updateSpecRetries(ctx, h.client, patch, false); err != nil {
+	spec, err := updateSpecRetries(ctx, h.client, patch, false, r)
+	if err != nil {
 		writeSpecError(ctx, w, err, "failed to patch cluster spec")
+		return
 	}
+	setETag(w, etagOfSpec(spec))
 }
 
 // PutClusterSpecHandler endpoint
@@ -128,9 +132,12 @@ func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}()
 
-	if err = updateSpecRetries(ctx, h.client, patch, true); err != nil {
+	spec, err := updateSpecRetries(ctx, h.client, patch, true, r)
+	if err != nil {
 		writeSpecError(ctx, w, err, "failed to put cluster spec")
+		return
 	}
+	setETag(w, etagOfSpec(spec))
 }
 
 func patchClusterSpec(cs *apiv1.Spec, p []byte) (*apiv1.Spec, error) {
@@ -151,68 +158,76 @@ func patchClusterSpec(cs *apiv1.Spec, p []byte) (*apiv1.Spec, error) {
 	return newcs, nil
 }
 
-func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, replace bool) error {
+func tryUpdateSpec(ctx context.Context, client consensus.Store, patch []byte, replace bool,
+	r *http.Request) (*apiv1.Spec, error) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	logger.Debug().Str("patch", string(patch)).Bool("update", replace).Msg("")
 	cd, pair, err := client.GetClusterData(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if cd == nil || cd.Cluster == nil || cd.Cluster.Spec == nil {
-		return statusError{http.StatusNotFound, errNoSpec}
+		return nil, statusError{http.StatusNotFound, errNoSpec}
+	}
+	// the ETag of the spec, not of all cluster data: the sentinel writes the rest of it often
+	if !ifMatches(r, etagOfSpec(cd.Cluster.Spec)) {
+		return nil, errPreconditionFailed
 	}
 
 	logger.Debug().Any("cluster data", cd).Msg("")
 	var newcs *apiv1.Spec
 	if replace {
 		if err = json.Unmarshal(patch, &newcs); err != nil {
-			return statusError{http.StatusBadRequest, fmt.Errorf("failed to parse the spec: %w", err)}
+			return nil, statusError{http.StatusBadRequest, fmt.Errorf("failed to parse the spec: %w", err)}
 		}
 		if newcs == nil {
-			return statusError{http.StatusBadRequest, errors.New("the spec can't be null")}
+			return nil, statusError{http.StatusBadRequest, errors.New("the spec can't be null")}
 		}
 		logger.Debug().Any("new cluster spec", newcs).Msg("replaced")
 	} else {
 		newcs, err = patchClusterSpec(cd.Cluster.Spec, patch)
 		if err != nil {
-			return statusError{http.StatusBadRequest, err}
+			return nil, statusError{http.StatusBadRequest, err}
 		}
 		logger.Debug().Any("patched cluster spec", newcs).Msg("patched")
 	}
 	if err = newcs.Validate(); err != nil {
-		return statusError{http.StatusBadRequest, fmt.Errorf("invalid spec: %w", err)}
+		return nil, statusError{http.StatusBadRequest, fmt.Errorf("invalid spec: %w", err)}
 	}
 	// a valid spec that UpdateSpec refuses is a change that isn't allowed (e.g. another init mode)
 	if err = cd.Cluster.UpdateSpec(newcs); err != nil {
-		return statusError{http.StatusConflict, err}
+		return nil, statusError{http.StatusConflict, err}
 	}
 	logger.Debug().Any("new cluster data", cd).Msg("updated")
 
 	// updateSpecRetries retries when cd has been modified between reading and writing (ErrKeyModified)
 	if _, err = client.AtomicPutClusterData(ctx, cd, pair); err != nil {
-		return fmt.Errorf("cannot store updated cluster spec: %w", err)
+		return nil, fmt.Errorf("cannot store updated cluster spec: %w", err)
 	}
 	logger.Debug().Msg("stored")
-	return nil
+	return newcs, nil
 }
 
-func updateSpecRetries(ctx context.Context, client consensus.Store, patch []byte, update bool) error {
+// updateSpecRetries updates the spec, and retries (3 times) when the cluster data changed between reading and writing.
+// With an If-Match header in r, it only updates the spec when the spec still has that ETag. It returns the new spec.
+func updateSpecRetries(ctx context.Context, client consensus.Store, patch []byte, update bool,
+	r *http.Request) (*apiv1.Spec, error) {
 	const maxRetries = 3
 	var errs []error
 	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	for i := 0; i < maxRetries; i++ {
 		logger.Debug().Int("try", i).Msg("trying")
-		err := tryUpdateSpec(ctx, client, patch, update)
+		spec, err := tryUpdateSpec(ctx, client, patch, update, r)
 		if err == nil {
 			logger.Debug().Int("try", i).Msg("succeeded")
-			return nil
+			return spec, nil
 		}
 		logger.Debug().AnErr("error", err).Msg("failed")
 		if !errors.Is(err, consensus.ErrKeyModified) {
 			// only a conflicting write is worth another try
-			return err
+			return nil, err
 		}
 		errs = append(errs, err)
 	}
-	return fmt.Errorf("failed to update in %d retries: %v", maxRetries, errors.Join(errs...))
+	return nil, fmt.Errorf("failed to update in %d retries: %v", maxRetries, errors.Join(errs...))
 }

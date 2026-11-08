@@ -33,6 +33,7 @@ const (
 	flagHost    = "host"
 	flagFile    = "file"
 	flagPatch   = "patch"
+	flagIfMatch = "if-match"
 	flagTimeout = "timeout"
 )
 
@@ -48,7 +49,8 @@ type clusterdataReadOptions struct {
 var readClusterdataOpts clusterdataReadOptions
 
 type clusterdataWriteOptions struct {
-	file string
+	file    string
+	ifMatch string
 }
 
 var writeClusterdataOpts clusterdataWriteOptions
@@ -69,6 +71,8 @@ func init() {
 	cmdReadClusterData.PersistentFlags().BoolVar(&readClusterdataOpts.pretty, "pretty", false, "pretty print")
 	cmdClusterData.AddCommand(cmdReadClusterData)
 
+	cmdWriteClusterData.PersistentFlags().StringVar(&writeClusterdataOpts.ifMatch, flagIfMatch, "",
+		"only write when the cluster data still has this ETag (as printed by clusterdata read)")
 	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.file, flagFile, "f", "",
 		"file containing the new cluster data")
 	cmdClusterData.AddCommand(cmdWriteClusterData)
@@ -81,13 +85,15 @@ func readClusterdata(_ *cobra.Command, _ []string) {
 	defer cancelFunc()
 	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	apiClient := defaultAPIClient(ctx)
-	cd, httpCode, getClusterErr := apiClient.GetCluster()
+	cd, etag, httpCode, getClusterErr := apiClient.GetClusterWithETag()
 	if getClusterErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, getClusterErr).
 			Int("http return code", httpCode).
 			Msg("failed to get clusterdata")
 	}
+	// on stderr, so stdout stays clean; pass it to `orion-cli clusterdata write --if-match`
+	stderr("ETag: %s", etag)
 	var clusterdataj []byte
 	var marshalErr error
 	if readClusterdataOpts.pretty {
@@ -149,7 +155,7 @@ func runWriteClusterdata(_ *cobra.Command, args []string) {
 	}
 
 	apiClient := defaultAPIClient(ctx)
-	httpCode, putClusterErr := apiClient.PutCluster(cd)
+	httpCode, _, putClusterErr := apiClient.PutClusterIfMatch(cd, writeClusterdataOpts.ifMatch)
 	if putClusterErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, putClusterErr).

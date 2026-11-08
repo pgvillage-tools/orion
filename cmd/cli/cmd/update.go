@@ -34,8 +34,9 @@ var cmdUpdate = &cobra.Command{
 }
 
 type updateOptions struct {
-	patch bool
-	file  string
+	patch   bool
+	file    string
+	ifMatch string
 }
 
 var updateOpts updateOptions
@@ -43,6 +44,8 @@ var updateOpts updateOptions
 func init() {
 	cmdUpdate.PersistentFlags().BoolVarP(&updateOpts.patch, flagPatch, "P", false,
 		"patch the current cluster specification instead of replacing it")
+	cmdUpdate.PersistentFlags().StringVar(&updateOpts.ifMatch, flagIfMatch, "",
+		"only update when the cluster data still has this ETag (as printed by orion-cli spec)")
 	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, flagFile, "f", "",
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
@@ -85,7 +88,7 @@ func update(_ *cobra.Command, args []string) {
 	var httpCode int
 	var updateErr error
 	if updateOpts.patch {
-		httpCode, updateErr = apiClient.PatchClusterSpec(patch)
+		httpCode, _, updateErr = apiClient.PatchClusterSpecIfMatch(patch, updateOpts.ifMatch)
 	} else {
 		cd := &cluster.Spec{}
 		if encodingErr := json.Unmarshal(patch, cd); encodingErr != nil {
@@ -95,7 +98,7 @@ func update(_ *cobra.Command, args []string) {
 				Str("spec", string(patch)).
 				Msg("invalid cluster data spec")
 		}
-		httpCode, updateErr = apiClient.PutClusterSpec(cd)
+		httpCode, _, updateErr = apiClient.PutClusterSpecIfMatch(cd, updateOpts.ifMatch)
 	}
 	if updateErr != nil {
 		logger.Fatal().
