@@ -32,7 +32,7 @@ jobs:
       docs: ${{ steps.decide.outputs.docs }}
       pgversions: ${{ steps.decide.outputs.pgversions }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'pull_request'
       - uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
         id: filter
@@ -130,7 +130,7 @@ jobs:
     if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -154,7 +154,7 @@ jobs:
       pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -174,7 +174,7 @@ jobs:
     if: ${{ needs.codechanges.outputs.shell == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # shellcheck is preinstalled on the ubuntu runners, so this doesn't depend on a download from GitHub releases
       - name: Run ShellCheck
         run: |
@@ -189,7 +189,7 @@ jobs:
     if: ${{ needs.codechanges.outputs.docs == 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python runtime
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -217,7 +217,7 @@ jobs:
     if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -232,7 +232,7 @@ jobs:
           config: .testcoverage.yaml
           profile: cover.out
       - name: Generate test results artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unittests-coverage
           path: cover.out
@@ -249,7 +249,7 @@ jobs:
           git-branch: badges
       - name: post coverage report
         if: env.pull_request_id
-        uses: thollander/actions-comment-pull-request@v3
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         continue-on-error: true #we need pull_request_target or this will fail when not running pr in BD organisation
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -275,14 +275,14 @@ jobs:
         pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Docker meta
         id: keeper-meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
             name=keeper-${{ matrix.pgversion }},enable=true
@@ -292,7 +292,7 @@ jobs:
             type=sha
 
       - name: Build keeper images
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           load: true
           build-args: PGVERSION=${{ matrix.pgversion }}
@@ -308,7 +308,7 @@ jobs:
       - name: Save image to tar
         run: docker save keeper-${{ matrix.pgversion }} > keeper-${{ matrix.pgversion }}.tar
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: keeper-image-${{ matrix.pgversion }}
           path: keeper-${{ matrix.pgversion }}.tar
@@ -328,14 +328,14 @@ jobs:
           - cli
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
             name=${{ matrix.image }},enable=true
@@ -345,7 +345,7 @@ jobs:
             type=sha
 
       - name: Build images
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           load: true
           context: .
@@ -361,7 +361,7 @@ jobs:
         run: docker save ${{ matrix.image }} > ${{ matrix.image }}.tar
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.image }}-image
           path: ${{ matrix.image }}.tar
@@ -379,7 +379,7 @@ jobs:
         pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Golang
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -387,14 +387,14 @@ jobs:
           go-version: ${{ env.GOLANG_VERSION }}
 
       - name: Download keeper artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: images
           merge-multiple: true
           pattern: keeper-image-${{ matrix.pgversion }}
 
       - name: Download other artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: images
           merge-multiple: true
@@ -460,7 +460,7 @@ jobs:
     if: ${{ needs.codechanges.outputs.go == 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test
         run: |
           function go_files_without_license_info() {
