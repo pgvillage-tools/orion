@@ -2,6 +2,7 @@ package etcdv3_test
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -87,5 +88,76 @@ var _ = Describe("PUT and POST /v1/cluster", Ordered, func() {
 		after, _, err := tc.apiClient.GetCluster()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(after.Cluster.Spec).To(Equal(cd.Cluster.Spec), "the stored spec doesn't change")
+	})
+})
+
+// createConcurrently calls create n times at the same time, and returns the status codes of the calls, and their
+// errors (as text, for the failure message)
+func createConcurrently(n int, create func() (int, error)) ([]int, []string) {
+	codes := make([]int, n)
+	errs := make([]string, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer GinkgoRecover()
+			defer wg.Done()
+			<-start
+			var err error
+			codes[i], err = create()
+			if err != nil {
+				errs[i] = err.Error()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	return codes, errs
+}
+
+var _ = Describe("POST /v1/cluster from several clients at the same time", Ordered, func() {
+	// only etcd and the api: no cluster data yet
+	tc := withOwnAPI()
+
+	It("creates the cluster once: one client gets 202, the others 409", func() {
+		codes, errs := createConcurrently(10, func() (int, error) {
+			return tc.apiClient.PostCluster(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
+		})
+		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v, errors %q", codes, errs)
+		accepted := 0
+		for _, c := range codes {
+			if c == http.StatusAccepted {
+				accepted++
+			}
+		}
+		Ω(accepted).To(Equal(1), "codes %v", codes)
+
+		cd, _, err := tc.apiClient.GetCluster()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(cd.Cluster).NotTo(BeNil())
+	})
+})
+
+var _ = Describe("POST /v1/cluster/spec from several clients at the same time", Ordered, func() {
+	// only etcd and the api: no cluster data yet
+	tc := withOwnAPI()
+
+	It("sets the spec once: one client gets 202, the others 409", func() {
+		codes, errs := createConcurrently(10, func() (int, error) {
+			return tc.apiClient.PostClusterSpec(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
+		})
+		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v, errors %q", codes, errs)
+		accepted := 0
+		for _, c := range codes {
+			if c == http.StatusAccepted {
+				accepted++
+			}
+		}
+		Ω(accepted).To(Equal(1), "codes %v", codes)
+
+		spec, _, err := tc.apiClient.GetClusterSpec()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(spec.InitMode).To(HaveValue(Equal(apiv1.New)))
 	})
 })

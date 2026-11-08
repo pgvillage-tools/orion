@@ -19,15 +19,19 @@ package consensus
 
 import (
 	"context"
+	"errors"
 
 	libkvstore "github.com/kvtools/valkeyrie/store"
 )
 
 func fromLibKVStoreErr(err error) error {
-	switch err {
-	case libkvstore.ErrKeyNotFound:
+	switch {
+	case errors.Is(err, libkvstore.ErrKeyNotFound):
 		return ErrKeyNotFound
-	case libkvstore.ErrKeyModified:
+	case errors.Is(err, libkvstore.ErrKeyModified),
+		// an AtomicPut without a previous pair (create only) finds that the key exists: someone else wrote first,
+		// just like when the key was modified
+		errors.Is(err, libkvstore.ErrKeyExists):
 		return ErrKeyModified
 	}
 	return err
