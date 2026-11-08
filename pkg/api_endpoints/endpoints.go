@@ -43,9 +43,11 @@ const (
 )
 
 const (
-	// HealthEndPoint defines the endpoint on the probe port to check on health (including consensus)
-	HealthEndPoint ProbeEndPoint = "healthz"
-	// ReadyEndPoint defines the endpoint on the probe port to check on ready (only that we are serving)
+	// LiveEndPoint is the liveness endpoint on the probe port: 200 as long as the process serves requests (it doesn't
+	// check the store)
+	LiveEndPoint ProbeEndPoint = "livez"
+	// ReadyEndPoint is the readiness endpoint on the probe port: 200 when the api serves, isn't shutting down and its
+	// store answers; 503 otherwise
 	ReadyEndPoint ProbeEndPoint = "readyz"
 	// ModeEndPoint defines the endpoint on the probe port that returns the mode of the api
 	ModeEndPoint ProbeEndPoint = "status"

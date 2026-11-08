@@ -17,14 +17,16 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// Healthy checks the API to be in healthy state (includes and etcd roundtrip). Use it on a connection to the probe
-// port.
-func (c Connection) Healthy() (httpCode int, err error) {
-	httpCode, err = c.Get(endpoints.HealthEndPoint, nil)
-	if err != nil {
-		return httpCode, err
-	}
-	return httpClientNoError, nil
+// Live checks that the API process serves requests (liveness; it doesn't check the store). Use it on a connection to
+// the probe port.
+func (c Connection) Live() (httpCode int, err error) {
+	return c.Get(endpoints.LiveEndPoint, nil)
+}
+
+// Ready checks that the API is ready to serve: it isn't starting or shutting down, and its store answers. Use it on a
+// connection to the probe port.
+func (c Connection) Ready() (httpCode int, err error) {
+	return c.Get(endpoints.ReadyEndPoint, nil)
 }
 
 // Mode returns the mode of the API. Use it on a connection to the probe port.

@@ -98,7 +98,7 @@ names (`orion-api.<namespace>.svc`, ...).
 | Port | Protocol | Bootstrap mode | Normal mode |
 |------|----------|----------------|-------------|
 | api (`--port`, default 8443) | TLS | Temporary self-signed certificate, no client certificate, only the bootstrap endpoints (protected with HMAC) | Server certificate from the PKI, client certificate required, the normal api |
-| probe (`--probe-port`, default 8080) | HTTP | `/healthz`, `/readyz`, `/status` reports `bootstrap` | `/healthz`, `/readyz`, `/metrics`, `/status` reports `normal` |
+| probe (`--probe-port`, default 8080) | HTTP | `/livez`, `/readyz`, `/status` reports `bootstrap` | `/livez`, `/readyz`, `/metrics`, `/status` reports `normal` |
 
 The api port has one mode at a time:
 
@@ -113,8 +113,8 @@ The probe port has no TLS and no authentication, and it serves nothing sensitive
 
 | Endpoint | Returns |
 |----------|---------|
-| `/healthz` | 200 when the process is alive (liveness). |
-| `/readyz` | 200 when the api port serves, in either mode. In bootstrap mode the api must be ready too, or Kubernetes doesn't route the bootstrap traffic to it. |
+| `/livez` | 200 when the process is alive (liveness; it doesn't check the store). |
+| `/readyz` | 200 when the api port serves, in either mode, isn't shutting down and the store answers; 503 otherwise. In bootstrap mode the api must be ready too, or Kubernetes doesn't route the bootstrap traffic to it. |
 | `/status` | The mode, e.g. `{"mode":"bootstrap"}` or `{"mode":"normal"}`. The cli checks it before it bootstraps. |
 | `/metrics` | Prometheus metrics, e.g. the expiry of the certificates. |
 
@@ -267,7 +267,7 @@ Implemented in the first PR:
 - [x] `orion-cli pki init`: generates the CA, the intermediates, the api server certificate and the cli client
   certificate.
 - [x] The api with your own certificates: mTLS on the api port, the identity of the client in the request context.
-- [x] The probe port with `/healthz`, `/readyz` and `/status`.
+- [x] The probe port with `/livez`, `/readyz` and `/status` (Kubernetes conventions; graceful shutdown on SIGTERM).
 - [x] The cli connects to the api with mTLS.
 - [x] `/metrics` on the probe port, with the expiry of the certificates.
 

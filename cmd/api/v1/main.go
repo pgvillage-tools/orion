@@ -20,8 +20,11 @@ import (
 	"crypto/x509"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
@@ -42,6 +45,10 @@ const (
 	defaultProbePort  = uint(8080)
 	defaultPKIDir     = "~/.orion/api"
 	readHeaderTimeout = 10 * time.Second
+	// defaultShutdownDelay is the default time /readyz returns 503 before the api stops, on SIGTERM
+	defaultShutdownDelay = 5 * time.Second
+	// shutdownTimeout is the time the servers get to finish their requests when the api stops
+	shutdownTimeout   = 10 * time.Second
 	expiryCheckPeriod = 24 * time.Hour
 	keyError          = "error"
 	decimal           = 10
@@ -58,6 +65,8 @@ type config struct {
 	tlsCertFile string
 	tlsKeyFile  string
 	tlsCAFile   string
+	// shutdownDelay is the time between not being ready anymore and stopping the servers, on SIGTERM
+	shutdownDelay time.Duration
 }
 
 var cfg config
@@ -70,7 +79,9 @@ func init() {
 	CmdWebApi.PersistentFlags().UintVar(&cfg.port, "port", defaultPort,
 		"port for the api (TLS, a client certificate is required)")
 	CmdWebApi.PersistentFlags().UintVar(&cfg.probePort, "probe-port", defaultProbePort,
-		"port for /healthz, /readyz, /status and /metrics (plain HTTP, no authentication)")
+		"port for /livez, /readyz, /status and /metrics (plain HTTP, no authentication)")
+	CmdWebApi.PersistentFlags().DurationVar(&cfg.shutdownDelay, "shutdown-delay", defaultShutdownDelay,
+		"on SIGTERM, the time /readyz returns 503 before the api stops, so load balancers stop sending requests")
 	CmdWebApi.PersistentFlags().BoolVar(&cfg.debug, "debug", false,
 		"enable debug logging")
 	CmdWebApi.PersistentFlags().StringVar(&cfg.pkiDir, "pki-dir", defaultPKIDir,
@@ -210,6 +221,8 @@ func api(c *cobra.Command, _ []string) {
 	ln := listen(ctx, cfg.port)
 	probeLn := listen(ctx, cfg.probePort)
 
+	stopCtx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
+	defer stop()
 	errs := make(chan error, 2)
 	go func() { errs <- probe.Serve(probeLn) }()
 	go func() { errs <- srv.ServeTLS(ln, "", "") }()
@@ -218,9 +231,30 @@ func api(c *cobra.Command, _ []string) {
 	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Uint("probe-port", cfg.probePort).
 		Str("mode", endpoints.ModeNormal).Msg("server ready")
 
-	if err = <-errs; err != nil {
+	select {
+	case err = <-errs:
 		logger.Fatal().AnErr(keyError, err).Msg("server failing")
+	case <-stopCtx.Done():
+		shutdown(ctx, srv, probe)
 	}
+}
+
+// shutdown stops the api gracefully: /readyz returns 503 first, and after cfg.shutdownDelay (so load balancers and
+// Kubernetes stop sending requests) the servers finish their requests and stop.
+func shutdown(ctx context.Context, srv, probe *http.Server) {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	ready.Store(false)
+	logger.Info().Dur("delay", cfg.shutdownDelay).Msg("shutting down: not ready anymore")
+	time.Sleep(cfg.shutdownDelay)
+
+	shutdownCtx, cancelFunc := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelFunc()
+	for name, s := range map[string]*http.Server{"api": srv, "probe": probe} {
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			logger.Error().AnErr(keyError, err).Str("server", name).Msg("graceful shutdown failed")
+		}
+	}
+	logger.Info().Msg("stopped")
 }
 
 // Execute can be used to start and run the API

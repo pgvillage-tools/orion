@@ -9,7 +9,7 @@ import (
 
 var _ = Describe("ProbeEndPoints", func() {
 	It("returns URLs and routes without a version", func() {
-		Ω(endpoints.HealthEndPoint.URL(endpoints.HTTP, "::1", 8080)).To(Equal("http://[::1]:8080/healthz"))
+		Ω(endpoints.LiveEndPoint.URL(endpoints.HTTP, "::1", 8080)).To(Equal("http://[::1]:8080/livez"))
 		Ω(endpoints.ModeEndPoint.Route(endpoints.MethodGet)).To(Equal("GET /status"))
 	})
 })

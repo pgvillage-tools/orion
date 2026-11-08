@@ -16,56 +16,58 @@ package v1
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/auth"
+	"github.com/pgvillage-tools/orion/internal/logging"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
+
+// storeCheckTimeout is the time the store gets to answer the readiness check
+const storeCheckTimeout = time.Second
 
 // ProbeRoutes collect and return all routes of the probe port. metrics serves /metrics.
 func (h *Handlers) ProbeRoutes(metrics http.Handler) []Route {
 	return []Route{
-		{endpoints.HealthEndPoint.Route(endpoints.MethodGet), h.HealthzHandler},
+		{endpoints.LiveEndPoint.Route(endpoints.MethodGet), h.LivezHandler},
 		{endpoints.ReadyEndPoint.Route(endpoints.MethodGet), h.ReadyzHandler},
 		{endpoints.ModeEndPoint.Route(endpoints.MethodGet), h.ModeHandler},
 		{endpoints.MetricsEndPoint.Route(endpoints.MethodGet), metrics.ServeHTTP},
 	}
 }
 
-// HealthzHandler handles Health requests (incl consensus roundtrip)
-func (h *Handlers) HealthzHandler(w http.ResponseWriter, r *http.Request) {
-	var (
-		status = http.StatusOK
-		msg    = []byte("OK")
-	)
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
-	defer cancelFunc()
-
-	if err := h.client.Healthy(ctx); err != nil {
-		handleError(ctx, err, w, "store is not healthy")
-		return
-	}
-	w.WriteHeader(status)
-	if _, err := w.Write(msg); err != nil {
-		handleError(ctx, err, w, "unable to return healthz response")
-	}
+// LivezHandler handles liveness requests: 200 as long as the process serves requests. It doesn't check the store, so
+// a store outage doesn't make Kubernetes restart the api (which wouldn't fix the store).
+func (h *Handlers) LivezHandler(w http.ResponseWriter, r *http.Request) {
+	writeProbe(r.Context(), w, http.StatusOK, "OK")
 }
 
-// ReadyzHandler handles ready requests (excl consensus roundtrip)
+// ReadyzHandler handles readiness requests: 200 when the api serves, isn't shutting down and its store answers within
+// storeCheckTimeout; 503 otherwise, so Kubernetes and load balancers stop sending requests to it.
 func (h *Handlers) ReadyzHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx, cancelFunc := context.WithTimeout(r.Context(), storeCheckTimeout)
+	defer cancelFunc()
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+
 	if !h.Ready.Load() {
-		handleError(ctx, errors.New("Service not ready yet"), w, "Not Ready")
+		writeProbe(ctx, w, http.StatusServiceUnavailable, "Not Ready")
 		return
 	}
+	if err := h.client.Healthy(ctx); err != nil {
+		logger.Warn().AnErr("error", err).Msg("not ready: the store doesn't answer")
+		writeProbe(ctx, w, http.StatusServiceUnavailable, "Not Ready")
+		return
+	}
+	writeProbe(ctx, w, http.StatusOK, "Ready")
+}
 
-	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte("Ready"))
-
-	if err != nil {
-		handleError(ctx, err, w, "unable to return readyz response")
+// writeProbe writes the response of a probe
+func writeProbe(ctx context.Context, w http.ResponseWriter, status int, msg string) {
+	w.WriteHeader(status)
+	if _, err := w.Write([]byte(msg)); err != nil {
+		_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+		logger.Error().AnErr("error", err).Msg("unable to write the probe response")
 	}
 }
 
