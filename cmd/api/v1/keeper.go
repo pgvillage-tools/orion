@@ -52,7 +52,7 @@ func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 	keeperID := r.PathValue("id")
 	newCd := cd.DeepCopy()
 	if _, exists := newCd.Keepers[keeperID]; !exists {
-		handleError(ctx, errors.New("keeper is not known"), w, "failed to delete the keeper")
+		http.Error(w, "keeper "+keeperID+" doesn't exist", http.StatusNotFound)
 		return
 	}
 	delete(newCd.Keepers, keeperID)

@@ -74,11 +74,11 @@ func removeKeeper(_ *cobra.Command, args []string) {
 
 	apiClient := defaultAPIClient(ctx)
 
-	httpCode, deleteErr := apiClient.PutFailKeeper(keeperID)
+	httpCode, deleteErr := apiClient.DeleteKeeper(keeperID)
 	if deleteErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, deleteErr).
 			Int("http_code", httpCode).
-			Msg("failed to fail the keeper")
+			Msg("failed to remove the keeper")
 	}
 }
