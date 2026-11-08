@@ -8,12 +8,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var (
-	// sharedCluster is started once for all tests that only read from the cluster
-	sharedCluster *testCluster
-	// failed is set when a test fails, so the containers are kept (and their logs are shown)
-	failed bool
-)
+// sharedCluster is started once for all tests that only read from the cluster
+var sharedCluster *testCluster
 
 func TestEtcdv3(t *testing.T) {
 	RegisterFailHandler(Fail)

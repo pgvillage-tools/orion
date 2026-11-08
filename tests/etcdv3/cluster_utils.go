@@ -35,6 +35,9 @@ const (
 	pollInterval = 2 * time.Second
 )
 
+// failed is set when a test fails, so the containers are kept (and their logs are shown)
+var failed bool
+
 // testCluster is an orion cluster in containers: etcd, the api, a sentinel, keepers and a proxy
 type testCluster struct {
 	nw            *testcontainers.DockerNetwork
