@@ -41,6 +41,9 @@ func (h *Handlers) PutPromoteReplicaSetHandler(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
+	} else if cd == nil {
+		handleError(ctx, errors.New("cluster data is nil"), w, "cluster data is not set")
+		return
 	} else if cd.Cluster == nil {
 		handleError(ctx, errors.New("cluster is nil"), w, "cluster is not set")
 		return
