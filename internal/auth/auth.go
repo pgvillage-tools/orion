@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // MethodClientCert is the method of an identity that was authenticated with a client certificate
@@ -86,12 +88,12 @@ func Middleware(next http.Handler, authenticators ...Authenticator) http.Handler
 				continue
 			}
 			if err != nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				endpoints.WriteProblem(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), identity)))
 			return
 		}
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		endpoints.WriteProblem(w, http.StatusUnauthorized, "unauthorized")
 	})
 }

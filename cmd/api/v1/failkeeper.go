@@ -54,7 +54,7 @@ func (h *Handlers) PutFailKeeperHandler(w http.ResponseWriter, r *http.Request) 
 	newCd := cd.DeepCopy()
 	keeperInfo := newCd.Keepers[keeperID]
 	if keeperInfo == nil {
-		http.Error(w, "keeper "+keeperID+" doesn't exist", http.StatusNotFound)
+		endpoints.WriteProblem(w, http.StatusNotFound, "keeper "+keeperID+" doesn't exist")
 		return
 	}
 

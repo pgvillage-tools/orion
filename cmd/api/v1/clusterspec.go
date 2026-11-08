@@ -56,7 +56,7 @@ func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request
 	} else if cd.Cluster == nil {
 		logger.Debug().Msg("Cluster is nil")
 	} else if cd.Cluster.Spec != nil {
-		http.Error(w, "cluster spec is already set; use PUT or PATCH to change it", http.StatusConflict)
+		endpoints.WriteProblem(w, http.StatusConflict, "cluster spec is already set; use PUT or PATCH to change it")
 		return
 	}
 
@@ -139,7 +139,7 @@ func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Reques
 
 	patch, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	defer func() {
@@ -164,7 +164,7 @@ func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 
 	patch, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	defer func() {
