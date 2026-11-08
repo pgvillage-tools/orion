@@ -100,3 +100,18 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
 })
+
+var _ = Describe("GET /v1/cluster/status without a cluster", Ordered, func() {
+	// only etcd and the api: no cluster data yet
+	tc := withOwnAPI()
+
+	It("returns an unavailable cluster without keepers, sentinels or proxies", func() {
+		status, httpCode, err := tc.apiClient.GetStatus()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusOK))
+		Ω(status.Status).To(Equal(apiv1.InfoGenericStatus{"available": false}))
+		Ω(status.Keepers).To(BeEmpty())
+		Ω(status.Sentinels).To(BeEmpty())
+		Ω(status.Proxies).To(BeEmpty())
+	})
+})

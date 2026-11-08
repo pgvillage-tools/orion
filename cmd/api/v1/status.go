@@ -146,6 +146,10 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 	if err != nil {
 		return apiv1.InfoCluster{}, err
 	}
+	if cd == nil {
+		// no cluster data yet (no cluster was created): no keepers, and the cluster isn't available
+		cd = &apiv1.Data{}
+	}
 	k, err = h.keepersInfo(ctx, cd)
 	if err != nil {
 		return apiv1.InfoCluster{}, err
