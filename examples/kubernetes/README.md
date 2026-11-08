@@ -34,13 +34,13 @@ The provided example uses `ghcr.io/pgvillage-tools/orion-keeper:17-latest`
 This example has some predefined values that you'd like to change:
 
 * The cluster name is `kube-orion`. It's set in the various `orion-cluster` labels and in the component `--cluster-name` option. The labels and the `--cluster-name` option must be in sync.
-* It uses the kubernetes backend. You can also choose other backends (like etcdv3) setting the `ST${COMPONENT}_STORE_*` environment variables (see the [commands invocation documentation](/docs/stolon/commands_invocation.md)).
+* It uses the kubernetes backend. You can also choose other backends (like etcdv3) setting the `ST${COMPONENT}_STORE_*` environment variables (see the [commands invocation documentation](/docs/reference/commands_invocation.md)).
 
 If your k8s cluster has RBAC enabled you should create a role and a rolebinding to a service account. As an example take a look at the provided [role](role.yaml) and [role-binding](role-binding.yaml) example definitions that define a `orion` role bound to the `default` service account in the `default` namespace.
 
 ### Initialize the cluster
 
-All the orion components wait for an existing clusterdata entry in the store. So the first time you have to initialize a new cluster. For more details see the [cluster initialization doc](/docs/stolon/initialization.md). You can do this step at every moment, now or after having started the orion components.
+All the orion components wait for an existing clusterdata entry in the store. So the first time you have to initialize a new cluster. For more details see the [cluster initialization doc](/docs/administrators-guide/initialization.md). You can do this step at every moment, now or after having started the orion components.
 
 You can execute orionctl in different ways:
 

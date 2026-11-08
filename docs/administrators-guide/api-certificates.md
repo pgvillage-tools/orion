@@ -10,7 +10,7 @@ date: 2026-11-07
 
 The Orion api only accepts TLS connections with a client certificate (mTLS). This page describes how to create the
 certificates with `orion-cli pki init`, and how to run the api and the cli with them. For the design behind it, see
-[TLS and bootstrap design](bootstrap-design.md).
+[TLS and bootstrap design](../design/bootstrap-design.md).
 
 ## TL;DR
 

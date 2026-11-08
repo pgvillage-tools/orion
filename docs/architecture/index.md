@@ -55,7 +55,7 @@ The k8s API server must be configured with enabled etcd quorum read (should be t
 
 To store the clusterdata and handle sentinel leader election a configmap resource named `orion-cluster-$CLUSTERNAME` is created/updated. Pay attention to don't delete this configmap or you'll lose you cluster data. The clusterdata is saved inside a metadata field called `orion-clusterdata`. No data provided by the configmap is used and user should pay attention to not manually modify the configmap.
 
-To discovery orion components (keepers, proxies, sentinels) a lookup with specific label selectors is executed. These labels must be correctly set on the pod definition (see the [kubernetes example](/examples/kubernetes)). They are:
+To discovery orion components (keepers, proxies, sentinels) a lookup with specific label selectors is executed. These labels must be correctly set on the pod definition (see the [kubernetes example](https://github.com/pgvillage-tools/orion/tree/main/examples/kubernetes)). They are:
 
 `component` set to the component type: `orion-keeper`, `orion-sentinel`, `orion-proxy`
 `orion-cluster` set to the orion cluster name
@@ -70,7 +70,7 @@ When run inside a pod it'll use the pod service account to connect to the k8s AP
 
 If you have permanently lost your store you can create a new one BUT don't restore its contents (at least the orion ones) from a backup since the backed up data could be older than the current real state and this could cause different problems. For example if you restore a orion cluster data where the elected master was different than the current one, you can end up with this old master becoming the new master.
 
-The cleaner way is to reinitialize the orion cluster using the `existing` `initMode` (see [Cluster Initialization](initialization.md)).
+The cleaner way is to reinitialize the orion cluster using the `existing` `initMode` (see [Cluster Initialization](../administrators-guide/initialization.md)).
 
 
 #### PostgreSQL Users

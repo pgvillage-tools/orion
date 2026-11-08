@@ -1,9 +1,9 @@
 # Synchronous replication
 
 Since synchronous replication is usually needed to avoid losing some transactions, orion implements it in a way to avoid any possibility of electing non sync standbys as new masters.
-When synchronous replication is enabled orion will always ensure that a master has N synchronous standbys (where N will be between MinSynchronousStandbys and MaxSynchronousStandbys values defined in the [cluster specification](cluster_spec.md)). If there're not enough available standbys then it will also add a fake standby server in the `synchronous_standby_names`. Adding a non existing standby server will ensure the master will always block waiting for remote commits.
+When synchronous replication is enabled orion will always ensure that a master has N synchronous standbys (where N will be between MinSynchronousStandbys and MaxSynchronousStandbys values defined in the [cluster specification](../reference/cluster_spec.md)). If there're not enough available standbys then it will also add a fake standby server in the `synchronous_standby_names`. Adding a non existing standby server will ensure the master will always block waiting for remote commits.
 
-You can enable/disable synchronous replication at any time and the keepers will reconfigure themselves using `orion update` to update the [cluster specification](cluster_spec.md).
+You can enable/disable synchronous replication at any time and the keepers will reconfigure themselves using `orion update` to update the [cluster specification](../reference/cluster_spec.md).
 
 ### Min and Max number of synchronous replication standbys
 

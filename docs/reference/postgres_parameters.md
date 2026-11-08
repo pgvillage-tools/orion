@@ -36,7 +36,7 @@ Actually orion doesn't do any check on the provided configurations, so, if the p
 
 ## Initialization parameters
 
-When [initializing the cluster](initialization.md), by default, orion will merge in the cluster spec the parameters that the instance had at the end of the initialization, practically:
+When [initializing the cluster](../administrators-guide/initialization.md), by default, orion will merge in the cluster spec the parameters that the instance had at the end of the initialization, practically:
 
 * When initMode is new, it'll merge the initdb generated parameters.
 * When initMode is existing it'll merge the parameters of the existing instance.

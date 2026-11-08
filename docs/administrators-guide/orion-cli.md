@@ -38,4 +38,4 @@ kubectl run -i -t orion --image=ghcr.io/pgvillage-tools/orion-keeper:17-latest -
 
 ### See also
 
-[orion command invocation](commands/orion-cli.md)
+[orion command invocation](../reference/commands/orion.md)

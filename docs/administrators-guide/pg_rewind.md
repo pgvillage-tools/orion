@@ -12,4 +12,4 @@ orion [cluster options] update --patch '{ "usePgrewind" : true }'
 
 This will also enable the `wal_log_hints` postgresql parameter. If previously `wal_log_hints` wasn't enabled you should restart the postgresql instances (you can do so restarting the `orion-keeper`)
 
-pg_rewind needs to connect to the master database with a superuser role (see the [Stolon Architecture and Requirements](architecture.md)).
+pg_rewind needs to connect to the master database with a superuser role (see the [Stolon Architecture and Requirements](../architecture/index.md)).

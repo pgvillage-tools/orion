@@ -35,7 +35,7 @@ In this example we'll use the below information:
 * orion cluster name: `orion-cluster`
 * orion store type: `etcdv3` (listening on localhost with default port to make it simple)
 
-We can leverage orion [Point in time Recovery](pitr.md) feature to clone from a remote postgres db. For example we can use `pg_basebackup` to initialize the cluster. We have to call `pg_basebackup` providing the remote instance credential for a replication user. To provide the password to `pg_basebackup` we have to create a password file like this:
+We can leverage orion [Point in time Recovery](backup-and-restore/pitr.md) feature to clone from a remote postgres db. For example we can use `pg_basebackup` to initialize the cluster. We have to call `pg_basebackup` providing the remote instance credential for a replication user. To provide the password to `pg_basebackup` we have to create a password file like this:
 
 ```
 remoteinstancehost:5432:*:repluser:replpassword
@@ -77,7 +77,7 @@ The other keepers will become standby keepers of the cluster master keeper.
 
 
 
-You can specify additional options in the `standbyConfig` (for all the options see the [cluster spec doc](./cluster_spec.md#standbyconfig))
+You can specify additional options in the `standbyConfig` (for all the options see the [cluster spec doc](../reference/cluster_spec.md#standbyconfig))
 
 
 

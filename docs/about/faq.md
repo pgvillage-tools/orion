@@ -46,17 +46,17 @@ The orion pros are the same of the above question and it'll let you avoid the ne
 
 ## What happens if etcd/consul is partitioned?
 
-See [Stolon Architecture and Requirements](architecture.md)
+See [Stolon Architecture and Requirements](../architecture/index.md)
 
 ## How are backups handled with orion?
 
-orion let you easily integrate with any backup/restore solution. See the [point in time recovery](pitr.md) and the [wal-e example](pitr_wal-e.md).
+orion let you easily integrate with any backup/restore solution. See the [point in time recovery](../administrators-guide/backup-and-restore/pitr.md) and the [wal-e example](../administrators-guide/backup-and-restore/pitr_wal-e.md).
 
 ## How orion decide which standby should be promoted to master?
 
 When using async replication the leader sentinel tries to find the best standby using a valid standby with the (last reported) nearest xlog location to the master latest knows xlog location. If a master is down there's no way to know its latest xlog position (orion get and save it at some intervals) so there's no way to guarantee that the standby is not behind but just that the best standby of the ones available will be choosen.
 
-When using synchronous replication only synchronous standbys will be choosen so standbys behind the master won't be choosen (be aware of postgresql synchronous replication limits explaned in the [postgresql documentation](https://www.postgresql.org/docs/9.6/static/warm-standby.html#SYNCHRONOUS-REPLICATION), for example, when a master restarts while no synchronous standbys are available, the transactions waiting for acknowledgement on the master will be marked as fully committed. This is "fixed" by orion. See the [synchronous replication doc](syncrepl.md).
+When using synchronous replication only synchronous standbys will be choosen so standbys behind the master won't be choosen (be aware of postgresql synchronous replication limits explaned in the [postgresql documentation](https://www.postgresql.org/docs/9.6/static/warm-standby.html#SYNCHRONOUS-REPLICATION), for example, when a master restarts while no synchronous standbys are available, the transactions waiting for acknowledgement on the master will be marked as fully committed. This is "fixed" by orion. See the [synchronous replication doc](../administrators-guide/syncrepl.md).
 
 ## Does orion uses postgres sync replication [quorum methods](https://www.postgresql.org/docs/10/static/runtime-config-replication.html#RUNTIME-CONFIG-REPLICATION-MASTER) (FIRST or ANY)?
 

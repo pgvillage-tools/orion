@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package pki defines the PKI of Orion: which intermediates and certificates there are, and where their files are
-// stored. See docs/api/bootstrap-design.md.
+// stored. See docs/design/bootstrap-design.md.
 package pki
 
 import (
