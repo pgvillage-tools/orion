@@ -156,16 +156,29 @@ func withOwnAPI() *testCluster {
 	return withOwn((*testCluster).startAPI)
 }
 
-// withOwn registers the BeforeAll that starts a test cluster with start, and the AfterAll that removes it
+// withOwn registers the BeforeAll that starts a test cluster with start, and the AfterAll that removes it (and shows
+// the logs of its containers when one of the specs failed)
 func withOwn(start func(tc *testCluster, ctx context.Context)) *testCluster {
 	tc := &testCluster{}
+	// whether starting the cluster or one of the specs of this container failed
+	ownFailed := false
 	BeforeAll(func(ctx context.Context) {
-		failed = true
+		ownFailed = true
 		start(tc, ctx)
-		failed = false
+		ownFailed = false
 	}, NodeTimeout(clusterTimeout))
+	// For the last spec of an Ordered container, Ginkgo runs AfterAll before the AfterEach of the suite (which sets
+	// failed), but after the AfterEach of the container itself: this one.
+	AfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			ownFailed = true
+		}
+	})
 	AfterAll(func(ctx context.Context) {
-		tc.terminate(ctx, failed)
+		if ownFailed {
+			failed = true
+		}
+		tc.terminate(ctx, ownFailed)
 	})
 	return tc
 }
