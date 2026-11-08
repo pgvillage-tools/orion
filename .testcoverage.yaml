@@ -57,8 +57,6 @@ override:
     threshold: 0
   - path: ^pkg/api_client/clusterspec.go
     threshold: 0
-  - path: ^pkg/api_client/connection.go 
-    threshold: 0
   - path: ^pkg/api_client/health.go     
     threshold: 0
   - path: ^pkg/api_client/keeper.go     

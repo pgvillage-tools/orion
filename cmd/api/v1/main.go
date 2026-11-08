@@ -269,15 +269,19 @@ func Execute() {
 	}
 }
 
+// handleError logs err with msg, and (when w is set) responds with a 500 problem with msg as the detail (or the error,
+// when msg is empty)
 func handleError(ctx context.Context, err error, w http.ResponseWriter, msg string) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	if err != nil {
 		logger.Error().AnErr("error", err).Msg(msg)
 	}
-	if w != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		if _, err := w.Write([]byte("ERROR")); err != nil {
-			logger.Error().AnErr("error", err).Msg("unable to return ERROR")
-		}
+	if w == nil {
+		return
 	}
+	detail := msg
+	if detail == "" && err != nil {
+		detail = err.Error()
+	}
+	endpoints.WriteProblem(w, http.StatusInternalServerError, detail)
 }

@@ -46,7 +46,7 @@ func (h *Handlers) GetClusterHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "failed to get cluster data")
 	} else {
 		if cd == nil {
-			w.WriteHeader(http.StatusNotFound)
+			endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
 		} else {
 			h.writeJSON(ctx, w, cd)
 		}
@@ -68,11 +68,11 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 	var newCD apiv1.Data
 	err := json.NewDecoder(reader).Decode(&newCD)
 	if err != nil {
-		http.Error(w, "failed to parse the cluster data: "+err.Error(), http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to parse the cluster data: "+err.Error())
 		return
 	}
 	if newCD.Cluster == nil {
-		http.Error(w, "the cluster data has no cluster", http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, "the cluster data has no cluster")
 		return
 	}
 	// replace the cluster data, whatever it is now (like stolonctl clusterdata write)
@@ -93,24 +93,24 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cd != nil && cd.Cluster != nil {
-		http.Error(w, "cluster is already set", http.StatusConflict)
+		endpoints.WriteProblem(w, http.StatusConflict, "cluster is already set")
 		return
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
 	if err != nil {
-		http.Error(w, "failed to read the body: "+err.Error(), http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to read the body: "+err.Error())
 		return
 	}
 	cs := &apiv1.Spec{}
 	if len(body) == 0 {
 		cs.InitMode = util.ToPtr(apiv1.New)
 	} else if err = json.Unmarshal(body, cs); err != nil {
-		http.Error(w, "failed to parse the spec: "+err.Error(), http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to parse the spec: "+err.Error())
 		return
 	}
 	if err = cs.Validate(); err != nil {
-		http.Error(w, "invalid spec: "+err.Error(), http.StatusBadRequest)
+		endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: "+err.Error())
 		return
 	}
 
