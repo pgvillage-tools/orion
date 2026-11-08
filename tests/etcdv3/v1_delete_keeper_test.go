@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 )
 
 var _ = Describe("DELETE /v1/cluster/keepers/{id}", Ordered, func() {
@@ -17,9 +18,15 @@ var _ = Describe("DELETE /v1/cluster/keepers/{id}", Ordered, func() {
 
 	It("removes a stopped keeper from the cluster data", func(ctx context.Context) {
 		primary := tc.waitForPrimary()
-		status, _, err := tc.apiClient.GetStatus()
-		Ω(err).NotTo(HaveOccurred())
-		Ω(status.Keepers).To(HaveLen(numKeepers))
+		// wait until every keeper reported its listen address (it is "(unknown)" until its db reports it)
+		var status *apiv1.InfoCluster
+		Eventually(func(g Gomega) {
+			var err error
+			status, _, err = tc.apiClient.GetStatus()
+			g.Ω(err).NotTo(HaveOccurred())
+			g.Ω(status.Keepers).To(HaveLen(numKeepers))
+			g.Ω(status.Keepers).To(HaveEach(HaveField("ListenAddress", MatchRegexp(`^keeper_\d+:\d+$`))))
+		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
 
 		// stop the standby; its listen address is keeper_<index>:<port>
 		var standby string
