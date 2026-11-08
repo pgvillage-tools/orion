@@ -1,18 +1,25 @@
-## Stolon Architecture and Requirements
+# Architecture and requirements
 
-### Components
+## Components
 
-Stolon is composed of 3 main components
+Orion is composed of the following main components
 
 * keeper: it manages a PostgreSQL instance converging to the clusterview provided by the sentinel(s).
 * sentinel: it discovers and monitors keepers and calculates the optimal clusterview.
 * proxy: the client's access point. It enforce connections to the right PostgreSQL master and forcibly closes connections to old masters.
+* api: manage Orion clusters with a REST api (TLS with client certificates, see
+  [Certificates for the api and the cli](../administrators-guide/api-certificates.md)).
+* cli (`orion`): consume the api in an easy way, or talk to the store directly.
 
-![Stolon architecture](architecture_small.png)
+![Orion architecture](architecture_small.png)
 
-### Requirements
+!!! note
+    The diagram and most of this page come from stolon, which Orion is a fork of. They do not show the api and the
+    cli yet.
 
-#### Keepers
+## Requirements
+
+### Keepers
 
 Every keeper MUST have a different UID that can be manually provided (`--uid` option) or will be generated. After the first start the keeper id (provided or generated) is saved inside the keeper data directory.
 
@@ -20,12 +27,12 @@ Every keeper MUST have a persistent data directory (no ephemeral volumes like k8
 
 If you're providing the keeper's uid in the command line don't start a new keeper with the same id if you're providing a different data directory (empty or populated) since you're changing data out of the orion control causing possible data loss or strange behaviors.
 
-#### Sentinel and proxies
+### Sentinel and proxies
 
 Sentinels and proxies don't need a local data directory but only use the store (etcd or consul). The sentinels and proxies uids are randomly generated at every process start to avoid possible collisions.
 
 
-#### Store
+### Store
 
 Currently the store can be etcd (using v2 or v3 api), consul or kubernetes, we leverage their features to achieve consistent and persistent cluster data.
 
@@ -35,17 +42,17 @@ When a orion component is not able to read (quorum consistent read) or write to 
 
 In addition, the orion-proxy, to avoid sending client connections to a partioned master, will drop all the connections since it cannot know if the cluster data has changed (for example if the proxy has problems reading from the store but the sentinel can write to it).
 
-### etcd and consul store backends
+## etcd and consul store backends
 
 If etcd or consul becomes partitioned (network partition or store nodes dead/with problems), thanks to the raft protocol, only the quorate partition can accept writes.
 
 Every orion executable has a `--store-prefix` option (defaulting to `orion/cluster`) to set the store path prefix. For etcdv2 and consul, if not provided, a starting `/` will be automatically added since they have a directory based layout. Instead, for etcdv3, the prefix will be kept as provided (etcdv3 has a flat namespace and for this reason two prefixes with and without a starting `/` are different and both valid).
 
-#### etcdv3 compaction
+### etcdv3 compaction
 
 When using etcdv3 you must periodically compact the keyspace to avoid storage space exhaustion. Stolon doesn't need historical key values but won't compact the etcdv3 store since this operation is global and the etcd cluster could be shared with other products that requires historical values. Compaction could be triggered in multiple ways. If possible we suggest to just enable automatic compaction (see etcd options). Please refer to the [official etcd doc](https://coreos.com/etcd/docs/latest/op-guide/maintenance.html).
 
-### kubernetes store backend
+## kubernetes store backend
 
 The kubernetes store relies on the kubernetes api server and uses kubernetes resources to save the clusterdata, components discovery and status report.
 
@@ -66,14 +73,14 @@ Every components also saves its state in an annotation of their own pod called `
 When run inside a pod it'll use the pod service account to connect to the k8s API servers. When run externally it'll honor the `$KUBECONFIG` environment variable, use the default `~/.kube/config` file or you can override the `kube-config` file path, the context and the namespace to use with the `orion` options `--kubeconfig`, `--kube-context` and `--kube-namespace`.
 
 
-##### Handling permanent loss of the store.
+### Handling permanent loss of the store
 
 If you have permanently lost your store you can create a new one BUT don't restore its contents (at least the orion ones) from a backup since the backed up data could be older than the current real state and this could cause different problems. For example if you restore a orion cluster data where the elected master was different than the current one, you can end up with this old master becoming the new master.
 
 The cleaner way is to reinitialize the orion cluster using the `existing` `initMode` (see [Cluster Initialization](../administrators-guide/initialization.md)).
 
 
-#### PostgreSQL Users
+### PostgreSQL Users
 
 Stolon requires two kind of users:
 
@@ -96,7 +103,7 @@ Utilizing `--pg-su-auth-method/--pg-repl-auth-method` trust is not recommended i
 
 When a keeper initializes a new pg db cluster, the provided superuser and replication user will be created.
 
-#### Exceeding postgres max_connections
+### Exceeding postgres max_connections
 
 When external clients exceeds the number of postgres max connections, new replication connection will fail blocking standbys from syncing. So always ensure to avoid this case or increase the max_connections postgres parameter value.
 
