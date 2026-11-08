@@ -37,10 +37,10 @@ const (
 	PromoteClusterEndPoint EndPoint = "cluster/actions/promote"
 	// StatusEndPoint configures how to handle status requests
 	StatusEndPoint EndPoint = "cluster/status"
-	// ProxyStatusEndPoint configures how to handle proxy status requests
-	ProxyStatusEndPoint EndPoint = "cluster/proxies/status"
-	// SentinelStatusEndPoint configures how to handle sentinel status requests
-	SentinelStatusEndPoint EndPoint = "cluster/sentinels/status"
+	// ProxiesEndPoint is the list of proxies, sorted on uid
+	ProxiesEndPoint EndPoint = "cluster/proxies"
+	// SentinelsEndPoint is the list of sentinels, sorted on uid
+	SentinelsEndPoint EndPoint = "cluster/sentinels"
 )
 
 const (
