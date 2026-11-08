@@ -23,9 +23,9 @@ CONTAINER_TOOL ?= docker
 all: build
 
 .PHONY: build
-build: sentinel keeper proxy cli
+build: sentinel keeper proxy cli api
 
-.PHONY: sentinel keeper proxy cli docker
+.PHONY: sentinel keeper proxy cli api docker
 
 keeper:
 	GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-keeper $(REPO_PATH)/cmd/keeper
@@ -38,6 +38,9 @@ proxy:
 
 cli:
 	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion $(REPO_PATH)/cmd/cli
+
+api:
+	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-api $(REPO_PATH)/cmd/api
 
 .PHONY: docker
 docker:
@@ -88,7 +91,7 @@ fast-e2e-test:
 	cd ./tests/etcdv3 && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./...
 
 .PHONY: full-e2e-test
-full-e2e-test: build-images clean-e2e-containers clean-images fast-e2e-test
+full-e2e-test: build-images clean-e2e-containers clean-e2e-images fast-e2e-test
 
 .PHONY: e2e-test
 e2e-test: fast-e2e-test

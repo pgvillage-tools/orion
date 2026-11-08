@@ -12,7 +12,8 @@ permissions: {}
 # workflow being trigger a number of times. This limits it
 # to one run per PR.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref }}
+  # by PR number: two PRs (e.g. from forks) can have the same branch name
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
