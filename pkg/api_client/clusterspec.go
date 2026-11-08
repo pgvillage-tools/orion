@@ -33,13 +33,6 @@ func (c Connection) PutClusterSpec(cd *apiv1.Spec) (httpCode int, err error) {
 	return c.Put(endpoints.ClusterSpecEndPoint, cd)
 }
 
-// TODO: Should there be a post?
-
-// PostClusterSpec uses the API to write the cluster spec
-func (c Connection) PostClusterSpec(cd *apiv1.Spec) (httpCode int, err error) {
-	return c.Post(endpoints.ClusterSpecEndPoint, cd)
-}
-
 // PatchClusterSpec uses the API to update the cluster spec
 func (c Connection) PatchClusterSpec(patch []byte) (httpCode int, err error) {
 	return c.Patch(endpoints.ClusterSpecEndPoint, patch)

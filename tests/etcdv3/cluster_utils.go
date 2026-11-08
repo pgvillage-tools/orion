@@ -69,14 +69,14 @@ type testCluster struct {
 func (tc *testCluster) start(ctx context.Context, numKeepers int) {
 	tc.startAPI(ctx)
 
-	httpCode, err := tc.apiClient.PostClusterSpec(&apiv1.Spec{
+	httpCode, err := tc.apiClient.PostCluster(&apiv1.Spec{
 		DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
 		PGParameters:            apiv1.PGParameters{},
 		PGHBA:                   []string{},
 		InitMode:                util.ToPtr(apiv1.New),
 	})
 	Ω(err).NotTo(HaveOccurred())
-	Ω(httpCode).To(Equal(http.StatusAccepted))
+	Ω(httpCode).To(Equal(http.StatusCreated))
 
 	tc.sentinel, err = runSentinel(ctx, tc.etcdEndpoints, tc.nw)
 	tc.add(tc.sentinel)

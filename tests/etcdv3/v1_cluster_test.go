@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/util"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 var _ = Describe("GET /v1/cluster", func() {
@@ -120,18 +121,18 @@ var _ = Describe("POST /v1/cluster from several clients at the same time", Order
 	// only etcd and the api: no cluster data yet
 	tc := withOwnAPI()
 
-	It("creates the cluster once: one client gets 202, the others 409", func() {
+	It("creates the cluster once: one client gets 201, the others 409", func() {
 		codes, errs := createConcurrently(10, func() (int, error) {
 			return tc.apiClient.PostCluster(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
 		})
-		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v, errors %q", codes, errs)
-		accepted := 0
+		Ω(codes).To(HaveEach(BeElementOf(http.StatusCreated, http.StatusConflict)), "codes %v, errors %q", codes, errs)
+		created := 0
 		for _, c := range codes {
-			if c == http.StatusAccepted {
-				accepted++
+			if c == http.StatusCreated {
+				created++
 			}
 		}
-		Ω(accepted).To(Equal(1), "codes %v", codes)
+		Ω(created).To(Equal(1), "codes %v", codes)
 
 		cd, _, err := tc.apiClient.GetCluster()
 		Ω(err).NotTo(HaveOccurred())
@@ -139,22 +140,25 @@ var _ = Describe("POST /v1/cluster from several clients at the same time", Order
 	})
 })
 
-var _ = Describe("POST /v1/cluster/spec from several clients at the same time", Ordered, func() {
+var _ = Describe("POST /v1/cluster without a cluster", Ordered, func() {
 	// only etcd and the api: no cluster data yet
 	tc := withOwnAPI()
 
-	It("sets the spec once: one client gets 202, the others 409", func() {
-		codes, errs := createConcurrently(10, func() (int, error) {
-			return tc.apiClient.PostClusterSpec(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
-		})
-		Ω(codes).To(HaveEach(BeElementOf(http.StatusAccepted, http.StatusConflict)), "codes %v, errors %q", codes, errs)
-		accepted := 0
-		for _, c := range codes {
-			if c == http.StatusAccepted {
-				accepted++
-			}
+	It("refuses null, something that isn't a spec, and an invalid spec", func() {
+		for name, body := range map[string]any{
+			"null":         nil,
+			"not a spec":   "not a spec",
+			"invalid spec": &apiv1.Spec{SleepInterval: &apiv1.Duration{Duration: -time.Second}},
+		} {
+			httpCode, err := tc.apiClient.Post(endpoints.ClusterEndPoint, body)
+			Ω(err).To(HaveOccurred(), name)
+			Ω(httpCode).To(Equal(http.StatusBadRequest), name)
 		}
-		Ω(accepted).To(Equal(1), "codes %v", codes)
+	})
+	It("creates the cluster: 201, with the cluster data", func() {
+		httpCode, err := tc.apiClient.PostCluster(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusCreated))
 
 		spec, _, err := tc.apiClient.GetClusterSpec()
 		Ω(err).NotTo(HaveOccurred())
