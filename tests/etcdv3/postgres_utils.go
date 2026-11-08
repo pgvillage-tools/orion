@@ -43,14 +43,17 @@ func pgPing(ctx context.Context, connParams pgConnParams) error {
 	return nil
 }
 
+// isReady pings postgres every interval, until it answers (nil) or ctx is done (the error of the last ping)
 func isReady(ctx context.Context, connParams pgConnParams, interval time.Duration) error {
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := pgPing(ctx, connParams); err != nil {
+		err := pgPing(ctx, connParams)
+		if err == nil {
 			return nil
 		}
-		time.Sleep(interval)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("postgres not ready: %w", err)
+		case <-time.After(interval):
+		}
 	}
 }

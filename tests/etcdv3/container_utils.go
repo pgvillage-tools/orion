@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/pgvillage-tools/orion/internal/pki"
@@ -19,7 +20,11 @@ import (
 const (
 	etcdImage       = "quay.io/coreos/etcd:v3.6.7"
 	apiInternalPort = 8443
-	apiPKIDir       = "/etc/orion/api"
+	// apiProbeInternalPort is the probe port of the api (/healthz, /readyz, /status)
+	apiProbeInternalPort = 8080
+	// clusterTimeout is the time to start a test cluster
+	clusterTimeout = 10 * time.Minute
+	apiPKIDir      = "/etc/orion/api"
 	// apiPKIFileMode makes the api files readable for the api, which runs as orion (the files are owned by root)
 	apiPKIFileMode     = 0o644
 	proxyInternalPort  = 25432
@@ -184,10 +189,13 @@ func runAPI(
 	return testcontainers.GenericContainer(
 		ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
-				Env:            envSettings,
-				Image:          "api",
-				Files:          files,
-				ExposedPorts:   []string{fmt.Sprintf("%d/tcp", apiInternalPort)},
+				Env:   envSettings,
+				Image: "api",
+				Files: files,
+				ExposedPorts: []string{
+					fmt.Sprintf("%d/tcp", apiInternalPort),
+					fmt.Sprintf("%d/tcp", apiProbeInternalPort),
+				},
 				Networks:       []string{nw.Name},
 				NetworkAliases: aliasses,
 				WaitingFor: wait.ForLog(

@@ -1,0 +1,184 @@
+package etcdv3_test
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"maps"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/pki"
+	"github.com/pgvillage-tools/orion/internal/util"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/etcd"
+	"github.com/testcontainers/testcontainers-go/network"
+)
+
+const (
+	localHost  = "127.0.0.1"
+	pgPassword = "test123"
+	// defaultKeepers is the number of keepers of a test cluster
+	defaultKeepers = 3
+	// apiTimeout is the timeout of the api client of the tests
+	apiTimeout = 5 * time.Second
+)
+
+// testCluster is an orion cluster in containers: etcd, the api, a sentinel, keepers and a proxy
+type testCluster struct {
+	nw            *testcontainers.DockerNetwork
+	etcd          *etcd.EtcdContainer
+	etcdEndpoints string
+	api           testcontainers.Container
+	sentinel      testcontainers.Container
+	proxy         testcontainers.Container
+	keepers       []testcontainers.Container
+	all           []testcontainers.Container
+
+	// pki holds the directories with the certificates of the api and of the client of the tests
+	pki pki.InitOptions
+	// apiClient connects to the api over mTLS, with the certificate of the cli
+	apiClient client.Connection
+	// probeURL is the base url of the probe port of the api, e.g. http://127.0.0.1:32768
+	probeURL string
+	// pgConn holds the connection parameters for postgres, without the port
+	pgConn pgConnParams
+}
+
+// start starts a cluster with numKeepers keepers and initializes it (new) through the api. It fills tc while it
+// starts the containers, so terminate can clean up (and show the logs) after a failure halfway. Tests that change
+// the cluster (e.g. fail or remove a keeper) should start their own cluster; tests that only read can use
+// sharedCluster.
+func (tc *testCluster) start(ctx context.Context, numKeepers int) {
+	// RYUK requires permissions we don't need and don't want to implement
+	Ω(os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")).To(Succeed())
+
+	tc.pgConn = pgConnParams{
+		"host":     "localhost",
+		"user":     pgUser,
+		"password": pgPassword,
+		"dbname":   pgDatabase,
+	}
+	var err error
+	tc.nw, err = network.New(ctx)
+	Ω(err).NotTo(HaveOccurred())
+
+	tc.etcd, tc.etcdEndpoints, err = runEtcd(ctx, etcdImage, tc.nw)
+	if tc.etcd != nil {
+		tc.all = []testcontainers.Container{tc.etcd}
+	}
+	Ω(err).NotTo(HaveOccurred())
+
+	// create the certificates for the api and the client of this test framework
+	tmpDir := GinkgoT().TempDir()
+	tc.pki = pki.InitOptions{CLIDir: filepath.Join(tmpDir, "cli"), APIDir: filepath.Join(tmpDir, "api")}
+	_, err = pki.Init(tc.pki)
+	Ω(err).NotTo(HaveOccurred())
+	clientTLS, err := pki.CLIFiles(tc.pki.CLIDir).ClientConfig()
+	Ω(err).NotTo(HaveOccurred())
+
+	// run the api to control orion from this test framework
+	tc.api, err = runAPI(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{}, tc.pki.APIDir)
+	tc.add(tc.api)
+	Ω(err).NotTo(HaveOccurred())
+	apiPort, err := tc.api.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiInternalPort))
+	Ω(err).NotTo(HaveOccurred())
+	tc.apiClient = client.NewTLSConnection(localHost, apiPort.Num(), apiTimeout, clientTLS)
+	probePort, err := tc.api.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiProbeInternalPort))
+	Ω(err).NotTo(HaveOccurred())
+	tc.probeURL = fmt.Sprintf("http://%s:%s", localHost, probePort.Port())
+
+	httpCode, err := tc.apiClient.PostClusterSpec(&apiv1.Spec{
+		DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
+		PGParameters:            apiv1.PGParameters{},
+		PGHBA:                   []string{},
+		InitMode:                util.ToPtr(apiv1.New),
+	})
+	Ω(err).NotTo(HaveOccurred())
+	Ω(httpCode).To(Equal(http.StatusAccepted))
+
+	tc.sentinel, err = runSentinel(ctx, tc.etcdEndpoints, tc.nw)
+	tc.add(tc.sentinel)
+	Ω(err).NotTo(HaveOccurred())
+
+	for i := range numKeepers {
+		alias := fmt.Sprintf("keeper_%d", i)
+		settings := map[string]string{
+			"pg-repl-password":  pgPassword,
+			"pg-su-password":    pgPassword,
+			"pg-listen-address": alias,
+		}
+		cnt, keeperErr := runKeeper(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {alias}},
+			maps.Clone(settings))
+		tc.add(cnt)
+		Ω(keeperErr).NotTo(HaveOccurred())
+		tc.keepers = append(tc.keepers, cnt)
+	}
+
+	tc.proxy, err = runProxy(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {"proxy"}})
+	tc.add(tc.proxy)
+	Ω(err).NotTo(HaveOccurred())
+}
+
+// add adds a container to the containers of the cluster (also when it failed to start, so it gets cleaned up)
+func (tc *testCluster) add(cnt testcontainers.Container) {
+	if cnt != nil {
+		tc.all = append(tc.all, cnt)
+	}
+}
+
+// keeperConn returns the connection parameters for the postgres of keeper i
+func (tc *testCluster) keeperConn(ctx context.Context, i int) pgConnParams {
+	port, err := tc.keepers[i].MappedPort(ctx, fmt.Sprintf("%d/tcp", keeperInternalPort))
+	Ω(err).NotTo(HaveOccurred())
+	return tc.pgConn.setParam("port", port.Port())
+}
+
+// proxyConn returns the connection parameters for postgres through the proxy
+func (tc *testCluster) proxyConn(ctx context.Context) pgConnParams {
+	port, err := tc.proxy.MappedPort(ctx, fmt.Sprintf("%d/tcp", proxyInternalPort))
+	Ω(err).NotTo(HaveOccurred())
+	return tc.pgConn.setParam("port", port.Port())
+}
+
+// terminate removes the containers and the network of the cluster. When a test failed, it writes the logs of all
+// containers to the GinkgoWriter, and keeps them. ORION_TEST_KEEP=true keeps them always.
+func (tc *testCluster) terminate(ctx context.Context, failed bool) {
+	if tc == nil {
+		return
+	}
+	if failed {
+		tc.dumpLogs(ctx)
+	}
+	if failed || os.Getenv("ORION_TEST_KEEP") == "true" {
+		GinkgoWriter.Printf("keeping the containers of the cluster\n")
+		return
+	}
+	for _, cnt := range tc.all {
+		Ω(cnt.Terminate(ctx)).To(Succeed())
+	}
+	if tc.nw != nil {
+		Ω(tc.nw.Remove(ctx)).To(Succeed())
+	}
+}
+
+// dumpLogs writes the logs of all containers of the cluster to the GinkgoWriter
+func (tc *testCluster) dumpLogs(ctx context.Context) {
+	for _, cnt := range tc.all {
+		name, _ := cnt.Name(ctx)
+		logs, err := cnt.Logs(ctx)
+		if err != nil {
+			GinkgoWriter.Printf("no logs for %s: %v\n", name, err)
+			continue
+		}
+		data, _ := io.ReadAll(logs)
+		_ = logs.Close()
+		GinkgoWriter.Printf("===== logs of %s =====\n%s\n", name, data)
+	}
+}
