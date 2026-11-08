@@ -44,3 +44,20 @@ var _ = Describe("PUT /v1/cluster/keepers/{id}/fail", Ordered, func() {
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
 })
+
+var _ = Describe("PUT /v1/cluster/keepers/{id}/fail without a cluster, or without the store", Ordered, func() {
+	// only etcd and the api: no cluster data yet
+	tc := withOwnAPI()
+
+	It("returns 404 without a cluster", func() {
+		httpCode, err := tc.apiClient.PutFailKeeper("keeper0")
+		Ω(err).To(MatchError(ContainSubstring("no cluster yet")))
+		Ω(httpCode).To(Equal(http.StatusNotFound))
+	})
+	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+		pauseContainer(ctx, tc.etcd)
+		httpCode, err := tc.apiClient.PutFailKeeper("keeper0")
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+	})
+})
