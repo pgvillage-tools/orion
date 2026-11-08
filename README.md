@@ -12,13 +12,13 @@ You can run Orion on Virtual Machines, and K8s environemts.
 * Resilient to any kind of partitioning. While trying to keep the maximum availability, it prefers consistency over availability.
 * [kubernetes integration](examples/kubernetes/README.md) letting you achieve postgreSQL high availability.
 * Uses a cluster store like [etcd](https://etcd.io), [consul](https://www.consul.io) or kubernetes API server as an high available data store and for leader election
-* Asynchronous (default) and [synchronous](docs/administrators-guide/syncrepl.md) replication.
+* Asynchronous (default) and [synchronous](docs/stolon/syncrepl.md) replication.
 * Full cluster setup in minutes.
-* Easy [cluster administration](docs/administrators-guide/orion-cli.md) with the api nd cli.
+* Easy [cluster administration](docs/stolon/orion-cli.md) with the api nd cli.
 * Can do point in time recovery integrating with your preferred backup/restore tool.
-* [Standby cluster](docs/administrators-guide/standbycluster.md) (for multi site replication and near zero downtime migration).
+* [Standby cluster](docs/stolon/standbycluster.md) (for multi site replication and near zero downtime migration).
 * Automatic service discovery and dynamic reconfiguration (handles postgres and orion processes changing their addresses).
-* Can use [pg_rewind](docs/administrators-guide/pg_rewind.md) for fast instance resynchronization with current master.
+* Can use [pg_rewind](docs/stolon/pg_rewind.md) for fast instance resynchronization with current master.
 
 ## Architecture
 
@@ -30,21 +30,21 @@ Orion is composed of the following main components
 * api: Manage Orion clusters with a restful API
 * cli: consume the api in an easy way
 
-For more details and requirements see [Orion Architecture and Requirements](docs/architecture/index.md)
+For more details and requirements see [Orion Architecture and Requirements](docs/stolon/architecture.md)
 
-![Orion architecture](docs/architecture/architecture_small.png)
+![Orion architecture](docs/stolon/architecture_small.png)
 
 ## Documentation
 
-The documentation is published at <https://pgvillage-tools.github.io/orion>. Its sources are in [docs](docs).
+[Documentation Index](docs/stolon/README.md)
 
 ## Installation
 
 ## Quick start and examples
 
-* [Simple cluster example](docs/administrators-guide/examples/simplecluster.md)
+* [Simple cluster example](docs/stolon/simplecluster.md)
 * [Kubernetes example](examples/kubernetes/README.md)
-* [Two (or more) nodes setup](docs/administrators-guide/examples/twonodes.md)
+* [Two (or more) nodes setup](docs/stolon/twonodes.md)
 
 ## Project Status
 
@@ -75,7 +75,7 @@ There can be tons of different partitioning cases. The primary ones are covered 
 
 ## FAQ
 
-See [here](docs/about/faq.md) for a list of faq. If you have additional questions please ask.
+See [here](docs/stolon/faq.md) for a list of faq. If you have additional questions please ask.
 
 ## Contributing to orion
 

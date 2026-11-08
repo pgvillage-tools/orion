@@ -73,15 +73,14 @@ plugins:
   - privacy
   - kroki:
       http_method: POST
-  - literate-nav:
-      nav_file: README.md
-      implicit_index: true
 
-# Navigation: every section directory has a README.md with its own navigation (literate-nav)
+# The stolon docs in docs/stolon are not published yet: they still describe stolon, and come in one by one, reviewed,
+# before the first release
+exclude_docs: |
+  stolon/
+
 nav:
   - Home: index.md
-  - Architecture: architecture/
-  - Administrator guide: administrators-guide/
-  - Reference: reference/
-  - Design: design/
-  - About: about/
+  - API:
+      - Certificates: api/certificates.md
+      - Bootstrap design: api/bootstrap-design.md

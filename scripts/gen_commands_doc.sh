@@ -6,4 +6,4 @@ source "$(dirname "$0")"/readlinkdashf.sh
 
 BASEDIR=$(readlinkdashf "$(dirname "$0")"/..)
 
-go run "$BASEDIR"/scripts/gen_commands_doc.go "$BASEDIR"/docs/reference/commands/
+go run "$BASEDIR"/scripts/gen_commands_doc.go "$BASEDIR"/docs/stolon/commands/
