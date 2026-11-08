@@ -16,6 +16,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/pgvillage-tools/orion/internal/util"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
@@ -28,6 +29,10 @@ const (
 	defaultKeepers = 3
 	// apiTimeout is the timeout of the api client of the tests
 	apiTimeout = 5 * time.Second
+	// primaryTimeout is the time a cluster gets to elect a primary
+	primaryTimeout = 3 * time.Minute
+	// pollInterval is the interval for polling the cluster with Eventually
+	pollInterval = 2 * time.Second
 )
 
 // testCluster is an orion cluster in containers: etcd, the api, a sentinel, keepers and a proxy
@@ -47,6 +52,8 @@ type testCluster struct {
 	apiClient client.Connection
 	// probeURL is the base url of the probe port of the api, e.g. http://127.0.0.1:32768
 	probeURL string
+	// probeClient connects to the probe port of the api (plain http)
+	probeClient client.Connection
 	// pgConn holds the connection parameters for postgres, without the port
 	pgConn pgConnParams
 }
@@ -93,6 +100,7 @@ func (tc *testCluster) start(ctx context.Context, numKeepers int) {
 	probePort, err := tc.api.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiProbeInternalPort))
 	Ω(err).NotTo(HaveOccurred())
 	tc.probeURL = fmt.Sprintf("http://%s:%s", localHost, probePort.Port())
+	tc.probeClient = client.NewConnection(endpoints.HTTP, localHost, probePort.Num(), apiTimeout)
 
 	httpCode, err := tc.apiClient.PostClusterSpec(&apiv1.Spec{
 		DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
@@ -124,6 +132,36 @@ func (tc *testCluster) start(ctx context.Context, numKeepers int) {
 	tc.proxy, err = runProxy(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {"proxy"}})
 	tc.add(tc.proxy)
 	Ω(err).NotTo(HaveOccurred())
+}
+
+// withOwnCluster starts a cluster for the specs of the (Ordered) container it is called in, and removes it after them.
+// Use it for tests that change the cluster, e.g. fail or remove a keeper.
+func withOwnCluster(numKeepers int) *testCluster {
+	tc := &testCluster{}
+	BeforeAll(func(ctx context.Context) {
+		failed = true
+		tc.start(ctx, numKeepers)
+		failed = false
+	}, NodeTimeout(clusterTimeout))
+	AfterAll(func(ctx context.Context) {
+		tc.terminate(ctx, failed)
+	})
+	return tc
+}
+
+// waitForPrimary waits until the status of the cluster (from the api) has a primary keeper, and returns its uid
+func (tc *testCluster) waitForPrimary() string {
+	var primary string
+	Eventually(func(g Gomega) {
+		status, httpCode, err := tc.apiClient.GetStatus()
+		g.Ω(err).NotTo(HaveOccurred())
+		g.Ω(httpCode).To(Equal(http.StatusOK))
+		var ok bool
+		primary, ok = status.Status["primaryKeeper"].(string)
+		g.Ω(ok).To(BeTrue(), "no primary keeper in %v", status.Status)
+		g.Ω(primary).NotTo(BeEmpty())
+	}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+	return primary
 }
 
 // add adds a container to the containers of the cluster (also when it failed to start, so it gets cleaned up)

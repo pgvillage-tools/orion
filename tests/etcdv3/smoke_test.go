@@ -36,6 +36,7 @@ var _ = Describe("Smoke", func() {
 			Ω(identity.Name).To(Equal(pki.CLIClientName))
 		})
 		It("status return expected result", func() {
+			sharedCluster.waitForPrimary()
 			myStatus, httpCode, statusErr := sharedCluster.apiClient.GetStatus()
 			Ω(statusErr).NotTo(HaveOccurred())
 			Ω(httpCode).To(Equal(http.StatusOK))
