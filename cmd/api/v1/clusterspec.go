@@ -26,7 +26,6 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
@@ -57,84 +56,10 @@ func writeSpecError(ctx context.Context, w http.ResponseWriter, err error, msg s
 // ClusterSpecRoutes adds all Cluster routes to the list of all routes
 func (h *Handlers) ClusterSpecRoutes() []Route {
 	return []Route{
-		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPost), h.PostClusterSpecHandler},
 		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodGet), h.GetClusterSpecHandler},
 		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPatch), h.PatchClusterSpecHandler},
 		{endpoints.ClusterSpecEndPoint.Route(endpoints.MethodPut), h.PutClusterSpecHandler},
 	}
-}
-
-// PostClusterSpecHandler endpoint is used by init
-func (h *Handlers) PostClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
-	defer cancelFunc()
-	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-
-	cd, pair, err := h.client.GetClusterData(ctx)
-	if err != nil {
-		handleError(ctx, err, w, "failed to get cluster data")
-		return
-	} else if cd == nil {
-		logger.Debug().Msg("Clusterdata is nil")
-	} else if cd.Cluster == nil {
-		logger.Debug().Msg("Cluster is nil")
-	} else if cd.Cluster.Spec != nil {
-		endpoints.WriteProblem(w, http.StatusConflict, "cluster spec is already set; use PUT or PATCH to change it")
-		return
-	}
-
-	var cs *apiv1.Spec
-
-	newCSBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))
-	if err != nil {
-		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to read the spec: "+err.Error())
-		return
-	}
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			handleError(ctx, err, w, "Failed to close Body")
-		}
-	}()
-	if len(newCSBytes) == 0 {
-		cs = &apiv1.Spec{}
-		newCluster := apiv1.New
-		cs.InitMode = &newCluster
-	} else {
-		err = json.Unmarshal(newCSBytes, &cs)
-		if err != nil {
-			endpoints.WriteProblem(w, http.StatusBadRequest, "failed to parse the spec: "+err.Error())
-			return
-		}
-		if cs == nil {
-			endpoints.WriteProblem(w, http.StatusBadRequest, "the spec can't be null")
-			return
-		}
-	}
-
-	if err := cs.Validate(); err != nil {
-		endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: "+err.Error())
-		return
-	}
-
-	if cd == nil {
-		c := apiv1.NewCluster(common.UID(), cs)
-		cd = apiv1.NewClusterData(c)
-	} else if cd.Cluster == nil {
-		cd.Cluster = apiv1.NewCluster(common.UID(), cs)
-	} else {
-		cd.Cluster.Spec = cs
-	}
-
-	// only write when the cluster data didn't change since it was read (or, when there was none, there still is none)
-	if _, err := h.client.AtomicPutClusterData(ctx, cd, pair); err != nil {
-		if errors.Is(err, consensus.ErrKeyModified) {
-			endpoints.WriteProblem(w, http.StatusConflict, "the cluster data changed while setting the spec")
-			return
-		}
-		handleError(ctx, err, w, "cannot update spec")
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
 }
 
 // GetClusterSpecHandler endpoint

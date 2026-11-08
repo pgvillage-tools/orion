@@ -102,7 +102,7 @@ func initCluster(_ *cobra.Command, args []string) {
 		}
 		logger.Fatal().Msg("cannot initialize an already existing cluster")
 	}
-	if httpCode, initErr := apiClient.PostClusterSpec(initSpec); initErr != nil {
+	if httpCode, initErr := apiClient.PostCluster(initSpec); initErr != nil {
 		logger.Fatal().
 			AnErr(logging.KeyError, initErr).
 			Int("http_code", httpCode).

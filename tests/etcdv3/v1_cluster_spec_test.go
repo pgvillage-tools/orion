@@ -38,11 +38,6 @@ var _ = Describe("/v1/cluster/spec", Ordered, func() {
 		Ω(spec.InitMode).To(HaveValue(Equal(apiv1.New)))
 		Ω(spec.DefaultSUReplAccessMode).To(HaveValue(Equal(apiv1.SUReplAccessAll)))
 	})
-	It("POST refuses to replace the spec", func() {
-		httpCode, err := tc.apiClient.PostClusterSpec(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
-		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusConflict))
-	})
 	It("PATCH changes a postgres parameter, and the keeper applies it", func(ctx context.Context) {
 		httpCode, err := tc.apiClient.PatchClusterSpec([]byte(`{"pgParameters":{"log_min_duration_statement":"1500"}}`))
 		Ω(err).NotTo(HaveOccurred())
@@ -130,17 +125,6 @@ var _ = Describe("/v1/cluster/spec without a cluster", Ordered, func() {
 		httpCode, err = tc.apiClient.PutClusterSpec(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusNotFound))
-	})
-	It("POST refuses null, something that isn't a spec, and an invalid spec", func() {
-		for name, body := range map[string]any{
-			"null":         nil,
-			"not a spec":   "not a spec",
-			"invalid spec": &apiv1.Spec{SleepInterval: &apiv1.Duration{Duration: -time.Second}},
-		} {
-			httpCode, err := tc.apiClient.Post(endpoints.ClusterSpecEndPoint, body)
-			Ω(err).To(HaveOccurred(), name)
-			Ω(httpCode).To(Equal(http.StatusBadRequest), name)
-		}
 	})
 	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
 		pauseContainer(ctx, tc.etcd)

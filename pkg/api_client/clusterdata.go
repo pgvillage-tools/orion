@@ -33,7 +33,8 @@ func (c Connection) PutCluster(cd *apiv1.Data) (httpCode int, err error) {
 	return c.Put(endpoints.ClusterEndPoint, cd)
 }
 
-// PostCluster uses the API to create a new cluster with spec cs. The API refuses it when there already is a cluster.
+// PostCluster uses the API to create the cluster with spec cs (201). The API refuses it (409) when there already is a
+// cluster.
 func (c Connection) PostCluster(cs *apiv1.Spec) (httpCode int, err error) {
 	return c.Post(endpoints.ClusterEndPoint, cs)
 }

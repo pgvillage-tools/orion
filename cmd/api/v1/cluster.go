@@ -91,8 +91,8 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// PostClusterHandler creates a new cluster, from the spec in the body (an empty body creates a new cluster with the
-// default spec). It refuses (409) when there already is a cluster.
+// PostClusterHandler creates the cluster, from the spec in the body (an empty body creates a new cluster with the
+// default spec), and answers 201 with the cluster data. It refuses (409) when there already is a cluster with a spec.
 func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
 	defer cancelFunc()
@@ -102,8 +102,9 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "failed to get cluster data")
 		return
 	}
-	if cd != nil && cd.Cluster != nil {
-		endpoints.WriteProblem(w, http.StatusConflict, "cluster is already set")
+	if cd != nil && cd.Cluster != nil && cd.Cluster.Spec != nil {
+		endpoints.WriteProblem(w, http.StatusConflict,
+			"the cluster already exists; use PUT or PATCH on /v1/cluster/spec to change its spec")
 		return
 	}
 
@@ -112,11 +113,15 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to read the body: "+err.Error())
 		return
 	}
-	cs := &apiv1.Spec{}
+	var cs *apiv1.Spec
 	if len(body) == 0 {
-		cs.InitMode = util.ToPtr(apiv1.New)
-	} else if err = json.Unmarshal(body, cs); err != nil {
+		cs = &apiv1.Spec{InitMode: util.ToPtr(apiv1.New)}
+	} else if err = json.Unmarshal(body, &cs); err != nil {
 		endpoints.WriteProblem(w, http.StatusBadRequest, "failed to parse the spec: "+err.Error())
+		return
+	}
+	if cs == nil {
+		endpoints.WriteProblem(w, http.StatusBadRequest, "the spec can't be null")
 		return
 	}
 	if err = cs.Validate(); err != nil {
@@ -124,10 +129,18 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	switch {
+	case cd == nil:
+		cd = apiv1.NewClusterData(apiv1.NewCluster(common.UID(), cs))
+	case cd.Cluster == nil:
+		cd.Cluster = apiv1.NewCluster(common.UID(), cs)
+	default:
+		// a cluster without a spec
+		cd.Cluster.Spec = cs
+	}
 	// only write when the cluster data didn't change since it was read (pair is nil when there was none: then it
 	// is only written when there still is none), so two clients creating a cluster at the same time can't both win
-	newCD := apiv1.NewClusterData(apiv1.NewCluster(common.UID(), cs))
-	if _, err = h.client.AtomicPutClusterData(ctx, newCD, pair); err != nil {
+	if _, err = h.client.AtomicPutClusterData(ctx, cd, pair); err != nil {
 		if errors.Is(err, consensus.ErrKeyModified) {
 			endpoints.WriteProblem(w, http.StatusConflict, "the cluster data changed while creating the cluster")
 			return
@@ -135,5 +148,6 @@ func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "cannot create the cluster")
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	w.Header().Set("Location", "/"+endpoints.APIVersion+"/"+string(endpoints.ClusterEndPoint))
+	h.writeJSONStatus(ctx, w, http.StatusCreated, cd)
 }
