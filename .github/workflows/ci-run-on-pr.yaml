@@ -18,10 +18,6 @@ concurrency:
 env:
   # Golang version to use across CI steps
   GOLANG_VERSION: '1.26' # Updated to match go.mod requirement (go 1.26.0)
-  DOWNLOAD_URL: https://github.com/etcd-io/etcd/releases/download
-  ETCD_VER: v3.6.8
-  ETCD_PATH: /usr/local/bin/
-  ETCD_BIN: /usr/local/bin/etcd
 
 permissions:
   contents: read
@@ -339,12 +335,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GOLANG_VERSION }}
-
-      - name: installe etcd
-        run: |
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" -o "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
-          tar xzvf "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz" -C "${ETCD_PATH}" --strip-components=1 --no-same-owner
-          rm -f "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
 
       - name: Download keeper artifact
         uses: actions/download-artifact@v8
