@@ -2,7 +2,9 @@ name: CI run on PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # On main (and when started by hand) everything runs, with e2e tests on all PostgreSQL versions
+  # In the merge queue, on main (and when started by hand) everything runs, with e2e tests on all
+  # PostgreSQL versions
+  merge_group:
   push:
     branches:
       - main
@@ -16,10 +18,6 @@ concurrency:
 env:
   # Golang version to use across CI steps
   GOLANG_VERSION: '1.26' # Updated to match go.mod requirement (go 1.26.0)
-  DOWNLOAD_URL: https://github.com/etcd-io/etcd/releases/download
-  ETCD_VER: v3.6.8
-  ETCD_PATH: /usr/local/bin/
-  ETCD_BIN: /usr/local/bin/etcd
 
 permissions:
   contents: read
@@ -85,7 +83,7 @@ jobs:
           ALL_PG_CHANGED: ${{ steps.filter.outputs.all_pg_any_changed }}
         run: |
           if [ "${EVENT}" != pull_request ] || [ "${CI_CHANGED}" = true ]; then
-            # Run everything on main, when started by hand, and when this workflow changes
+            # Run everything in the merge queue, on main, when started by hand, and when this workflow changes
             go=true e2e=true shell=true all_pg=true
           else
             go=${GO_CHANGED:-false}
@@ -158,6 +156,9 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
+          # Built with go install (from the Go module proxy) instead of downloaded from GitHub releases
+          version: v2.15.0
+          install-mode: goinstall
           args: --verbose --timeout=10m
 
   shellcheck:
@@ -168,8 +169,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.0.0
+      # shellcheck is preinstalled on the ubuntu runners, so this doesn't depend on a download from GitHub releases
       - name: Run ShellCheck
-        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master (2024-06-20)
+        run: |
+          shellcheck --version
+          git ls-files -z '*.sh' '*.bash' | xargs -0 --no-run-if-empty shellcheck
 
   check-docs:
     name: Build the docs
@@ -375,12 +379,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GOLANG_VERSION }}
-
-      - name: installe etcd
-        run: |
-          curl -L "${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" -o "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
-          tar xzvf "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz" -C "${ETCD_PATH}" --strip-components=1 --no-same-owner
-          rm -f "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
 
       - name: Download keeper artifact
         uses: actions/download-artifact@v8
