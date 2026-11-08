@@ -38,20 +38,18 @@ func initConfig() {
 	if err := os.MkdirAll(configDir, readWrite); err != nil {
 		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create config dir")
 	}
+	// Defaults, not viper.Set: a value set with viper.Set overrules the flags
+	viper.SetDefault(flagHost, defaultAPIIP)
+	viper.SetDefault(flagPort, defaultAPIPort)
+	viper.SetDefault(flagPKIDir, defaultCLIPKIDir)
+	viper.SetDefault(flagTimeout, defaultTimeout)
+
 	configFile := filepath.Join(configDir, "config.yml")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		viper.Set("host", defaultAPIIP)
-		viper.Set("port", defaultAPIPort)
-		viper.Set("timeout", defaultTimeout)
 		if err := viper.SafeWriteConfig(); err != nil {
 			logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create config file")
 		}
 	}
-
-	viper.SetDefault("host", defaultAPIIP)
-	viper.SetDefault("port", defaultAPIPort)
-	viper.SetDefault(flagPKIDir, defaultCLIPKIDir)
-	viper.SetDefault("timeout", defaultTimeout)
 
 	viper.SetEnvPrefix("ORION")
 	viper.AutomaticEnv()

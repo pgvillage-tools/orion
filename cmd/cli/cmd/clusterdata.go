@@ -21,13 +21,11 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -44,19 +42,13 @@ var cmdClusterData = &cobra.Command{
 }
 
 type clusterdataReadOptions struct {
-	pretty  bool
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
+	pretty bool
 }
 
 var readClusterdataOpts clusterdataReadOptions
 
 type clusterdataWriteOptions struct {
-	file    string
-	Host    string        `mapstructure:"host"`
-	Port    uint16        `mapstructure:"port"`
-	Timeout time.Duration `mapstructure:"timeout"`
+	file string
 }
 
 var writeClusterdataOpts clusterdataWriteOptions
@@ -74,42 +66,11 @@ var cmdWriteClusterData = &cobra.Command{
 }
 
 func init() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	cmdReadClusterData.PersistentFlags().BoolVar(&readClusterdataOpts.pretty, "pretty", false, "pretty print")
-	cmdReadClusterData.PersistentFlags().Uint16VarP(&readClusterdataOpts.Port, flagPort, "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag(flagPort, cmdReadClusterData.PersistentFlags().Lookup(flagPort)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdReadClusterData.PersistentFlags().StringVarP(&readClusterdataOpts.Host, flagHost, "H", defaultAPIIP,
-		"hostname or ip for connecting to the api")
-	if err := viper.BindPFlag(flagHost, cmdReadClusterData.PersistentFlags().Lookup(flagHost)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdReadClusterData.PersistentFlags().DurationVarP(&writeClusterdataOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"connection timeout for api endpoint")
-	if err := viper.BindPFlag(flagTimeout, cmdReadClusterData.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	cmdClusterData.AddCommand(cmdReadClusterData)
 
 	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.file, flagFile, "f", "",
 		"file containing the new cluster data")
-	cmdWriteClusterData.PersistentFlags().Uint16VarP(&writeClusterdataOpts.Port, flagPort, "p", defaultAPIPort,
-		"protocol for connecting to the api")
-	if err := viper.BindPFlag(flagPort, cmdWriteClusterData.PersistentFlags().Lookup(flagPort)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdWriteClusterData.PersistentFlags().StringVarP(&writeClusterdataOpts.Host, flagHost, "H", defaultAPIIP,
-		"host/ip for connecting to the api")
-	if err := viper.BindPFlag(flagHost, cmdWriteClusterData.PersistentFlags().Lookup(flagHost)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
-	cmdWriteClusterData.PersistentFlags().DurationVarP(&writeClusterdataOpts.Timeout, flagTimeout, "T", defaultTimeout,
-		"host/ip for connecting to the api")
-	if err := viper.BindPFlag(flagTimeout, cmdWriteClusterData.PersistentFlags().Lookup(flagTimeout)); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
-	}
 	cmdClusterData.AddCommand(cmdWriteClusterData)
 
 	CmdCLI.AddCommand(cmdClusterData)
@@ -187,7 +148,7 @@ func runWriteClusterdata(_ *cobra.Command, args []string) {
 		logger.Fatal().Msg("clusterdata write accepts at most one positional argument")
 	}
 
-	apiClient := newAPIClient(ctx, writeClusterdataOpts.Host, writeClusterdataOpts.Port)
+	apiClient := defaultAPIClient(ctx)
 	httpCode, putClusterErr := apiClient.PutCluster(cd)
 	if putClusterErr != nil {
 		logger.Fatal().
