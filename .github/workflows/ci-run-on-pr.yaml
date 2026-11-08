@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   codechanges:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       go: ${{ steps.decide.outputs.go }}
       e2e: ${{ steps.decide.outputs.e2e }}
@@ -124,7 +124,7 @@ jobs:
 
   check-go:
     name: Ensure Go modules synchronicity
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.go == 'true' }}
@@ -145,7 +145,7 @@ jobs:
 
   lint-go:
     name: Lint Go code
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.go == 'true' }}
@@ -172,7 +172,7 @@ jobs:
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.shell == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # shellcheck is preinstalled on the ubuntu runners, so this doesn't depend on a download from GitHub releases
@@ -183,7 +183,7 @@ jobs:
 
   check-docs:
     name: Build the docs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.docs == 'true' }}
@@ -208,7 +208,7 @@ jobs:
 
   unit-test:
     name: Run unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     permissions:
@@ -266,7 +266,7 @@ jobs:
 
   e2e-keeper-images:
     name: Build keeper images for running e2e
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.e2e == 'true' }}
@@ -315,7 +315,7 @@ jobs:
 
   e2e-other-images:
     name: Build other images for running e2e
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.e2e == 'true' }}
@@ -368,7 +368,7 @@ jobs:
 
   e2e-test:
     name: Run e2e tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
       - e2e-keeper-images
@@ -418,7 +418,7 @@ jobs:
   # are, it only passes when the images were built and the e2e tests passed on every PostgreSQL version (a failed image
   # build makes e2e-test skipped, which must not count as a pass).
   check-e2e-status:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
       - e2e-keeper-images
@@ -454,7 +454,7 @@ jobs:
 
   license-header-test:
     name: License header test
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - codechanges
     if: ${{ needs.codechanges.outputs.go == 'true' }}
