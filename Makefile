@@ -37,7 +37,7 @@ proxy:
 	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-proxy $(REPO_PATH)/cmd/proxy
 
 cli:
-	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion $(REPO_PATH)/cmd/cli
+	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-cli $(REPO_PATH)/cmd/cli
 
 api:
 	CGO_ENABLED=0 GO111MODULE=on go build -ldflags $(LD_FLAGS) -o $(PROJDIR)/bin/orion-api $(REPO_PATH)/cmd/api

@@ -40,11 +40,11 @@ const (
 
 // CmdCLI defines a cobra command to execute when running orion
 var CmdCLI = &cobra.Command{
-	Use:     "orion",
+	Use:     "orion-cli",
 	Short:   "orion command line interface",
 	Version: cmd.Version,
 	PersistentPreRun: func(c *cobra.Command, _ []string) {
-		if c.Name() != "orion" && c.Name() != "version" && !isPKICommand(c) {
+		if c.HasParent() && c.Name() != "version" && !isPKICommand(c) {
 			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 				_, logger := logging.GetLogComponent(c.Context(), logging.CmdComponent)
 				logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
@@ -82,7 +82,7 @@ func init() {
 var cmdVersion = &cobra.Command{
 	Use: "version",
 	Run: func(_ *cobra.Command, _ []string) {
-		stdout("orion version %s", cmd.Version)
+		stdout("orion-cli version %s", cmd.Version)
 	},
 	Short: "Display the version",
 }
