@@ -87,7 +87,7 @@ var _ = Describe("Connection", func() {
 
 		_, err = c.Patch(endpoints.ClusterSpecEndPoint, []byte(`{"c":3}`))
 		Ω(err).NotTo(HaveOccurred())
-		Ω(last).To(Equal(request{http.MethodPatch, "/v1/cluster/spec", "application/json", `{"c":3}`}))
+		Ω(last).To(Equal(request{http.MethodPatch, "/v1/cluster/spec", endpoints.ContentTypeMergePatch, `{"c":3}`}))
 	})
 	It("decodes the response of a GET", func() {
 		c := connect(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"mode":"normal"}`)) })
