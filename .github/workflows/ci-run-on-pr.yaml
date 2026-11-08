@@ -342,7 +342,7 @@ jobs:
 
       - name: installe etcd
         run: |
-          curl -L "${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" -o "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 "${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" -o "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
           tar xzvf "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz" -C "${ETCD_PATH}" --strip-components=1 --no-same-owner
           rm -f "/tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz"
 
