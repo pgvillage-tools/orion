@@ -164,6 +164,18 @@ func (tc *testCluster) waitForPrimary() string {
 	return primary
 }
 
+// probeGet gets ep from the probe port and returns the status code and the body
+func (tc *testCluster) probeGet(ctx context.Context, ep endpoints.ProbeEndPoint) (int, string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tc.probeURL+"/"+string(ep), nil)
+	Ω(err).NotTo(HaveOccurred())
+	resp, err := http.DefaultClient.Do(req)
+	Ω(err).NotTo(HaveOccurred())
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	Ω(err).NotTo(HaveOccurred())
+	return resp.StatusCode, string(body)
+}
+
 // add adds a container to the containers of the cluster (also when it failed to start, so it gets cleaned up)
 func (tc *testCluster) add(cnt testcontainers.Container) {
 	if cnt != nil {
