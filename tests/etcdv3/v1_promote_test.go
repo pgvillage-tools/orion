@@ -1,34 +1,51 @@
 package etcdv3_test
 
 import (
+	"context"
 	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 )
 
 var _ = Describe("PUT /v1/cluster/promote", func() {
-	// Promoting a primary cluster changes nothing (at most it sets the default role, primary, explicitly), so this
+	// Promoting a primary cluster changes nothing (also when its spec has no role: primary is the default), so this
 	// test can use the shared cluster. Promoting a standby cluster needs a second cluster that replicates from the
 	// first; that is not covered yet.
-	It("accepts promoting a cluster that is already primary, and keeps it primary", func() {
+	It("does nothing for a cluster that is already primary", func() {
 		primary := sharedCluster.waitForPrimary()
+		before, _, err := sharedCluster.apiClient.GetClusterSpec()
+		Ω(err).NotTo(HaveOccurred())
 
 		httpCode, err := sharedCluster.apiClient.PutPromoteReplicaSet()
 		Ω(err).NotTo(HaveOccurred())
-		Ω(httpCode).To(BeElementOf(http.StatusOK, http.StatusAccepted))
+		Ω(httpCode).To(Equal(http.StatusOK))
 
-		spec, _, err := sharedCluster.apiClient.GetClusterSpec()
+		after, _, err := sharedCluster.apiClient.GetClusterSpec()
 		Ω(err).NotTo(HaveOccurred())
-		if spec.Role != nil {
-			Ω(*spec.Role).To(Equal(apiv1.Primary))
-		}
+		Ω(after.Role).To(Equal(before.Role), "the spec doesn't change (the role stays unset: primary is the default)")
 		Ω(sharedCluster.waitForPrimary()).To(Equal(primary))
 	})
 	It("is idempotent", func() {
 		httpCode, err := sharedCluster.apiClient.PutPromoteReplicaSet()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
+	})
+})
+
+var _ = Describe("PUT /v1/cluster/promote without a cluster, or without the store", Ordered, func() {
+	// only etcd and the api: no cluster data yet
+	tc := withOwnAPI()
+
+	It("returns 404 without a cluster", func() {
+		httpCode, err := tc.apiClient.PutPromoteReplicaSet()
+		Ω(err).To(MatchError(ContainSubstring("no cluster yet")))
+		Ω(httpCode).To(Equal(http.StatusNotFound))
+	})
+	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+		pauseContainer(ctx, tc.etcd)
+		httpCode, err := tc.apiClient.PutPromoteReplicaSet()
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
 })
