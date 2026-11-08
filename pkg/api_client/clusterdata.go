@@ -25,7 +25,7 @@ func (c Connection) GetCluster() (cd *apiv1.Data, httpCode int, err error) {
 	if err != nil {
 		return nil, httpCode, err
 	}
-	return &myClusterData, httpClientNoError, nil
+	return &myClusterData, httpCode, nil
 }
 
 // PutCluster uses the API to write cluster data
