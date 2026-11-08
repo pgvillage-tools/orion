@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 )
 
 var _ = Describe("GET /v1/cluster/status", func() {
@@ -33,6 +34,7 @@ var _ = Describe("GET /v1/cluster/status", func() {
 			g.Ω(status.Status).To(HaveKeyWithValue("available", true))
 			g.Ω(status.Status).To(HaveKeyWithValue("primaryKeeper", primary))
 			g.Ω(status.Status).To(HaveKeyWithValue("primaryDB", Not(BeEmpty())))
+			g.Ω(status.Status).To(HaveKeyWithValue("role", string(apiv1.Primary)))
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
 	})
 	It("returns the uids of the keepers in order", func() {
