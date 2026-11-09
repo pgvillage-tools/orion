@@ -14,21 +14,17 @@
 package cmd
 
 import (
-	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/viper"
 )
 
-func initConfig() {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
+func initConfig() error {
 	home, homedirErr := os.UserHomeDir()
 	if homedirErr != nil {
-		logger.Fatal().AnErr(logging.KeyError, homedirErr).Msg("failed to detect home dir")
+		return fmt.Errorf("failed to detect home dir: %w", homedirErr)
 	}
 	configDir := filepath.Join(home, ".orion")
 	viper.AddConfigPath(configDir)
@@ -36,7 +32,7 @@ func initConfig() {
 	viper.SetConfigType("yml")
 
 	if err := os.MkdirAll(configDir, readWrite); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create config dir")
+		return fmt.Errorf("failed to create config dir: %w", err)
 	}
 	// Defaults, not viper.Set: a value set with viper.Set overrules the flags
 	viper.SetDefault(flagHost, defaultAPIIP)
@@ -47,7 +43,7 @@ func initConfig() {
 	configFile := filepath.Join(configDir, "config.yml")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		if err := viper.SafeWriteConfig(); err != nil {
-			logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create config file")
+			return fmt.Errorf("failed to create config file: %w", err)
 		}
 	}
 
@@ -55,6 +51,7 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to parse config file")
+		return fmt.Errorf("failed to parse config file: %w", err)
 	}
+	return nil
 }

@@ -17,13 +17,11 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"io"
-	"os"
+	"errors"
+	"fmt"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
 )
@@ -57,13 +55,13 @@ var writeClusterdataOpts clusterdataWriteOptions
 
 var cmdReadClusterData = &cobra.Command{
 	Use:   "read",
-	Run:   readClusterdata,
+	RunE:  readClusterdata,
 	Short: "Retrieve the current cluster data",
 }
 
 var cmdWriteClusterData = &cobra.Command{
 	Use:   "write",
-	Run:   runWriteClusterdata,
+	RunE:  runWriteClusterdata,
 	Short: "Write cluster data",
 }
 
@@ -80,86 +78,58 @@ func init() {
 	CmdCLI.AddCommand(cmdClusterData)
 }
 
-func readClusterdata(_ *cobra.Command, _ []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	apiClient := defaultAPIClient(ctx)
+func readClusterdata(_ *cobra.Command, _ []string) error {
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
 	cd, etag, httpCode, getClusterErr := apiClient.GetClusterWithETag()
 	if getClusterErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, getClusterErr).
-			Int("http return code", httpCode).
-			Msg("failed to get clusterdata")
+		return apiError("failed to get the cluster data", httpCode, getClusterErr)
 	}
 	// on stderr, so stdout stays clean; pass it to `orion-cli clusterdata write --if-match`
 	stderr("ETag: %s", etag)
 	var clusterdataj []byte
-	var marshalErr error
 	if readClusterdataOpts.pretty {
-		clusterdataj, marshalErr = json.MarshalIndent(cd, "", "\t")
-		if marshalErr != nil {
-			logger.Fatal().AnErr(logging.KeyError, marshalErr).Msg("failed to marshall clusterdata")
-		}
+		clusterdataj, err = json.MarshalIndent(cd, "", "\t")
 	} else {
-		clusterdataj, marshalErr = json.Marshal(cd)
-		if marshalErr != nil {
-			logger.Fatal().AnErr(logging.KeyError, marshalErr).Msg("failed to marshall clusterdata")
-		}
+		clusterdataj, err = json.Marshal(cd)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to marshal the cluster data: %w", err)
 	}
 	stdout("%s", clusterdataj)
+	return nil
 }
 
-func runWriteClusterdata(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-
-	cd := &apiv1.Data{}
+func runWriteClusterdata(_ *cobra.Command, args []string) error {
+	var data []byte
 	switch len(args) {
 	case 1:
-		encodingErr := json.Unmarshal([]byte(args[0]), cd)
-		if encodingErr != nil {
-			logger.Fatal().
-				AnErr(logging.KeyError, encodingErr).
-				Str("input", "argument").
-				Str("spec", args[0]).
-				Msg("invalid cluster data spec")
-		}
+		data = []byte(args[0])
 	case 0:
 		if writeClusterdataOpts.file == "" {
-			logger.Fatal().Msg("no cluster data provided: pass it as an argument or via --file")
+			return errors.New("no cluster data provided: pass it as an argument or via --file")
 		}
-		var readErr error
-		var data []byte
-		if writeClusterdataOpts.file == "-" {
-			data, readErr = io.ReadAll(os.Stdin)
-		} else {
-			data, readErr = os.ReadFile(writeClusterdataOpts.file)
-		}
-		if readErr != nil {
-			logger.Fatal().
-				AnErr(logging.KeyError, readErr).
-				Str("source", writeClusterdataOpts.file).
-				Msg("cannot read from stdin")
-		}
-		if encodingErr := json.Unmarshal(data, cd); encodingErr != nil {
-			logger.Fatal().
-				AnErr(logging.KeyError, encodingErr).
-				Str("source", writeClusterdataOpts.file).
-				Str("spec", string(data)).
-				Msg("invalid cluster data spec")
+		var err error
+		if data, err = readInput(writeClusterdataOpts.file); err != nil {
+			return err
 		}
 	default:
-		logger.Fatal().Msg("clusterdata write accepts at most one positional argument")
+		return errors.New("clusterdata write accepts at most one positional argument")
+	}
+	cd := &apiv1.Data{}
+	if err := json.Unmarshal(data, cd); err != nil {
+		return fmt.Errorf("invalid cluster data: %w", err)
 	}
 
-	apiClient := defaultAPIClient(ctx)
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
 	httpCode, _, putClusterErr := apiClient.PutClusterIfMatch(cd, writeClusterdataOpts.ifMatch)
 	if putClusterErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, putClusterErr).
-			Int("http return code", httpCode).
-			Msg("failed to get clusterdata")
+		return apiError("failed to write the cluster data", httpCode, putClusterErr)
 	}
+	return nil
 }

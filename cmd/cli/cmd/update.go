@@ -16,20 +16,18 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"io"
-	"os"
+	"errors"
+	"fmt"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
 )
 
 var cmdUpdate = &cobra.Command{
 	Use:   "update",
-	Run:   update,
+	RunE:  update,
 	Short: "Update a cluster specification",
 }
 
@@ -53,61 +51,48 @@ func init() {
 	CmdCLI.AddCommand(cmdUpdate)
 }
 
-func update(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
+func update(c *cobra.Command, args []string) error {
 	if len(args) > 1 {
-		die("too many arguments")
+		return errors.New("too many arguments")
 	}
 	if updateOpts.file == "" && len(args) < 1 {
-		die("no cluster spec provided as argument and no file provided (--file/-f option)")
+		return errors.New("no cluster spec provided as argument and no file provided (--file/-f option)")
 	}
 	if updateOpts.file != "" && len(args) == 1 {
-		die("only one of cluster spec provided as argument or file must provided (--file/-f option)")
+		return errors.New("only one of cluster spec provided as argument or file must provided (--file/-f option)")
 	}
-
 	var patch []byte
 	if len(args) == 1 {
 		patch = []byte(args[0])
 	} else {
 		var err error
-		if updateOpts.file == "-" {
-			patch, err = io.ReadAll(os.Stdin)
-			if err != nil {
-				die("cannot read from stdin: %v", err)
-			}
-		} else {
-			patch, err = os.ReadFile(updateOpts.file)
-			if err != nil {
-				die("cannot read file: %v", err)
-			}
+		if patch, err = readInput(updateOpts.file); err != nil {
+			return err
 		}
 	}
 
-	apiClient := defaultAPIClient(ctx)
+	var newSpec *cluster.Spec
+	if !updateOpts.patch {
+		newSpec = &cluster.Spec{}
+		if err := json.Unmarshal(patch, newSpec); err != nil {
+			return fmt.Errorf("invalid cluster spec: %w", err)
+		}
+	}
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
 	var httpCode int
 	var updateErr error
 	if updateOpts.patch {
 		httpCode, _, updateErr = apiClient.PatchClusterSpecIfMatch(patch, updateOpts.ifMatch)
 	} else {
-		cd := &cluster.Spec{}
-		if encodingErr := json.Unmarshal(patch, cd); encodingErr != nil {
-			logger.Fatal().
-				AnErr(logging.KeyError, encodingErr).
-				Str("source", updateOpts.file).
-				Str("spec", string(patch)).
-				Msg("invalid cluster data spec")
-		}
-		httpCode, _, updateErr = apiClient.PutClusterSpecIfMatch(cd, updateOpts.ifMatch)
+		httpCode, _, updateErr = apiClient.PutClusterSpecIfMatch(newSpec, updateOpts.ifMatch)
 	}
 	if updateErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, updateErr).
-			Int("http return code", httpCode).
-			Msg("failed to get clusterdata")
+		return apiError("failed to update the cluster spec", httpCode, updateErr)
 	}
-	waitUntilConverged(ctx, apiClient, updateWait, "")
+	return waitUntilConverged(c.Context(), apiClient, updateWait, "")
 }
 
 var updateWait waitOptions

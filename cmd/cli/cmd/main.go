@@ -18,6 +18,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -43,14 +44,18 @@ var CmdCLI = &cobra.Command{
 	Use:     "orion-cli",
 	Short:   "orion command line interface",
 	Version: cmd.Version,
-	PersistentPreRun: func(c *cobra.Command, _ []string) {
+	// Errors are returned by the commands (RunE) and reported once, by Execute
+	SilenceErrors: true,
+	PersistentPreRunE: func(c *cobra.Command, _ []string) error {
+		// The flags and arguments are fine once we get here: from now on an error isn't a usage error, so don't
+		// print the usage with it
+		c.SilenceUsage = true
 		if c.HasParent() && c.Name() != "version" && !isPKICommand(c) {
 			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-				_, logger := logging.GetLogComponent(c.Context(), logging.CmdComponent)
-				logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
+				return err
 			}
 		}
-		initConfig()
+		return initConfig()
 	},
 	// just defined to make --version work
 	Run: func(c *cobra.Command, _ []string) { _ = c.Help() },
@@ -91,32 +96,55 @@ func init() {
 	CmdCLI.AddCommand(cmdVersion)
 }
 
-// Execute is run when orion is executed
+// Execute is run when orion is executed. It is the only place where the cli exits with an error: the commands return
+// theirs.
 func Execute() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
 	if err := flagutil.SetFlagsFromEnv(CmdCLI.PersistentFlags(), "ORIONCLI"); err != nil {
-		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
+		logger.Fatal().Msg(err.Error())
 	}
 	if err := CmdCLI.Execute(); err != nil {
-		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
+		logger.Fatal().Msg(err.Error())
 	}
 }
 
+// stderr writes a line to the error output of the cli (os.Stderr, unless a test set another one)
 func stderr(format string, a ...any) {
 	out := fmt.Sprintf(format, a...)
-	fmt.Fprintln(os.Stderr, strings.TrimSuffix(out, "\n"))
+	// nowhere left to report a failed write to stderr
+	_, _ = fmt.Fprintln(CmdCLI.ErrOrStderr(), strings.TrimSuffix(out, "\n"))
 }
 
+// stdout writes a line to the output of the cli (os.Stdout, unless a test set another one)
 func stdout(format string, a ...any) {
 	out := fmt.Sprintf(format, a...)
-	if _, err := fmt.Fprintln(os.Stdout, strings.TrimSuffix(out, "\n")); err != nil {
+	if _, err := fmt.Fprintln(CmdCLI.OutOrStdout(), strings.TrimSuffix(out, "\n")); err != nil {
 		log.Fatalf("failed to write to stdout: %v", err)
 	}
 }
 
-func die(format string, a ...any) {
-	stderr(format, a...)
-	os.Exit(1)
+// apiError is the error of a failed api request: what failed, why, and the http code when the api answered
+func apiError(what string, httpCode int, err error) error {
+	if httpCode > 0 {
+		return fmt.Errorf("%s: %w (http %d)", what, err, httpCode)
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
+// readInput returns the contents of file, or of the input of the cli (os.Stdin) for "-"
+func readInput(file string) ([]byte, error) {
+	if file == "-" {
+		data, err := io.ReadAll(CmdCLI.InOrStdin())
+		if err != nil {
+			return nil, fmt.Errorf("cannot read from stdin: %w", err)
+		}
+		return data, nil
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read %s: %w", file, err)
+	}
+	return data, nil
 }
 
 // isPKICommand returns true for the pki commands, which don't need a store

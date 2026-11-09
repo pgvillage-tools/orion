@@ -16,14 +16,12 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/logging"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
 
 	"github.com/spf13/cobra"
 )
@@ -34,7 +32,7 @@ const (
 
 var cmdStatus = &cobra.Command{
 	Use:   "status",
-	Run:   status,
+	RunE:  status,
 	Short: "Display the current cluster status",
 }
 
@@ -84,84 +82,82 @@ type ClusterStatus struct {
 	MasterDBUID     string `json:"master_db_uid"`
 }
 
-func status(_ *cobra.Command, _ []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	ic, generateErr := generateStatus(ctx)
+func status(_ *cobra.Command, _ []string) error {
 	switch statusOpts.Format {
-	case "json":
-		renderJSON(ctx, ic, generateErr)
-	case "text":
-		renderText(ctx, ic, generateErr)
-	case "":
-		renderText(ctx, ic, generateErr)
+	case "json", "text", "":
 	default:
-		die("unrecognised output format %s", statusOpts.Format)
+		return fmt.Errorf("unrecognised output format %s", statusOpts.Format)
 	}
-}
-
-func renderJSON(_ context.Context, ic *cluster.InfoCluster, generateErr error) {
-	if generateErr != nil {
-		marshalJSON(generateErr)
-	} else {
-		marshalJSON(status)
-	}
-}
-
-func marshalJSON(value any) {
-	output, err := json.MarshalIndent(value, "", "\t")
+	apiClient, err := defaultAPIClient()
 	if err != nil {
-		die("failed to marshal error: %v", err)
+		return err
+	}
+	ic, httpCode, err := apiClient.GetStatus()
+	if err != nil {
+		return apiError("failed to get the cluster status", httpCode, err)
+	}
+	if statusOpts.Format == "json" {
+		return renderJSON(ic)
+	}
+	return renderText(apiClient, ic)
+}
+
+func renderJSON(ic *cluster.InfoCluster) error {
+	output, err := json.MarshalIndent(ic, "", "\t")
+	if err != nil {
+		return fmt.Errorf("failed to marshal the status: %w", err)
 	}
 	stdout("%s", output)
+	return nil
 }
 
-func tabPrint(ctx context.Context, tw *tabwriter.Writer, formatted string, args ...any) {
-	if _, err := fmt.Fprintf(tw, formatted, args...); err != nil {
-		_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-		logger.Fatal().AnErr(logging.KeyErr, err).Msg("failed to write to tab writer")
+// tabPrinter prints aligned columns to the output of the cli; it keeps the first error, so it can be checked once
+type tabPrinter struct {
+	tw  *tabwriter.Writer
+	err error
+}
+
+func newTabPrinter() *tabPrinter {
+	return &tabPrinter{tw: tabwriter.NewWriter(CmdCLI.OutOrStdout(), 0, tabWidth, 1, '\t', 0)}
+}
+
+func (p *tabPrinter) printf(format string, args ...any) {
+	if p.err == nil {
+		_, p.err = fmt.Fprintf(p.tw, format, args...)
 	}
 }
 
-func tabFlush(ctx context.Context, tw *tabwriter.Writer) {
-	if err := tw.Flush(); err != nil {
-		_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-		logger.Fatal().AnErr(logging.KeyErr, err).Msg("failed to flush tab writer")
+func (p *tabPrinter) flush() {
+	if p.err == nil {
+		p.err = p.tw.Flush()
 	}
 }
-func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error) {
-	if generateErr != nil {
-		die("%v", generateErr)
-	}
 
-	tabOut := new(tabwriter.Writer)
-	tabOut.Init(os.Stdout, 0, tabWidth, 1, '\t', 0)
-
+func renderText(apiClient client.Connection, ic *cluster.InfoCluster) error {
+	tabOut := newTabPrinter()
 	stdout("=== Active sentinels ===")
 	stdout("")
 	if len(ic.Sentinels) == 0 {
 		stdout("No active sentinels")
 	} else {
-		tabPrint(ctx, tabOut, "ID\tLEADER\n")
+		tabOut.printf("ID\tLEADER\n")
 		for _, s := range ic.Sentinels {
-			tabPrint(ctx, tabOut, "%s\t%t\n", s.UID, s.Leader)
-			tabFlush(ctx, tabOut)
+			tabOut.printf("%s\t%t\n", s.UID, s.Leader)
+			tabOut.flush()
 		}
 	}
-
 	stdout("")
 	stdout("=== Active proxies ===")
 	stdout("")
 	if len(ic.Proxies) == 0 {
 		stdout("No active proxies")
 	} else {
-		tabPrint(ctx, tabOut, "ID\n")
+		tabOut.printf("ID\n")
 		for _, p := range ic.Proxies {
-			tabPrint(ctx, tabOut, "%s\n", p.UID)
-			tabFlush(ctx, tabOut)
+			tabOut.printf("%s\n", p.UID)
+			tabOut.flush()
 		}
 	}
-
 	stdout("")
 	stdout("=== Keepers ===")
 	stdout("")
@@ -169,23 +165,17 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 		stdout("No keepers available")
 		stdout("")
 	} else {
-		tabPrint(ctx, tabOut,
-			"UID\tHEALTHY\tPG LISTENADDRESS\tPG HEALTHY\tPG WANTEDGENERATION\tPG CURRENTGENERATION\n")
+		tabOut.printf("UID\tHEALTHY\tPG LISTENADDRESS\tPG HEALTHY\tPG WANTEDGENERATION\tPG CURRENTGENERATION\n")
 		for _, k := range ic.Keepers {
-			tabPrint(
-				ctx,
-				tabOut,
-				"%s\t%t\t%s\t%t\t%d\t%d\t\n",
-				k.UID,
-				k.Healthy,
-				k.ListenAddress,
-				k.PgHealthy,
-				k.PgWantedGeneration,
-				k.PgCurrentGeneration,
-			)
-			tabFlush(ctx, tabOut)
+			tabOut.printf("%s\t%t\t%s\t%t\t%d\t%d\t\n", k.UID, k.Healthy, k.ListenAddress, k.PgHealthy,
+				k.PgWantedGeneration, k.PgCurrentGeneration)
+			tabOut.flush()
 		}
 	}
+	if tabOut.err != nil {
+		return fmt.Errorf("failed to write the status: %w", tabOut.err)
+	}
+
 	// the api only sets primaryKeeper when the cluster is available (it has a primary)
 	if primaryKeeper, ok := ic.Status["primaryKeeper"].(string); !ok || primaryKeeper == "" {
 		stdout("No cluster available")
@@ -199,14 +189,9 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 		stdout("Master Keeper: %s", primaryKeeper)
 	}
 
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	apiClient := defaultAPIClient(ctx)
 	cd, httpCode, getClusterErr := apiClient.GetCluster()
 	if getClusterErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, getClusterErr).
-			Int("http return code", httpCode).
-			Msg("failed to get clusterdata")
+		return apiError("failed to get the cluster data", httpCode, getClusterErr)
 	}
 	if primaryDB, ok := ic.Status["primaryDB"].(string); ok && primaryDB != "" {
 		stdout("")
@@ -215,6 +200,7 @@ func renderText(ctx context.Context, ic *cluster.InfoCluster, generateErr error)
 		printTree(primaryDB, cd, 0, "", true)
 	}
 	stdout("")
+	return nil
 }
 
 func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bool) {
@@ -259,17 +245,4 @@ func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bo
 			}
 		}
 	}
-}
-
-func generateStatus(ctx context.Context) (*cluster.InfoCluster, error) {
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	apiClient := defaultAPIClient(ctx)
-	ic, httpCode, getClusterErr := apiClient.GetStatus()
-	if getClusterErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, getClusterErr).
-			Int("http return code", httpCode).
-			Msg("failed to get info on cluster")
-	}
-	return ic, nil
 }

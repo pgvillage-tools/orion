@@ -16,9 +16,8 @@
 package cmd
 
 import (
-	"context"
+	"fmt"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -26,7 +25,7 @@ import (
 
 var cmdConnect = &cobra.Command{
 	Use:   "connect",
-	Run:   connectCluster,
+	RunE:  connectCluster,
 	Short: "connect to an API",
 }
 
@@ -41,25 +40,19 @@ func init() {
 	CmdCLI.AddCommand(cmdConnect)
 }
 
-func connectCluster(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	defer cancelFunc()
-
-	apiClient := defaultAPIClient(ctx)
-
+func connectCluster(_ *cobra.Command, _ []string) error {
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
 	identity, httpCode, whoAmIErr := apiClient.WhoAmI()
 	if whoAmIErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, whoAmIErr).
-			Int("http_code", httpCode).
-			Str("url", apiClient.EndpointURL(endpoints.WhoAmIEndPoint)).
-			Msg("connecting to the api failed")
+		return apiError("connecting to the api ("+apiClient.EndpointURL(endpoints.WhoAmIEndPoint)+") failed", httpCode,
+			whoAmIErr)
 	}
 	stdout("Connected to the api as %s (%s)", identity.Name, identity.Method)
 	if writeErr := viper.WriteConfig(); writeErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, writeErr).
-			Msg("updating cli config failed")
+		return fmt.Errorf("updating cli config failed: %w", writeErr)
 	}
+	return nil
 }

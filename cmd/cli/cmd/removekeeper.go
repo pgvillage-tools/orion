@@ -16,9 +16,8 @@
 package cmd
 
 import (
-	"context"
+	"errors"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +27,7 @@ var removeKeeperCmd = &cobra.Command{
 	Long: "Removes a keeper, and its database, from the cluster data, for a keeper that is gone for good (e.g. its " +
 		"node is lost). A keeper that still runs registers itself again. The keeper of the primary can't be removed: " +
 		"fail it first (orion-cli failkeeper), and remove it once another keeper runs the primary.",
-	Run: removeKeeper,
+	RunE: removeKeeper,
 }
 
 var removeKeeperWait waitOptions
@@ -38,28 +37,20 @@ func init() {
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
 
-func removeKeeper(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	defer cancelFunc()
+func removeKeeper(c *cobra.Command, args []string) error {
 	if len(args) > 1 {
-		die("too many arguments")
+		return errors.New("too many arguments")
 	}
-
 	if len(args) == 0 {
-		die("keeper uid required")
+		return errors.New("keeper uid required")
 	}
-
 	keeperID := args[0]
-
-	apiClient := defaultAPIClient(ctx)
-
-	httpCode, deleteErr := apiClient.DeleteKeeper(keeperID)
-	if deleteErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, deleteErr).
-			Int("http_code", httpCode).
-			Msg("failed to remove the keeper")
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
 	}
-	waitUntilConverged(ctx, apiClient, removeKeeperWait, "")
+	if httpCode, deleteErr := apiClient.DeleteKeeper(keeperID); deleteErr != nil {
+		return apiError("failed to remove the keeper", httpCode, deleteErr)
+	}
+	return waitUntilConverged(c.Context(), apiClient, removeKeeperWait, "")
 }

@@ -21,7 +21,6 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/logging"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/cobra"
 )
@@ -66,11 +65,10 @@ func converged(status *apiv1.InfoCluster, notPrimary string) (bool, string) {
 
 // waitUntilConverged polls the cluster status until converged (see converged), or until the timeout of opts. It does
 // nothing without --wait.
-func waitUntilConverged(ctx context.Context, apiClient client.Connection, opts waitOptions, notPrimary string) {
+func waitUntilConverged(ctx context.Context, apiClient client.Connection, opts waitOptions, notPrimary string) error {
 	if !opts.wait {
-		return
+		return nil
 	}
-	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 	deadline := time.Now().Add(opts.timeout)
 	reason := ""
 	for {
@@ -79,14 +77,18 @@ func waitUntilConverged(ctx context.Context, apiClient client.Connection, opts w
 			var done bool
 			if done, reason = converged(status, notPrimary); done {
 				stdout("the cluster applied the change")
-				return
+				return nil
 			}
 		} else {
 			reason = err.Error()
 		}
 		if time.Now().After(deadline) {
-			logger.Fatal().Str("waiting for", reason).Msg(fmt.Sprintf("--wait timed out after %s", opts.timeout))
+			return fmt.Errorf("--wait timed out after %s, waiting for: %s", opts.timeout, reason)
 		}
-		time.Sleep(waitPollInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitPollInterval):
+		}
 	}
 }

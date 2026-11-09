@@ -16,18 +16,17 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/logging"
 
 	"github.com/spf13/cobra"
 )
 
 var cmdSpec = &cobra.Command{
 	Use:   "spec",
-	Run:   spec,
+	RunE:  spec,
 	Short: "Retrieve the current cluster specification",
 }
 
@@ -112,36 +111,26 @@ type ClusterSpecDefaults struct {
 	AutomaticPgRestart               *bool                     `json:"automaticPgRestart"`
 }
 
-func spec(_ *cobra.Command, _ []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-
-	apiClient := defaultAPIClient(ctx)
+func spec(_ *cobra.Command, _ []string) error {
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
 	currentSpec, etag, httpCode, getSpecErr := apiClient.GetClusterSpecWithETag()
 	if getSpecErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, getSpecErr).
-			Int("http return code", httpCode).
-			Msg("failed to get the cluster spec")
+		return apiError("failed to get the cluster spec", httpCode, getSpecErr)
 	}
 	// on stderr, so stdout stays a clean spec; pass it to `orion-cli update --if-match` to only update this version
 	stderr("ETag: %s", etag)
-
 	var specj []byte
-	var marshalErr error
 	if specOpts.defaults {
-		cs := (*ClusterSpecDefaults)(currentSpec.WithDefaults())
-		specj, marshalErr = json.MarshalIndent(cs, "", "\t")
+		specj, err = json.MarshalIndent((*ClusterSpecDefaults)(currentSpec.WithDefaults()), "", "\t")
 	} else {
-		cs := (*ClusterSpecNoDefaults)(currentSpec)
-		specj, marshalErr = json.MarshalIndent(cs, "", "\t")
+		specj, err = json.MarshalIndent((*ClusterSpecNoDefaults)(currentSpec), "", "\t")
 	}
-	if marshalErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, marshalErr).
-			Msg("failed to marshall spec")
+	if err != nil {
+		return fmt.Errorf("failed to marshal the spec: %w", err)
 	}
-
 	stdout("%s", specj)
+	return nil
 }

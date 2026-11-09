@@ -16,15 +16,14 @@
 package cmd
 
 import (
-	"context"
+	"errors"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
 )
 
 var cmdPromote = &cobra.Command{
 	Use:   "promote",
-	Run:   promote,
+	RunE:  promote,
 	Short: "Promotes a standby cluster to a primary cluster",
 }
 
@@ -35,22 +34,16 @@ func init() {
 	CmdCLI.AddCommand(cmdPromote)
 }
 
-func promote(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	defer cancelFunc()
+func promote(c *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		logger.Fatal().Msg("too many arguments")
+		return errors.New("too many arguments")
 	}
-
-	apiClient := defaultAPIClient(ctx)
-
-	httpCode, putErr := apiClient.PromoteCluster()
-	if putErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, putErr).
-			Int("http_code", httpCode).
-			Msg("promote failed")
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
 	}
-	waitUntilConverged(ctx, apiClient, promoteWait, "")
+	if httpCode, promoteErr := apiClient.PromoteCluster(); promoteErr != nil {
+		return apiError("promote failed", httpCode, promoteErr)
+	}
+	return waitUntilConverged(c.Context(), apiClient, promoteWait, "")
 }
