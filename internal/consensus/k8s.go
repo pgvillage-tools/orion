@@ -205,7 +205,7 @@ func (s *KubeStore) AtomicPutClusterData(ctx context.Context, cd *cluster.Data, 
 		return err
 	})
 	if retryErr != nil {
-		return nil, fmt.Errorf("update failed: %v", retryErr)
+		return nil, fmt.Errorf("update failed: %w", retryErr)
 	}
 	return &KVPair{Value: cdj}, nil
 }
