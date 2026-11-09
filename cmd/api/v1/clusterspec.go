@@ -64,7 +64,7 @@ func (h *Handlers) ClusterSpecRoutes() []Route {
 
 // GetClusterSpecHandler endpoint
 func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	cd, _, err := h.client.GetClusterData(ctx)
@@ -84,7 +84,7 @@ func (h *Handlers) GetClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 // cluster spec
 func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -118,7 +118,7 @@ func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Reques
 // PutClusterSpecHandler endpoint
 func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	patch, err := io.ReadAll(http.MaxBytesReader(w, r.Body, readMaxBytes))

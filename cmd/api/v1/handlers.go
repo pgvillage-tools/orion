@@ -55,6 +55,7 @@ func (h *Handlers) Routes() []Route {
 	routes = append(routes, h.FailKeeperRoutes()...)
 	routes = append(routes, h.PromoteReplicaSetRoutes()...)
 	routes = append(routes, h.StatusRoutes()...)
+	routes = append(routes, h.MemberRoutes()...)
 	routes = append(routes, h.WhoAmIRoutes()...)
 	return routes
 }
