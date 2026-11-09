@@ -43,16 +43,6 @@ override:
     threshold: 0
   - path: ^internal/flagutil/env.go
     threshold: 0
-  - path: ^internal/store/election.go
-    threshold: 0
-  - path: ^internal/store/etcdv3.go
-    threshold: 0
-  - path: ^internal/store/k8s.go
-    threshold: 0
-  - path: ^internal/store/kvbacked.go
-    threshold: 0
-  - path: ^internal/store/libkv.go
-    threshold: 0
   - path: ^pkg/api_client/clusterdata.go
     threshold: 0
   - path: ^pkg/api_client/clusterspec.go
@@ -75,8 +65,6 @@ override:
   - path: ^internal/postgresql$
     threshold: 13.9
   - path: ^internal/flagutil$
-    threshold: 0
-  - path: ^internal/consensus
     threshold: 0
   - path: ^pkg/api_client$
     threshold: 0

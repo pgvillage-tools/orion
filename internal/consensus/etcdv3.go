@@ -100,7 +100,7 @@ func (s *etcdV3Store) AtomicPut(
 	if options != nil {
 		if options.TTL > 0 {
 			ctx, cancel := context.WithTimeout(pctx, s.requestTimeout)
-			lease, err := s.c.Grant(ctx, int64(options.TTL))
+			lease, err := s.c.Grant(ctx, int64(options.TTL.Seconds()))
 			cancel()
 			if err != nil {
 				return nil, err
