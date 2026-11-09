@@ -253,6 +253,9 @@ func (tc *testCluster) terminate(ctx context.Context, failed bool) {
 		return
 	}
 	for _, cnt := range tc.all {
+		// A spec may leave a container paused: its DeferCleanup that unpauses it runs after the AfterAll that calls
+		// terminate. Docker stops a paused container, podman refuses to ("container state improper").
+		_ = unpause(ctx, cnt) // fails for a container that isn't paused
 		Ω(cnt.Terminate(ctx)).To(Succeed())
 	}
 	if tc.nw != nil {
