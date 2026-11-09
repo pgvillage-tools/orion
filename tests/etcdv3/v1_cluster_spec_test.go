@@ -104,6 +104,43 @@ var _ = Describe("/v1/cluster/spec", Ordered, func() {
 			return pgSetting(ctx, "work_mem")
 		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Equal("8MB"))
 	})
+	It("refuses a write with an old ETag (412), and accepts the current one", func() {
+		_, etag, _, err := tc.apiClient.GetClusterSpecWithETag()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(etag).To(MatchRegexp(`^"[0-9a-f]+"$`))
+
+		// a write in between makes etag old
+		_, newETag, err := tc.apiClient.PatchClusterSpecIfMatch([]byte(`{"pgParameters":{"work_mem":"16MB"}}`), etag)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(newETag).NotTo(Equal(etag))
+
+		httpCode, _, err := tc.apiClient.PatchClusterSpecIfMatch([]byte(`{"pgParameters":{"work_mem":"32MB"}}`), etag)
+		Ω(err).To(MatchError(ContainSubstring("412 Precondition Failed")))
+		Ω(httpCode).To(Equal(http.StatusPreconditionFailed))
+		spec, _, err := tc.apiClient.GetClusterSpec()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(spec.PGParameters).To(HaveKeyWithValue("work_mem", "16MB"), "the refused patch changed nothing")
+
+	})
+	It("refuses to replace the cluster data with an old ETag (412)", func() {
+		// the ETag of all cluster data is its store revision, which changes with every write (also the sentinel's)
+		cd, old, _, err := tc.apiClient.GetClusterWithETag()
+		Ω(err).NotTo(HaveOccurred())
+		_, _, err = tc.apiClient.PatchClusterSpecIfMatch([]byte(`{"pgParameters":{"work_mem":"24MB"}}`), "")
+		Ω(err).NotTo(HaveOccurred())
+		httpCode, _, err := tc.apiClient.PutClusterIfMatch(cd, old)
+		Ω(err).To(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusPreconditionFailed))
+
+		// with the current ETag it works (the sentinel may write in between: then read it again)
+		Eventually(func(g Gomega) {
+			cd, current, _, err := tc.apiClient.GetClusterWithETag()
+			g.Ω(err).NotTo(HaveOccurred())
+			httpCode, _, err := tc.apiClient.PutClusterIfMatch(cd, current)
+			g.Ω(err).NotTo(HaveOccurred())
+			g.Ω(httpCode).To(Equal(http.StatusOK))
+		}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
+	})
 })
 
 var _ = Describe("/v1/cluster/spec without a cluster", Ordered, func() {

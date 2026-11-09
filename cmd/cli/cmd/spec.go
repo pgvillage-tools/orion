@@ -118,24 +118,23 @@ func spec(_ *cobra.Command, _ []string) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
 
 	apiClient := defaultAPIClient(ctx)
-	cd, httpCode, getClusterErr := apiClient.GetCluster()
-	if getClusterErr != nil {
+	currentSpec, etag, httpCode, getSpecErr := apiClient.GetClusterSpecWithETag()
+	if getSpecErr != nil {
 		logger.Fatal().
-			AnErr(logging.KeyError, getClusterErr).
+			AnErr(logging.KeyError, getSpecErr).
 			Int("http return code", httpCode).
-			Msg("failed to get clusterdata")
+			Msg("failed to get the cluster spec")
 	}
+	// on stderr, so stdout stays a clean spec; pass it to `orion-cli update --if-match` to only update this version
+	stderr("ETag: %s", etag)
 
 	var specj []byte
 	var marshalErr error
-	if cd.Cluster == nil {
-		logger.Fatal().Msg("cluster data does not include a cluster")
-	}
 	if specOpts.defaults {
-		cs := (*ClusterSpecDefaults)(cd.Cluster.DefSpec())
+		cs := (*ClusterSpecDefaults)(currentSpec.WithDefaults())
 		specj, marshalErr = json.MarshalIndent(cs, "", "\t")
 	} else {
-		cs := (*ClusterSpecNoDefaults)(cd.Cluster.Spec)
+		cs := (*ClusterSpecNoDefaults)(currentSpec)
 		specj, marshalErr = json.MarshalIndent(cs, "", "\t")
 	}
 	if marshalErr != nil {

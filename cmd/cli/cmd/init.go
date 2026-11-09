@@ -43,6 +43,7 @@ var initOpts InitOptions
 func init() {
 	cmdInit.PersistentFlags().StringVarP(&initOpts.file, flagFile, "f", "-", "file to read as input, use - for stdin")
 
+	addWaitFlags(cmdInit, &initWait)
 	CmdCLI.AddCommand(cmdInit)
 }
 
@@ -110,4 +111,7 @@ func initCluster(_ *cobra.Command, args []string) {
 			Any("spec", initSpec).
 			Msg("init failed")
 	}
+	waitUntilConverged(ctx, apiClient, initWait, "")
 }
+
+var initWait waitOptions

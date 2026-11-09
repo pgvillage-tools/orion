@@ -22,6 +22,8 @@ const (
 	apiInternalPort = 8443
 	// apiProbeInternalPort is the probe port of the api (/livez, /readyz, /status, /metrics)
 	apiProbeInternalPort = 8080
+	// apiStoreTimeout is the store timeout of the api in the tests
+	apiStoreTimeout = 3 * time.Second
 	// clusterTimeout is the time to start a test cluster
 	clusterTimeout = 10 * time.Minute
 	apiPKIDir      = "/etc/orion/api"
@@ -177,6 +179,9 @@ func runAPI(
 		"ORIONAPI_STORE_ENDPOINTS": etcdEndpoints,
 		"ORIONAPI_LOG_LEVEL":       "debug",
 		"ORIONAPI_PKI_DIR":         apiPKIDir,
+		// shorter than apiTimeout (the client), so a store that doesn't respond gives a 500 and not a client timeout;
+		// long enough for the first call to etcd after the api starts
+		"ORIONAPI_STORE_TIMEOUT": apiStoreTimeout.String(),
 	}
 	var files []testcontainers.ContainerFile
 	for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
