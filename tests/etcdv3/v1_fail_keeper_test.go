@@ -13,12 +13,10 @@ var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail", Ordered, func() {
 	// these tests fail over the primary, so they get their own cluster
 	tc := withOwnCluster(2)
 
-	It("fails over to the other keeper", func(ctx context.Context) {
-		primary := tc.waitForPrimary()
-		// The standby must be able to take over: healthy, and its db converged (the sentinel only elects a standby
-		// whose db is at its wanted generation). A fail is a one-shot signal: the sentinel treats the keeper as failed
-		// in one check, and when no standby can take over in that check, the primary just stays.
-		Eventually(func(g Gomega) {
+	// waitForConverged waits until both keepers are healthy with their db at its wanted generation, and stay so for a
+	// while (two sentinel checks), so they aren't between two generations
+	waitForConverged := func() {
+		converged := func(g Gomega) {
 			status, _, err := tc.apiClient.GetStatus()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(status.Keepers).To(HaveLen(2))
@@ -26,16 +24,45 @@ var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail", Ordered, func() {
 				g.Ω(k.Healthy && k.PgHealthy).To(BeTrue(), "keeper %s", k.UID)
 				g.Ω(k.PgCurrentGeneration).To(Equal(k.PgWantedGeneration), "keeper %s converged", k.UID)
 			}
-		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
-		// and stays so for a while (two sentinel checks), so it isn't between two generations
-		Consistently(func(g Gomega) {
-			status, _, err := tc.apiClient.GetStatus()
-			g.Ω(err).NotTo(HaveOccurred())
-			for _, k := range status.Keepers {
-				g.Ω(k.Healthy && k.PgHealthy).To(BeTrue(), "keeper %s", k.UID)
-				g.Ω(k.PgCurrentGeneration).To(Equal(k.PgWantedGeneration), "keeper %s converged", k.UID)
+		}
+		Eventually(converged).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+		Consistently(converged).WithTimeout(10 * time.Second).WithPolling(pollInterval).Should(Succeed())
+	}
+
+	It("accepts failing a standby: the primary stays, and the standby comes back", func(ctx context.Context) {
+		primary := tc.waitForPrimary()
+		waitForConverged()
+		cd, _, err := tc.apiClient.GetCluster()
+		Ω(err).NotTo(HaveOccurred())
+		var standby string
+		for uid := range cd.Keepers {
+			if uid != primary {
+				standby = uid
 			}
-		}).WithTimeout(10 * time.Second).WithPolling(pollInterval).Should(Succeed())
+		}
+		Ω(standby).NotTo(BeEmpty())
+
+		httpCode, err := tc.apiClient.FailKeeper(standby)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusAccepted))
+
+		// the sentinel doesn't fail over for a standby: the primary stays, and keeps serving through the proxy
+		Consistently(func(g Gomega) {
+			status, _, statusErr := tc.apiClient.GetStatus()
+			g.Ω(statusErr).NotTo(HaveOccurred())
+			g.Ω(status.Status).To(HaveKeyWithValue("primaryKeeper", primary))
+		}).WithTimeout(15 * time.Second).WithPolling(pollInterval).Should(Succeed())
+		Ω(pgPing(ctx, tc.proxyConn(ctx))).To(Succeed())
+		// and the standby is healthy and converged again
+		waitForConverged()
+	})
+
+	It("fails over to the other keeper", func(ctx context.Context) {
+		primary := tc.waitForPrimary()
+		// The standby must be able to take over: healthy, and its db converged (the sentinel only elects a standby
+		// whose db is at its wanted generation). A fail is a one-shot signal: the sentinel treats the keeper as failed
+		// in one check, and when no standby can take over in that check, the primary just stays.
+		waitForConverged()
 
 		httpCode, err := tc.apiClient.FailKeeper(primary)
 		Ω(err).NotTo(HaveOccurred())
