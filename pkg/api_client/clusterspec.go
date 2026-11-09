@@ -37,3 +37,25 @@ func (c Connection) PutClusterSpec(cd *apiv1.Spec) (httpCode int, err error) {
 func (c Connection) PatchClusterSpec(patch []byte) (httpCode int, err error) {
 	return c.Patch(endpoints.ClusterSpecEndPoint, patch)
 }
+
+// GetClusterSpecWithETag returns the cluster spec and its ETag (to send back as If-Match)
+func (c Connection) GetClusterSpecWithETag() (spec *apiv1.Spec, etag string, httpCode int, err error) {
+	var s apiv1.Spec
+	httpCode, etag, err = c.GetWithETag(endpoints.ClusterSpecEndPoint, &s)
+	if err != nil {
+		return nil, etag, httpCode, err
+	}
+	return &s, etag, httpCode, nil
+}
+
+// PutClusterSpecIfMatch replaces the cluster spec when the cluster data still has etag (412 otherwise; an empty etag
+// replaces it unconditionally), and returns the new ETag
+func (c Connection) PutClusterSpecIfMatch(spec *apiv1.Spec, etag string) (httpCode int, newETag string, err error) {
+	return c.PutIfMatch(endpoints.ClusterSpecEndPoint, spec, etag)
+}
+
+// PatchClusterSpecIfMatch applies a JSON merge patch to the cluster spec when the cluster data still has etag (412
+// otherwise; an empty etag patches it unconditionally), and returns the new ETag
+func (c Connection) PatchClusterSpecIfMatch(patch []byte, etag string) (httpCode int, newETag string, err error) {
+	return c.PatchIfMatch(endpoints.ClusterSpecEndPoint, patch, etag)
+}

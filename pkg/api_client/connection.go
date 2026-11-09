@@ -120,6 +120,13 @@ func (c Connection) Action(ep endpoints.EndPoint) (httpCode int, err error) {
 // A response that isn't 2xx is returned as an error: the api's problem (RFC 9457), or a problem with the status and
 // the body of the response when it isn't one.
 func (c Connection) do(method string, ep endpoint, body []byte, contentType string, o any) (int, error) {
+	httpCode, _, err := c.doWithHeaders(method, ep, body, contentType, nil, o)
+	return httpCode, err
+}
+
+// doWithHeaders is do, with extra request headers, and it also returns the headers of the response
+func (c Connection) doWithHeaders(method string, ep endpoint, body []byte, contentType string,
+	headers map[string]string, o any) (int, http.Header, error) {
 	url := c.EndpointURL(ep)
 	var reader io.Reader
 	if body != nil {
@@ -127,14 +134,17 @@ func (c Connection) do(method string, ep endpoint, body []byte, contentType stri
 	}
 	req, err := http.NewRequest(method, url, reader)
 	if err != nil {
-		return httpClientError, err
+		return httpClientError, nil, err
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return httpClientError, err
+		return httpClientError, nil, err
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -143,14 +153,54 @@ func (c Connection) do(method string, ep endpoint, body []byte, contentType stri
 		}
 	}()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return resp.StatusCode, fmt.Errorf("%s %s: %w", method, url, readProblem(resp))
+		return resp.StatusCode, resp.Header, fmt.Errorf("%s %s: %w", method, url, readProblem(resp))
 	}
 	if o != nil {
 		if err := json.NewDecoder(resp.Body).Decode(o); err != nil {
-			return httpClientError, fmt.Errorf("%s %s: failed to decode the response: %w", method, url, err)
+			return httpClientError, resp.Header, fmt.Errorf("%s %s: failed to decode the response: %w", method, url,
+				err)
 		}
 	}
-	return resp.StatusCode, nil
+	return resp.StatusCode, resp.Header, nil
+}
+
+// GetWithETag issues a GET request for ep, decodes the response into o, and returns its ETag
+func (c Connection) GetWithETag(ep endpoint, o any) (httpCode int, etag string, err error) {
+	httpCode, headers, err := c.doWithHeaders(http.MethodGet, ep, nil, "", nil, o)
+	if headers != nil {
+		etag = headers.Get("ETag")
+	}
+	return httpCode, etag, err
+}
+
+// PutIfMatch issues a PUT request for ep with o as the JSON body, that only succeeds when the resource still has
+// etag (412 otherwise); an empty etag sends no If-Match. It returns the new ETag.
+func (c Connection) PutIfMatch(ep endpoints.EndPoint, o any, etag string) (httpCode int, newETag string, err error) {
+	body, err := json.Marshal(o)
+	if err != nil {
+		return httpClientError, "", err
+	}
+	return c.writeIfMatch(http.MethodPut, ep, body, contentTypeJSON, etag)
+}
+
+// PatchIfMatch issues a PATCH request (a JSON merge patch) for ep, that only succeeds when the resource still has
+// etag (412 otherwise); an empty etag sends no If-Match. It returns the new ETag.
+func (c Connection) PatchIfMatch(ep endpoints.EndPoint, patch []byte, etag string) (httpCode int, newETag string,
+	err error) {
+	return c.writeIfMatch(http.MethodPatch, ep, patch, endpoints.ContentTypeMergePatch, etag)
+}
+
+func (c Connection) writeIfMatch(method string, ep endpoints.EndPoint, body []byte, contentType, etag string) (int,
+	string, error) {
+	var headers map[string]string
+	if etag != "" {
+		headers = map[string]string{"If-Match": etag}
+	}
+	httpCode, respHeaders, err := c.doWithHeaders(method, ep, body, contentType, headers, nil)
+	if respHeaders == nil {
+		return httpCode, "", err
+	}
+	return httpCode, respHeaders.Get("ETag"), err
 }
 
 // readProblem returns the problem in the body of an error response. When the body isn't a problem (e.g. a 405 from

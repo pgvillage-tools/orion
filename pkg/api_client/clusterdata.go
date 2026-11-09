@@ -38,3 +38,19 @@ func (c Connection) PutCluster(cd *apiv1.Data) (httpCode int, err error) {
 func (c Connection) PostCluster(cs *apiv1.Spec) (httpCode int, err error) {
 	return c.Post(endpoints.ClusterEndPoint, cs)
 }
+
+// GetClusterWithETag returns the cluster data and its ETag (to send back as If-Match)
+func (c Connection) GetClusterWithETag() (cd *apiv1.Data, etag string, httpCode int, err error) {
+	var d apiv1.Data
+	httpCode, etag, err = c.GetWithETag(endpoints.ClusterEndPoint, &d)
+	if err != nil {
+		return nil, etag, httpCode, err
+	}
+	return &d, etag, httpCode, nil
+}
+
+// PutClusterIfMatch replaces the cluster data when it still has etag (412 otherwise; an empty etag replaces it
+// unconditionally), and returns the new ETag
+func (c Connection) PutClusterIfMatch(cd *apiv1.Data, etag string) (httpCode int, newETag string, err error) {
+	return c.PutIfMatch(endpoints.ClusterEndPoint, cd, etag)
+}
