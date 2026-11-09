@@ -82,5 +82,33 @@ var _ = Describe("ConnParams", func() {
 			Ω(cp2).To(HaveKeyWithValue(ConnParamKeyHost, cp1[ConnParamKeyHost]))
 			Ω(cp2).To(HaveKeyWithValue(ConnParamKeyPort, "5433"))
 		})
+		DescribeTable("each With* function only sets its own key on a clone",
+			func(with func(ConnParams) ConnParams, key ConnParamKey, value string) {
+				cp1 := ConnParams{ConnParamKeyHost: "::1", ConnParamKeyPort: "5432"}
+				expected := cp1.Copy()
+				expected[key] = value
+				Ω(with(cp1)).To(Equal(expected))
+				Ω(cp1).To(Equal(ConnParams{ConnParamKeyHost: "::1", ConnParamKeyPort: "5432"}))
+			},
+			Entry("WithUser", func(cp ConnParams) ConnParams { return cp.WithUser("me") }, ConnParamKeyUser, "me"),
+			Entry("WithHost", func(cp ConnParams) ConnParams { return cp.WithHost("db1") }, ConnParamKeyHost, "db1"),
+			Entry("WithDbName", func(cp ConnParams) ConnParams { return cp.WithDbName("mydb") }, ConnParamKeyDbName, "mydb"),
+			Entry("WithPort", func(cp ConnParams) ConnParams { return cp.WithPort(6432) }, ConnParamKeyPort, "6432"),
+			Entry("WithSPort", func(cp ConnParams) ConnParams { return cp.WithSPort("7432") }, ConnParamKeyPort, "7432"),
+			Entry("WithAppName", func(cp ConnParams) ConnParams { return cp.WithAppName("app") }, ConnParamKeyAppName, "app"),
+			Entry("WithSSLMode", func(cp ConnParams) ConnParams { return cp.WithSSLMode("require") },
+				ConnParamKeySSLMode, "require"),
+			Entry("WithPassword", func(cp ConnParams) ConnParams { return cp.WithPassword("secret") },
+				ConnParamKeyPassword, "secret"),
+		)
+	})
+	When("Getting as connstring with special characters and empty values", func() {
+		It("should escape the special characters and skip the empty values", func() {
+			cp := ConnParams{
+				ConnParamKeyPassword: `a b'c\d`,
+				ConnParamKeyUser:     "",
+			}
+			Ω(cp.ConnString()).To(Equal(`password=a\ b\'c\\d`))
+		})
 	})
 })

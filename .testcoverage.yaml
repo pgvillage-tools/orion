@@ -33,33 +33,13 @@ override:
   # (default is 80, as configured above in this example).
   #- path: ^pkg/lib/foo$
   #  threshold: 100
-  - path: ^internal/postgresql/main.go
-    threshold: 25
-  - path: ^internal/postgresql/manager.go
-    threshold: 0
   - path: ^internal/postgresql/recovery_options.go
-    threshold: 0
-  - path: ^pkg/api_client/clusterdata.go
-    threshold: 0
-  - path: ^pkg/api_client/clusterspec.go
-    threshold: 0
-  - path: ^pkg/api_client/health.go     
-    threshold: 0
-  - path: ^pkg/api_client/keeper.go     
-    threshold: 0
-  - path: ^pkg/api_client/replicaset.go 
-    threshold: 0
-  - path: ^pkg/api_client/status.go     
-    threshold: 0
+    threshold: 66
   - path: scripts/gen_commands_doc.go
     threshold: 0
 
   - path: ^internal/mock/consensus$
     threshold: 22
-  - path: ^internal/postgresql$
-    threshold: 13.9
-  - path: ^pkg/api_client$
-    threshold: 0
   - path: ^scripts$
     threshold: 0
 
