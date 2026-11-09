@@ -33,7 +33,7 @@ import (
 // fakeEtcdKV is an in-memory etcd KV. It supports what etcdV3Store and the concurrency package
 // use: put, (prefix) get with a limit and a max create revision, delete, and transactions comparing
 // a create or mod revision. Ranges are always sorted on the create revision. The err fields make
-// the matching operation fail.
+// the matching operation fail, and getBlocks makes Get wait for the end of its context, like an unreachable etcd.
 type fakeEtcdKV struct {
 	etcdclientv3.KV
 
@@ -42,6 +42,7 @@ type fakeEtcdKV struct {
 	rev int64
 
 	putErr, getErr, deleteErr, txnErr error
+	getBlocks                         bool
 }
 
 func newFakeEtcdKV() *fakeEtcdKV {
@@ -93,11 +94,16 @@ func (f *fakeEtcdKV) Put(
 }
 
 func (f *fakeEtcdKV) Get(
-	_ context.Context,
+	ctx context.Context,
 	key string,
 	opts ...etcdclientv3.OpOption,
 ) (*etcdclientv3.GetResponse, error) {
 	f.mu.Lock()
+	if f.getBlocks {
+		f.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	defer f.mu.Unlock()
 	if f.getErr != nil {
 		return nil, f.getErr
@@ -198,19 +204,26 @@ func (t *fakeEtcdTxn) Commit() (*etcdclientv3.TxnResponse, error) {
 	return &etcdclientv3.TxnResponse{Header: f.header(), Succeeded: succeeded, Responses: responses}, nil
 }
 
-// fakeEtcdLease grants leases (recording their ttl) that are kept alive until their context ends.
+// fakeEtcdLease grants leases (recording their ttl) that are kept alive until their context ends. grantBlocks makes
+// Grant wait for the end of its context, like an unreachable etcd.
 type fakeEtcdLease struct {
 	etcdclientv3.Lease
 
-	mu       sync.Mutex
-	nextID   etcdclientv3.LeaseID
-	ttls     []int64
-	grantErr error
-	closed   bool
+	mu          sync.Mutex
+	nextID      etcdclientv3.LeaseID
+	ttls        []int64
+	grantErr    error
+	grantBlocks bool
+	closed      bool
 }
 
-func (l *fakeEtcdLease) Grant(_ context.Context, ttl int64) (*etcdclientv3.LeaseGrantResponse, error) {
+func (l *fakeEtcdLease) Grant(ctx context.Context, ttl int64) (*etcdclientv3.LeaseGrantResponse, error) {
 	l.mu.Lock()
+	if l.grantBlocks {
+		l.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	defer l.mu.Unlock()
 	if l.grantErr != nil {
 		return nil, l.grantErr
@@ -405,26 +418,60 @@ func newTestEtcdv3Election(c *etcdclientv3.Client) *etcdv3Election {
 }
 
 func TestEtcdv3ElectionLeader(t *testing.T) {
-	c, kv, lease := newFakeEtcdClient()
+	c, kv, _ := newFakeEtcdClient()
 	e := newTestEtcdv3Election(c)
 
-	if _, err := e.Leader(); !errors.Is(err, ErrElectionNoLeader) {
+	// a key next to the election prefix that merely starts with it is not a candidate
+	kv.put("/c/leader2", []byte("other"))
+	if _, err := e.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
 		t.Errorf("expected ErrElectionNoLeader, got %v", err)
 	}
 
 	// the first created key under the election prefix is the leader
 	kv.put("/c/leader/1", []byte("keeper1"))
 	kv.put("/c/leader/2", []byte("keeper2"))
-	if leader, err := e.Leader(); err != nil || leader != "keeper1" {
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
 		t.Errorf("expected leader keeper1, got %q, %v", leader, err)
 	}
-	if ttls := lease.grantedTTLs(); len(ttls) == 0 || ttls[0] != int64(minTTL.Seconds()) {
-		t.Errorf("expected session leases of %s, got %v", minTTL, ttls)
-	}
-
-	lease.grantErr = errBoom
-	if _, err := e.Leader(); !errors.Is(err, errBoom) {
+	kv.getErr = errBoom
+	if _, err := e.Leader(t.Context()); !errors.Is(err, errBoom) {
 		t.Errorf("expected errBoom, got %v", err)
+	}
+}
+
+// Reading the leader is a read: it must not grant (and revoke) a session lease in etcd for every call.
+func TestEtcdv3ElectionLeaderGrantsNoLease(t *testing.T) {
+	c, kv, lease := newFakeEtcdClient()
+	e := newTestEtcdv3Election(c)
+	kv.put("/c/leader/1", []byte("keeper1"))
+
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
+		t.Fatalf("expected leader keeper1, got %q, %v", leader, err)
+	}
+	if ttls := lease.grantedTTLs(); len(ttls) != 0 {
+		t.Errorf("expected no leases for reading the leader, got %v", ttls)
+	}
+}
+
+// With an unreachable etcd, reading the leader must give up within the request timeout instead of hanging.
+func TestEtcdv3ElectionLeaderUnreachable(t *testing.T) {
+	c, kv, lease := newFakeEtcdClient()
+	e := newTestEtcdv3Election(c)
+	e.requestTimeout = 100 * time.Millisecond
+	kv.getBlocks, lease.grantBlocks = true, true
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.Leader(t.Context())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("expected context.DeadlineExceeded, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Leader() still hangs 2s after its 100ms timeout")
 	}
 }
 
@@ -435,7 +482,7 @@ func TestEtcdv3ElectionRunForElection(t *testing.T) {
 	electedCh, errCh := e.RunForElection(context.Background())
 	expectElected(t, electedCh, false)
 	expectElected(t, electedCh, true)
-	if leader, err := e.Leader(); err != nil || leader != "keeper1" {
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
 		t.Errorf("expected leader keeper1, got %q, %v", leader, err)
 	}
 

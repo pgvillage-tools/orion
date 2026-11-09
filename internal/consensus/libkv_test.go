@@ -328,15 +328,15 @@ func TestLibKVElectionLeader(t *testing.T) {
 	e := &libkvElection{store: &libKVStore{store: f}, path: "/c/leader"}
 
 	// no leader yet
-	if leader, err := e.Leader(); err != nil || leader != "" {
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "" {
 		t.Errorf("expected no leader, got %q, %v", leader, err)
 	}
 	f.pairs["/c/leader"] = &libkvstore.KVPair{Key: "/c/leader", Value: []byte("keeper1")}
-	if leader, err := e.Leader(); err != nil || leader != "keeper1" {
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
 		t.Errorf("expected leader keeper1, got %q, %v", leader, err)
 	}
 	f.getErr = errBoom
-	if _, err := e.Leader(); !errors.Is(err, errBoom) {
+	if _, err := e.Leader(t.Context()); !errors.Is(err, errBoom) {
 		t.Errorf("expected errBoom, got %v", err)
 	}
 }

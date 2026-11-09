@@ -265,7 +265,7 @@ func TestStatusHandler(t *testing.T) {
 				if tc.lErr != nil {
 					leader = ""
 				}
-				election.EXPECT().Leader().Return(leader, tc.lErr)
+				election.EXPECT().Leader(gomock.Any()).Return(leader, tc.lErr)
 			}
 			var ready atomic.Bool
 			h := NewHandlers(store, election, &ready)

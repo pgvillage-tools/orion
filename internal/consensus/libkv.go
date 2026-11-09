@@ -115,8 +115,8 @@ func (e *libkvElection) Stop() {
 	e.candidate.Stop()
 }
 
-func (e *libkvElection) Leader() (string, error) {
-	pair, err := e.store.Get(context.TODO(), e.path)
+func (e *libkvElection) Leader(ctx context.Context) (string, error) {
+	pair, err := e.store.Get(ctx, e.path)
 	if err != nil {
 		if err != ErrKeyNotFound {
 			return "", err

@@ -15,6 +15,7 @@
 package v1
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -74,7 +75,13 @@ func TestSentinelHandlers(t *testing.T) {
 			election := mockconsensus.NewMockElection(ctrl)
 			if tc.readsLeader {
 				// the election client is shared: every request reads the leader through it, nothing else
-				election.EXPECT().Leader().Return(tc.leader, tc.leaderErr).Times(2)
+				election.EXPECT().Leader(gomock.Any()).Times(2).DoAndReturn(func(ctx context.Context) (string, error) {
+					// the leader is read within the deadline of the request (cfg.StoreTimeout)
+					if _, ok := ctx.Deadline(); !ok {
+						t.Error("expected the leader to be read with the request deadline")
+					}
+					return tc.leader, tc.leaderErr
+				})
 			}
 			var ready atomic.Bool
 			h := NewHandlers(store, election, &ready)

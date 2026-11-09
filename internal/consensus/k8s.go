@@ -455,8 +455,7 @@ func (e *KubeElection) Stop() {
 }
 
 // Leader returns the current leader
-func (e *KubeElection) Leader() (string, error) {
-	ctx := context.Background()
+func (e *KubeElection) Leader(ctx context.Context) (string, error) {
 	ler, _, err := e.rl.Get(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get leader election record: %v", err)
