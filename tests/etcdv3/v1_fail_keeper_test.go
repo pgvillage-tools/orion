@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail", Ordered, func() {
+var _ = Describe("POST /v1/cluster/keepers/{uid}/actions/fail", Ordered, func() {
 	// these tests fail over the primary, so they get their own cluster
 	tc := withOwnCluster(2)
 
@@ -85,7 +85,7 @@ var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail", Ordered, func() {
 	})
 })
 
-var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail without a cluster, or without the store", Ordered, func() {
+var _ = Describe("POST /v1/cluster/keepers/{uid}/actions/fail without a cluster, or without the store", Ordered, func() {
 	// only etcd and the api: no cluster data yet
 	tc := withOwnAPI()
 
@@ -102,7 +102,7 @@ var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail without a cluster, 
 	})
 })
 
-var _ = Describe("POST /v1/cluster/keepers/{id}/actions/fail on the only keeper", Ordered, func() {
+var _ = Describe("POST /v1/cluster/keepers/{uid}/actions/fail on the only keeper", Ordered, func() {
 	// one keeper: it runs the primary, and nothing can take over
 	tc := withOwnCluster(1)
 

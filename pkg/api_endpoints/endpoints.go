@@ -23,13 +23,13 @@ import (
 
 const (
 	// KeeperEndPoint is a keeper (DELETE removes it from the cluster data)
-	KeeperEndPoint EndPoint = "cluster/keepers/{id}"
+	KeeperEndPoint EndPoint = "cluster/keepers/{uid}"
 	// ClusterEndPoint is the endpoint config for Cluster
 	ClusterEndPoint EndPoint = "cluster"
 	// ClusterSpecEndPoint is the endpoint config for Cluster spec
 	ClusterSpecEndPoint EndPoint = "cluster/spec"
 	// FailKeeperEndPoint is the action that fails a keeper (POST), so the sentinel fails over when it runs the primary
-	FailKeeperEndPoint EndPoint = "cluster/keepers/{id}/actions/fail"
+	FailKeeperEndPoint EndPoint = "cluster/keepers/{uid}/actions/fail"
 	// WhoAmIEndPoint returns the identity of the client
 	WhoAmIEndPoint EndPoint = "whoami"
 	// PromoteClusterEndPoint is the action that promotes a standby cluster to a primary cluster (POST); a primary
