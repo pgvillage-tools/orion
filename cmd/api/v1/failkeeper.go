@@ -75,7 +75,7 @@ func (h *Handlers) FailKeeperHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "failed to store cluster data")
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	writeAccepted(w)
 }
 
 // canFailOver returns whether failing keeper can lead to a failover: true when keeper doesn't run the primary, or

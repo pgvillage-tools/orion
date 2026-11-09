@@ -31,7 +31,10 @@ var removeKeeperCmd = &cobra.Command{
 	Run: removeKeeper,
 }
 
+var removeKeeperWait waitOptions
+
 func init() {
+	addWaitFlags(removeKeeperCmd, &removeKeeperWait)
 	CmdCLI.AddCommand(removeKeeperCmd)
 }
 
@@ -58,4 +61,5 @@ func removeKeeper(_ *cobra.Command, args []string) {
 			Int("http_code", httpCode).
 			Msg("failed to remove the keeper")
 	}
+	waitUntilConverged(ctx, apiClient, removeKeeperWait, "")
 }

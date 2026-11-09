@@ -111,4 +111,33 @@ var _ = Describe("Connection", func() {
 		Ω(httpCode).To(Equal(http.StatusAccepted))
 		Ω(last).To(Equal(request{http.MethodPost, "/v1/cluster/actions/promote", "", ""}))
 	})
+	It("returns the ETag of a GET, and sends If-Match with PUT and PATCH", func() {
+		var ifMatch string
+		c := connect(func(w http.ResponseWriter, r *http.Request) {
+			ifMatch = r.Header.Get("If-Match")
+			w.Header().Set("ETag", `"8"`)
+			if ifMatch == `"6"` {
+				endpoints.WriteProblem(w, http.StatusPreconditionFailed, "changed")
+				return
+			}
+			_, _ = w.Write([]byte(`{}`))
+		})
+		_, etag, err := c.GetWithETag(endpoints.ClusterSpecEndPoint, &map[string]any{})
+		Ω(err).NotTo(HaveOccurred())
+		Ω(etag).To(Equal(`"8"`))
+
+		httpCode, newETag, err := c.PutIfMatch(endpoints.ClusterSpecEndPoint, map[string]int{}, `"7"`)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusOK))
+		Ω(ifMatch).To(Equal(`"7"`))
+		Ω(newETag).To(Equal(`"8"`))
+
+		httpCode, _, err = c.PatchIfMatch(endpoints.ClusterSpecEndPoint, []byte(`{}`), `"6"`)
+		Ω(err).To(MatchError(ContainSubstring("412 Precondition Failed")))
+		Ω(httpCode).To(Equal(http.StatusPreconditionFailed))
+
+		_, _, err = c.PutIfMatch(endpoints.ClusterSpecEndPoint, map[string]int{}, "")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(ifMatch).To(BeEmpty(), "no If-Match without an etag")
+	})
 })

@@ -44,12 +44,13 @@ func (h *Handlers) GetClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
-	if cd, _, err := h.client.GetClusterData(ctx); err != nil {
+	if cd, pair, err := h.client.GetClusterData(ctx); err != nil {
 		handleError(ctx, err, w, "failed to get cluster data")
 	} else {
 		if cd == nil {
 			endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
 		} else {
+			setETag(w, etagOf(pair))
 			h.writeJSON(ctx, w, cd)
 		}
 	}
@@ -85,10 +86,33 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 		endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: "+err.Error())
 		return
 	}
-	// replace the cluster data, whatever it is now (like stolonctl clusterdata write)
-	if err = h.client.PutClusterData(ctx, &newCD); err != nil {
-		handleError(ctx, err, w, "failed to write new cluster data definition")
+	if r.Header.Get("If-Match") == "" {
+		// replace the cluster data, whatever it is now (like stolonctl clusterdata write)
+		if err = h.client.PutClusterData(ctx, &newCD); err != nil {
+			handleError(ctx, err, w, "failed to write new cluster data definition")
+		}
+		return
 	}
+	// only replace the cluster data when it is still the version the client read
+	_, pair, err := h.client.GetClusterData(ctx)
+	if err != nil {
+		handleError(ctx, err, w, "failed to get cluster data")
+		return
+	}
+	if !ifMatches(r, etagOf(pair)) {
+		endpoints.WriteProblem(w, errPreconditionFailed.status, errPreconditionFailed.Error())
+		return
+	}
+	newPair, err := h.client.AtomicPutClusterData(ctx, &newCD, pair)
+	if err != nil {
+		if errors.Is(err, consensus.ErrKeyModified) {
+			endpoints.WriteProblem(w, errPreconditionFailed.status, errPreconditionFailed.Error())
+			return
+		}
+		handleError(ctx, err, w, "failed to write new cluster data definition")
+		return
+	}
+	setETag(w, etagOf(newPair))
 }
 
 // PostClusterHandler creates the cluster, from the spec in the body (an empty body creates a new cluster with the
