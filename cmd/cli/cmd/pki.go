@@ -15,13 +15,11 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 	"github.com/spf13/cobra"
@@ -37,7 +35,7 @@ var cmdPKI = &cobra.Command{
 
 var cmdPKIInit = &cobra.Command{
 	Use:   "init",
-	Run:   runPKIInit,
+	RunE:  runPKIInit,
 	Args:  cobra.NoArgs,
 	Short: "Create the CA, the api server certificate and the cli client certificate",
 	Long: `Create a root CA, a server intermediate with the server certificate of the api, and an api client
@@ -111,11 +109,10 @@ func (o pkiInitOptions) initOptions(cliDir, host string) (pki.InitOptions, error
 	return opts, nil
 }
 
-func runPKIInit(c *cobra.Command, _ []string) {
-	_, logger := logging.GetLogComponent(context.Background(), logging.CmdComponent)
+func runPKIInit(c *cobra.Command, _ []string) error {
 	files, err := cliTLSFiles()
 	if err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
+		return err
 	}
 	host := viper.GetString(flagHost)
 	if c.Flags().Changed(flagHost) {
@@ -123,13 +120,14 @@ func runPKIInit(c *cobra.Command, _ []string) {
 	}
 	opts, err := pkiInitOpts.initOptions(filepath.Dir(files.CertFile), host)
 	if err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("invalid options")
+		return fmt.Errorf("invalid options: %w", err)
 	}
 	if _, err = pki.Init(opts); err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to create the certificates")
+		return fmt.Errorf("failed to create the certificates: %w", err)
 	}
 	stdout("Created the CA and the cli client certificate in %s", opts.CLIDir)
 	stdout("Created the api certificates in %s: copy them to the --pki-dir of the api", opts.APIDir)
 	stdout("The private keys of the CA are in %s: keep them safe, and away from the api",
 		filepath.Join(opts.CLIDir, pki.CLICADir))
+	return nil
 }

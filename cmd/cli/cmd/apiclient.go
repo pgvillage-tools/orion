@@ -15,9 +15,8 @@
 package cmd
 
 import (
-	"context"
+	"fmt"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	"github.com/spf13/viper"
@@ -35,27 +34,23 @@ func cliTLSFiles() (pki.TLSFiles, error) {
 
 // newAPIClient returns a connection to the api on host and port, which logs in with the client certificate of the
 // cli
-func newAPIClient(ctx context.Context, host string, port uint16) client.Connection {
-	_, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
+func newAPIClient(host string, port uint16) (client.Connection, error) {
 	files, err := cliTLSFiles()
 	if err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("")
+		return client.Connection{}, err
 	}
 	if !files.Exist() {
-		logger.Fatal().
-			Str("cert", files.CertFile).
-			Str("key", files.KeyFile).
-			Str("ca", files.CAFile).
-			Msg("client certificate not found: create it with `orion-cli pki init`")
+		return client.Connection{}, fmt.Errorf("client certificate not found (cert %s, key %s, ca %s): create it "+
+			"with `orion-cli pki init`", files.CertFile, files.KeyFile, files.CAFile)
 	}
 	tlsConfig, err := files.ClientConfig()
 	if err != nil {
-		logger.Fatal().AnErr(logging.KeyError, err).Msg("failed to load the client certificate")
+		return client.Connection{}, fmt.Errorf("failed to load the client certificate: %w", err)
 	}
-	return client.NewTLSConnection(host, port, viper.GetDuration(flagTimeout), tlsConfig)
+	return client.NewTLSConnection(host, port, viper.GetDuration(flagTimeout), tlsConfig), nil
 }
 
 // defaultAPIClient returns a connection to the api on the configured host and port
-func defaultAPIClient(ctx context.Context) client.Connection {
-	return newAPIClient(ctx, viper.GetString(flagHost), viper.GetUint16(flagPort))
+func defaultAPIClient() (client.Connection, error) {
+	return newAPIClient(viper.GetString(flagHost), viper.GetUint16(flagPort))
 }

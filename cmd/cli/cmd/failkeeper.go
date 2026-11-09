@@ -16,9 +16,8 @@
 package cmd
 
 import (
-	"context"
+	"errors"
 
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +27,7 @@ var failKeeperCmd = &cobra.Command{
 	Use:   "failkeeper [keeper uid]",
 	Short: `Force keeper as "temporarily" failed. The sentinel will compute a new clusterdata considering it as failed and then restore its state to the real one.`,
 	Long:  `Force keeper as "temporarily" failed. It's just a one shot operation, the sentinel will compute a new clusterdata considering the keeper as failed and then restore its state to the real one. For example, if the force failed keeper is a master, the sentinel will try to elect a new master. If no new master can be elected, the force failed keeper, if really healthy, will be re-elected as master`,
-	Run:   failKeeper,
+	RunE:  failKeeper,
 }
 
 //revive:enable
@@ -40,27 +39,21 @@ func init() {
 	CmdCLI.AddCommand(failKeeperCmd)
 }
 
-func failKeeper(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
-	defer cancelFunc()
+func failKeeper(c *cobra.Command, args []string) error {
 	if len(args) > 1 {
-		logger.Fatal().Msg("too many arguments")
+		return errors.New("too many arguments")
 	}
 	if len(args) == 0 {
-		logger.Fatal().Msg("keeper uid required")
+		return errors.New("keeper uid required")
 	}
 	keeperID := args[0]
-
-	apiClient := defaultAPIClient(ctx)
-
-	httpCode, putErr := apiClient.FailKeeper(keeperID)
-	if putErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, putErr).
-			Int("http_code", httpCode).
-			Msg("failed to fail the keeper")
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
+	if httpCode, failErr := apiClient.FailKeeper(keeperID); failErr != nil {
+		return apiError("failed to fail the keeper", httpCode, failErr)
 	}
 	// when it ran the primary, the change is done once another keeper runs it
-	waitUntilConverged(ctx, apiClient, failKeeperWait, keeperID)
+	return waitUntilConverged(c.Context(), apiClient, failKeeperWait, keeperID)
 }

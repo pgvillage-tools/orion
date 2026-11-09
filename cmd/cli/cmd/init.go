@@ -16,20 +16,18 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"io"
+	"errors"
+	"fmt"
 	"net/http"
-	"os"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/spf13/cobra"
 )
 
 var cmdInit = &cobra.Command{
 	Use:   "init",
-	Run:   initCluster,
+	RunE:  initCluster,
 	Short: "Initialize a new cluster",
 }
 
@@ -47,71 +45,43 @@ func init() {
 	CmdCLI.AddCommand(cmdInit)
 }
 
-func initCluster(_ *cobra.Command, args []string) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
-	ctx, logger := logging.GetLogComponent(ctx, logging.CmdComponent)
+func initCluster(c *cobra.Command, args []string) error {
 	if len(args) > 1 {
-		die("too many arguments")
+		return errors.New("too many arguments")
 	}
 
 	initSpec := &apiv1.Spec{}
-	switch len(args) {
-	case 1:
-		encodingErr := json.Unmarshal([]byte(args[0]), initSpec)
-		if encodingErr != nil {
-			logger.Fatal().
-				AnErr(logging.KeyError, encodingErr).
-				Str("input", "argument").
-				Str("spec", args[0]).
-				Msg("invalid cluster data spec")
+	var data []byte
+	switch {
+	case len(args) == 1:
+		data = []byte(args[0])
+	case initOpts.file != "":
+		var err error
+		if data, err = readInput(initOpts.file); err != nil {
+			return err
 		}
-	case 0:
-		if initOpts.file != "" {
-			var readErr error
-			var data []byte
-			if initOpts.file == "-" {
-				data, readErr = io.ReadAll(os.Stdin)
-			} else {
-				data, readErr = os.ReadFile(initOpts.file)
-			}
-			if readErr != nil {
-				logger.Fatal().
-					AnErr(logging.KeyError, readErr).
-					Str("source", initOpts.file).
-					Msg("cannot read from stdin")
-			}
-			if encodingErr := json.Unmarshal(data, initSpec); encodingErr != nil {
-				logger.Fatal().
-					AnErr(logging.KeyError, encodingErr).
-					Str("source", initOpts.file).
-					Str("spec", string(data)).
-					Msg("invalid cluster data spec")
-			}
+	}
+	if data != nil {
+		if err := json.Unmarshal(data, initSpec); err != nil {
+			return fmt.Errorf("invalid cluster spec: %w", err)
 		}
 	}
 
-	apiClient := defaultAPIClient(ctx)
-
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
 	_, httpCode, getClusterErr := apiClient.GetCluster()
 	if httpCode != http.StatusNotFound {
 		if getClusterErr != nil {
-			logger.Fatal().
-				AnErr(logging.KeyError, getClusterErr).
-				Str("source", initOpts.file).
-				Msg("failed to get clusterdata")
+			return apiError("failed to get the cluster data", httpCode, getClusterErr)
 		}
-		logger.Fatal().Msg("cannot initialize an already existing cluster")
+		return errors.New("cannot initialize an already existing cluster")
 	}
 	if httpCode, initErr := apiClient.PostCluster(initSpec); initErr != nil {
-		logger.Fatal().
-			AnErr(logging.KeyError, initErr).
-			Int("http_code", httpCode).
-			Str("source", initOpts.file).
-			Any("spec", initSpec).
-			Msg("init failed")
+		return apiError("init failed", httpCode, initErr)
 	}
-	waitUntilConverged(ctx, apiClient, initWait, "")
+	return waitUntilConverged(c.Context(), apiClient, initWait, "")
 }
 
 var initWait waitOptions
