@@ -33,7 +33,10 @@ var failKeeperCmd = &cobra.Command{
 
 //revive:enable
 
+var failKeeperWait waitOptions
+
 func init() {
+	addWaitFlags(failKeeperCmd, &failKeeperWait)
 	CmdCLI.AddCommand(failKeeperCmd)
 }
 
@@ -58,4 +61,6 @@ func failKeeper(_ *cobra.Command, args []string) {
 			Int("http_code", httpCode).
 			Msg("failed to fail the keeper")
 	}
+	// when it ran the primary, the change is done once another keeper runs it
+	waitUntilConverged(ctx, apiClient, failKeeperWait, keeperID)
 }
