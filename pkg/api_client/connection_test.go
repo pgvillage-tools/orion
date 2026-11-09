@@ -15,6 +15,8 @@
 package api_client_test
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net/http"
@@ -139,5 +141,59 @@ var _ = Describe("Connection", func() {
 		_, _, err = c.PutIfMatch(endpoints.ClusterSpecEndPoint, map[string]int{}, "")
 		Ω(err).NotTo(HaveOccurred())
 		Ω(ifMatch).To(BeEmpty(), "no If-Match without an etag")
+	})
+	It("sends no request when the body can't be marshaled", func() {
+		c, requests := record(ok)
+		unmarshalable := make(chan int)
+		for name, do := range map[string]func() (int, error){
+			"Put":  func() (int, error) { return c.Put(endpoints.ClusterEndPoint, unmarshalable) },
+			"Post": func() (int, error) { return c.Post(endpoints.ClusterEndPoint, unmarshalable) },
+			"PutIfMatch": func() (int, error) {
+				code, _, err := c.PutIfMatch(endpoints.ClusterEndPoint, unmarshalable, `"1"`)
+				return code, err
+			},
+		} {
+			httpCode, err := do()
+			Ω(err).To(MatchError(ContainSubstring("unsupported type")), name)
+			Ω(httpCode).To(Equal(-1), name)
+		}
+		Ω(*requests).To(BeEmpty())
+	})
+	It("returns an error when the request can't be made", func() {
+		c := client.NewConnection(endpoints.HTTP, "no host", 8080, time.Second)
+		httpCode, err := c.Get(endpoints.StatusEndPoint, nil)
+		Ω(err).To(MatchError(ContainSubstring("invalid character")))
+		Ω(httpCode).To(Equal(-1))
+	})
+	It("returns an error for a member uid with a placeholder", func() {
+		c, requests := record(ok)
+		_, httpCode, err := c.GetProxy("{uid}")
+		Ω(err).To(MatchError(ContainSubstring("not all placeholders")))
+		Ω(httpCode).To(Equal(-1))
+		Ω(*requests).To(BeEmpty())
+	})
+	It("connects with https and the tls config with NewTLSConnection", func() {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"mode":"normal"}`))
+		}))
+		DeferCleanup(srv.Close)
+		u, err := url.Parse(srv.URL)
+		Ω(err).NotTo(HaveOccurred())
+		port, err := strconv.ParseUint(u.Port(), 10, 16)
+		Ω(err).NotTo(HaveOccurred())
+		pool := x509.NewCertPool()
+		pool.AddCert(srv.Certificate())
+
+		c := client.NewTLSConnection(u.Hostname(), uint16(port), time.Second, &tls.Config{RootCAs: pool})
+		Ω(c.EndpointURL(endpoints.ModeEndPoint)).To(HavePrefix("https://"))
+		mode, httpCode, err := c.Mode()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(httpCode).To(Equal(http.StatusOK))
+		Ω(mode.Mode).To(Equal(endpoints.ModeNormal))
+
+		untrusted := client.NewTLSConnection(u.Hostname(), uint16(port), time.Second, &tls.Config{})
+		_, httpCode, err = untrusted.Mode()
+		Ω(err).To(MatchError(ContainSubstring("certificate")))
+		Ω(httpCode).To(Equal(-1))
 	})
 })
