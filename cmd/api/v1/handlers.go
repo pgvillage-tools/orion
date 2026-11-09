@@ -33,17 +33,20 @@ type Route struct {
 
 // Handlers is a convenience struct for all required to handle api calls
 type Handlers struct {
-	client consensus.Store
-	Ready  *atomic.Bool
-	nextID int
+	client   consensus.Store
+	election consensus.Election
+	Ready    *atomic.Bool
+	nextID   int
 }
 
-// NewHandlers returns a new Handlers object
-func NewHandlers(client consensus.Store, ready *atomic.Bool) *Handlers {
+// NewHandlers returns a new Handlers object. election is only used to read the sentinel leader; the api never runs for
+// election itself.
+func NewHandlers(client consensus.Store, election consensus.Election, ready *atomic.Bool) *Handlers {
 	return &Handlers{
-		client: client,
-		Ready:  ready,
-		nextID: 1,
+		client:   client,
+		election: election,
+		Ready:    ready,
+		nextID:   1,
 	}
 }
 

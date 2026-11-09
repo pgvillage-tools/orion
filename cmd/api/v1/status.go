@@ -22,7 +22,6 @@ import (
 	"time"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
@@ -69,19 +68,14 @@ func (h *Handlers) SentinelsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) sentinelInfo(ctx context.Context) (is apiv1.InfoSentinels, err error) {
-	// Read the sentinels first: that honours the deadline of ctx, so an unreachable store fails fast. Setting up the
-	// election client (for the leader) can take much longer then.
+	// Read the sentinels first: that honours the deadline of ctx, so an unreachable store fails fast. Reading the
+	// leader does not take ctx and can take much longer then.
 	ssi, err := h.client.GetSentinelsInfo(ctx)
 	if err != nil {
 		handleError(ctx, err, nil, "failed to get sentinels info")
 		return nil, err
 	}
-	election, err := cmdcommon.NewElection(ctx, &cfg.CommonConfig, "")
-	if err != nil {
-		handleError(ctx, err, nil, "failed to get election info")
-		return nil, err
-	}
-	lsid, err := election.Leader()
+	lsid, err := h.election.Leader()
 	if err != nil && err != consensus.ErrElectionNoLeader {
 		handleError(ctx, err, nil, "failed to get leader info")
 		return nil, err
