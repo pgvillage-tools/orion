@@ -51,7 +51,7 @@ func (h *Handlers) keepers(ctx context.Context) (apiv1.InfoKeepers, error) {
 
 // KeepersHandler returns the keepers, sorted on uid (the same list as in the cluster status)
 func (h *Handlers) KeepersHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	keepers, err := h.keepers(ctx)
@@ -64,7 +64,7 @@ func (h *Handlers) KeepersHandler(w http.ResponseWriter, r *http.Request) {
 
 // KeeperHandler returns the keeper with the uid in the path, or 404
 func (h *Handlers) KeeperHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	keepers, err := h.keepers(ctx)
@@ -77,7 +77,7 @@ func (h *Handlers) KeeperHandler(w http.ResponseWriter, r *http.Request) {
 
 // ProxyHandler returns the proxy with the uid in the path, or 404
 func (h *Handlers) ProxyHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	proxies, err := h.proxyInfo(ctx)
@@ -90,7 +90,7 @@ func (h *Handlers) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 
 // SentinelHandler returns the sentinel with the uid in the path, or 404
 func (h *Handlers) SentinelHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	sentinels, err := h.sentinelInfo(ctx)

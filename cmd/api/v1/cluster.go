@@ -94,7 +94,7 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 // PostClusterHandler creates the cluster, from the spec in the body (an empty body creates a new cluster with the
 // default spec), and answers 201 with the cluster data. It refuses (409) when there already is a cluster with a spec.
 func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	cd, pair, err := h.client.GetClusterData(ctx)

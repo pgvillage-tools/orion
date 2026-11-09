@@ -35,7 +35,7 @@ func (h *Handlers) FailKeeperRoutes() []Route {
 // FailKeeperHandler marks a keeper as failed (POST .../keepers/{id}/actions/fail), so the sentinel fails over when it
 // runs the primary
 func (h *Handlers) FailKeeperHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	keeperID := r.PathValue("id")
