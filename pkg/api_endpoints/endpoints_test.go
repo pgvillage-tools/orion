@@ -56,3 +56,19 @@ var _ = Describe("Endpoints", func() {
 		})
 	})
 })
+
+var _ = Describe("Specific", func() {
+	It("fills in the placeholders", func() {
+		ep, err := endpoints.KeeperEndPoint.Specific(map[string]string{"id": "keeper1"})
+		Ω(err).NotTo(HaveOccurred())
+		Ω(ep).To(Equal(endpoints.EndPoint("cluster/keepers/keeper1")))
+	})
+	It("refuses a placeholder the endpoint doesn't have", func() {
+		_, err := endpoints.KeeperEndPoint.Specific(map[string]string{"uid": "keeper1"})
+		Ω(err).To(MatchError(ContainSubstring("has no placeholder {uid}")))
+	})
+	It("refuses to leave placeholders unfilled", func() {
+		_, err := endpoints.KeeperEndPoint.Specific(map[string]string{})
+		Ω(err).To(MatchError(ContainSubstring("not all placeholders")))
+	})
+})
