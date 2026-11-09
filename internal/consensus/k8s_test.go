@@ -666,14 +666,14 @@ func TestKubeElectionLeader(t *testing.T) {
 	lock := &fakeResourceLock{}
 	e := &KubeElection{rl: lock}
 
-	if _, err := e.Leader(); err == nil {
+	if _, err := e.Leader(t.Context()); err == nil {
 		t.Error("expected an error without a record")
 	}
 	lock.record = &resourcelock.LeaderElectionRecord{HolderIdentity: "keeper2"}
-	if leader, err := e.Leader(); err != nil || leader != "keeper2" {
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper2" {
 		t.Errorf("expected leader keeper2, got %q, %v", leader, err)
 	}
-	if leader, err := (&KubeElection{rl: &nilRecordLock{}}).Leader(); err != nil || leader != "" {
+	if leader, err := (&KubeElection{rl: &nilRecordLock{}}).Leader(t.Context()); err != nil || leader != "" {
 		t.Errorf("expected no leader, got %q, %v", leader, err)
 	}
 }
@@ -684,7 +684,7 @@ func TestKubeElectionRunForElection(t *testing.T) {
 	electedCh, _ := e.RunForElection(context.Background())
 	expectElected(t, electedCh, false)
 	expectElected(t, electedCh, true)
-	if leader, err := e.Leader(); err != nil || leader != "keeper1" {
+	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
 		t.Errorf("expected leader keeper1, got %q, %v", leader, err)
 	}
 

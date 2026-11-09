@@ -59,6 +59,7 @@ type Election interface {
 	// subsequent elections to hang indefinitely across all participants of an
 	// election.
 	RunForElection(context.Context) (<-chan bool, <-chan error)
-	Leader() (string, error)
+	// Leader returns the uid of the current leader. It only reads, and gives up when ctx ends.
+	Leader(ctx context.Context) (string, error)
 	Stop()
 }

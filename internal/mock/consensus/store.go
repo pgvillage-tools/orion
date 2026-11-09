@@ -207,18 +207,18 @@ func (m *MockElection) EXPECT() *MockElectionMockRecorder {
 }
 
 // Leader mocks base method.
-func (m *MockElection) Leader() (string, error) {
+func (m *MockElection) Leader(ctx context.Context) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Leader")
+	ret := m.ctrl.Call(m, "Leader", ctx)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Leader indicates an expected call of Leader.
-func (mr *MockElectionMockRecorder) Leader() *gomock.Call {
+func (mr *MockElectionMockRecorder) Leader(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Leader", reflect.TypeOf((*MockElection)(nil).Leader))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Leader", reflect.TypeOf((*MockElection)(nil).Leader), ctx)
 }
 
 // RunForElection mocks base method.

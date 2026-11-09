@@ -19,7 +19,6 @@ package consensus
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
@@ -181,28 +180,20 @@ func (e *etcdv3Election) Stop() {
 	e.running = false
 }
 
-func (e *etcdv3Election) Leader() (string, error) {
-	s, err := concurrency.NewSession(e.c, concurrency.WithTTL(int(e.ttl.Seconds())))
+// Leader reads the leader like concurrency.Election.Leader does, the value of the key under the election prefix that
+// was created first, but without a session: a session would grant (and revoke) a lease in etcd for every read, without
+// honouring ctx.
+func (e *etcdv3Election) Leader(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, e.requestTimeout)
+	defer cancel()
+	resp, err := e.c.Get(ctx, e.path+"/", etcdclientv3.WithFirstCreate()...)
 	if err != nil {
 		return "", fromEtcV3Error(err)
 	}
-	defer func() {
-		if err := s.Close(); err != nil {
-			log.Fatalf("Failed to close session: %v", err)
-		}
-	}()
-
-	etcdElection := concurrency.NewElection(s, e.path)
-
-	ctx, cancel := context.WithTimeout(context.Background(), e.requestTimeout)
-	resp, err := etcdElection.Leader(ctx)
-	cancel()
-	if err != nil {
-		return "", fromEtcV3Error(err)
+	if len(resp.Kvs) == 0 {
+		return "", ErrElectionNoLeader
 	}
-	leader := string(resp.Kvs[0].Value)
-
-	return leader, nil
+	return string(resp.Kvs[0].Value), nil
 }
 
 func (e *etcdv3Election) campaign() {
@@ -229,6 +220,11 @@ func (e *etcdv3Election) campaign() {
 		case <-e.ctx.Done():
 			return
 		case <-s.Done():
+			// The session is created with e.ctx, so Stop ends it too: then both cases are ready and select picks
+			// one at random. Stopped means stopped: don't report (and possibly block on) another false.
+			if e.ctx.Err() != nil {
+				return
+			}
 			e.electedCh <- false
 		}
 	}
