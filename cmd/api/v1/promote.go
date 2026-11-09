@@ -36,7 +36,7 @@ func (h *Handlers) PromoteReplicaSetRoutes() []Route {
 // PromoteClusterHandler promotes a standby cluster to a primary cluster (POST /v1/cluster/actions/promote); a primary
 // cluster stays as it is (200)
 func (h *Handlers) PromoteClusterHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	cd, pair, err := h.client.GetClusterData(ctx)

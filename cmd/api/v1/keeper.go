@@ -36,7 +36,7 @@ func (h *Handlers) KeeperRoutes() []Route {
 // good: a keeper that still runs registers itself again, and the sentinel adds it back. The keeper of the primary
 // can't be removed (409): fail it first, and remove it once another keeper runs the primary.
 func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(time.Second))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
 	defer cancelFunc()
 
 	cd, pair, err := h.client.GetClusterData(ctx)
