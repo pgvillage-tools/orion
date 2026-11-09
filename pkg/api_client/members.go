@@ -27,7 +27,7 @@ func (c Connection) GetKeepers() (keepers apiv1.InfoKeepers, httpCode int, err e
 
 // GetKeeper returns the keeper with uid (404 when it doesn't exist)
 func (c Connection) GetKeeper(uid string) (keeper apiv1.InfoKeeper, httpCode int, err error) {
-	httpCode, err = getMember(c, endpoints.KeeperEndPoint, "id", uid, &keeper)
+	httpCode, err = getMember(c, endpoints.KeeperEndPoint, "uid", uid, &keeper)
 	return keeper, httpCode, err
 }
 

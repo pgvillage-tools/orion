@@ -47,10 +47,10 @@ var _ = Describe("keeper", func() {
 		Entry("FailKeeper", client.Connection.FailKeeper),
 		Entry("DeleteKeeper", client.Connection.DeleteKeeper),
 	)
-	DescribeTable("sends no request for a keeper id with a placeholder",
+	DescribeTable("sends no request for a keeper uid with a placeholder",
 		func(do func(c client.Connection, keeper string) (int, error)) {
 			c, requests := record(respond(http.StatusAccepted, "", ""))
-			httpCode, err := do(c, "{id}")
+			httpCode, err := do(c, "{uid}")
 			Ω(err).To(MatchError(ContainSubstring("not all placeholders")))
 			Ω(httpCode).To(Equal(-1))
 			Ω(*requests).To(BeEmpty())

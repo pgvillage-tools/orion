@@ -19,7 +19,7 @@ import (
 
 // FailKeeper marks keeper as failed, so the sentinel fails over when it runs the primary
 func (c Connection) FailKeeper(keeper string) (httpCode int, err error) {
-	specificEP, specError := endpoints.FailKeeperEndPoint.Specific(map[string]string{"id": keeper})
+	specificEP, specError := endpoints.FailKeeperEndPoint.Specific(map[string]string{"uid": keeper})
 	if specError != nil {
 		return httpClientError, specError
 	}
@@ -28,7 +28,7 @@ func (c Connection) FailKeeper(keeper string) (httpCode int, err error) {
 
 // DeleteKeeper uses the API to delete all info regarding a Keeper
 func (c Connection) DeleteKeeper(keeper string) (httpCode int, err error) {
-	specificEP, specError := endpoints.KeeperEndPoint.Specific(map[string]string{"id": keeper})
+	specificEP, specError := endpoints.KeeperEndPoint.Specific(map[string]string{"uid": keeper})
 	if specError != nil {
 		return httpClientError, specError
 	}

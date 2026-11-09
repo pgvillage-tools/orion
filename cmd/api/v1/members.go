@@ -72,7 +72,7 @@ func (h *Handlers) KeeperHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "failed to get the keepers")
 		return
 	}
-	writeMember(ctx, h, w, "keeper", r.PathValue("id"), keepers, func(k apiv1.InfoKeeper) string { return k.UID })
+	writeMember(ctx, h, w, "keeper", r.PathValue("uid"), keepers, func(k apiv1.InfoKeeper) string { return k.UID })
 }
 
 // ProxyHandler returns the proxy with the uid in the path, or 404

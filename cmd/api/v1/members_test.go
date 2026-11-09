@@ -110,7 +110,7 @@ func TestKeeperHandlers(t *testing.T) {
 		uid      string
 		status   int
 		list     string // body of GET /v1/cluster/keepers
-		one      string // body of GET /v1/cluster/keepers/{id}; empty when that is 404
+		one      string // body of GET /v1/cluster/keepers/{uid}; empty when that is 404
 	}{
 		"a typical cluster, sorted on uid": {
 			cd: typicalClusterData(), uid: "keeper1", status: http.StatusOK, list: typicalKeepersJSON, one: keeper1JSON,
@@ -143,7 +143,7 @@ func TestKeeperHandlers(t *testing.T) {
 			checkResponse(t, w, tc.status, tc.list)
 
 			r := httptest.NewRequest(http.MethodGet, "/v1/cluster/keepers/"+tc.uid, nil)
-			r.SetPathValue("id", tc.uid)
+			r.SetPathValue("uid", tc.uid)
 			w = httptest.NewRecorder()
 			h.KeeperHandler(w, r)
 			checkResponse(t, w, memberStatus(tc.status, tc.one), tc.one)

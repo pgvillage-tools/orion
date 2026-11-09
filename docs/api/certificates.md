@@ -120,7 +120,7 @@ readinessProbe:
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `orion_api_certificate_expiry_timestamp_seconds` | gauge | `common_name`, `serial`, `ca` | Expiry of each certificate the api loaded at start (its certificate, its chain and the CA of the clients), in seconds since the unix epoch. |
-| `orion_api_requests_total` | counter | `method`, `route`, `code` | Requests on the api port, after authentication. `route` is the path of the route, e.g. `/v1/cluster/keepers/{id}`. |
+| `orion_api_requests_total` | counter | `method`, `route`, `code` | Requests on the api port, after authentication. `route` is the path of the route, e.g. `/v1/cluster/keepers/{uid}`. |
 | `orion_api_request_duration_seconds` | histogram | `method`, `route` | Duration of those requests. |
 | `orion_cluster_identifier` | gauge | `cluster_name`, `component` | Always 1, with `component="api"`. The other components have it too. |
 

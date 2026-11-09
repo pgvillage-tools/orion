@@ -127,7 +127,7 @@ func TestDeleteKeeperHandler(t *testing.T) {
 			h := NewHandlers(store, mockconsensus.NewMockElection(ctrl), &ready)
 
 			r := httptest.NewRequest(http.MethodDelete, "/v1/cluster/keepers/"+tc.keeper, nil)
-			r.SetPathValue("id", tc.keeper)
+			r.SetPathValue("uid", tc.keeper)
 			w := httptest.NewRecorder()
 			h.DeleteKeeperHandler(w, r)
 

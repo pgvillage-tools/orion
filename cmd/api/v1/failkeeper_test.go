@@ -181,7 +181,7 @@ func TestFailKeeperHandler(t *testing.T) {
 			h := NewHandlers(store, mockconsensus.NewMockElection(gomock.NewController(t)), &ready)
 
 			r := httptest.NewRequest(http.MethodPost, "/v1/cluster/keepers/"+tc.keeper+"/actions/fail", nil)
-			r.SetPathValue("id", tc.keeper)
+			r.SetPathValue("uid", tc.keeper)
 			w := httptest.NewRecorder()
 			h.FailKeeperHandler(w, r)
 

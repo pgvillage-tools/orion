@@ -72,7 +72,7 @@ func newAPIMetrics(registry *prometheus.Registry) *apiMetrics {
 }
 
 // instrument counts and times the requests that route handles. The route label is the path of the pattern (without
-// the method), e.g. /v1/cluster/keepers/{id}, so the number of series doesn't depend on the requests.
+// the method), e.g. /v1/cluster/keepers/{uid}, so the number of series doesn't depend on the requests.
 func (m *apiMetrics) instrument(route Route) http.HandlerFunc {
 	path := route.Pattern
 	if _, p, found := strings.Cut(route.Pattern, " "); found {

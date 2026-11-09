@@ -11,7 +11,7 @@ import (
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 )
 
-var _ = Describe("DELETE /v1/cluster/keepers/{id}", Ordered, func() {
+var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 	// these tests remove keepers, so they get their own cluster: a primary, a standby that is stopped and removed, and
 	// a standby that is removed while it runs
 	const numKeepers = 3
@@ -100,7 +100,7 @@ var _ = Describe("DELETE /v1/cluster/keepers/{id}", Ordered, func() {
 	})
 })
 
-var _ = Describe("DELETE /v1/cluster/keepers/{id} without a cluster", Ordered, func() {
+var _ = Describe("DELETE /v1/cluster/keepers/{uid} without a cluster", Ordered, func() {
 	// only etcd and the api: no cluster data yet
 	tc := withOwnAPI()
 

@@ -48,7 +48,7 @@ func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster yet")
 		return
 	}
-	keeperID := r.PathValue("id")
+	keeperID := r.PathValue("uid")
 	newCd := cd.DeepCopy()
 	keeper, exists := newCd.Keepers[keeperID]
 	if !exists {
