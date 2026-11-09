@@ -19,7 +19,7 @@ threshold:
 
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
-  total: 87
+  total: 88
 
 # Holds regexp rules which will override thresholds for matched files or packages
 # using their paths.
@@ -32,6 +32,9 @@ override:
   # (default is 80, as configured above in this example).
   #- path: ^pkg/lib/foo$
   #  threshold: 100
+  # process startup (flags, listeners, the server loop): covered by the e2e tests, not by unit tests
+  - path: ^cmd/api/v1/main.go
+    threshold: 35
   - path: ^internal/postgresql/recovery_options.go
     threshold: 66
   - path: scripts/gen_commands_doc.go
@@ -45,7 +48,10 @@ override:
 exclude:
   # Exclude files or packages matching their paths
   paths:
-    - cmd
+    # the commands, except the api handlers (cmd/api/v1), which have unit tests
+    - ^cmd/(cli|keeper|proxy|sentinel)/
+    - ^cmd/[^/]+\.go$
+    - ^cmd/api/[^/]+\.go$
     - e2e
     - internal/mock
 
