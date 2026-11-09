@@ -28,7 +28,10 @@ var cmdPromote = &cobra.Command{
 	Short: "Promotes a standby cluster to a primary cluster",
 }
 
+var promoteWait waitOptions
+
 func init() {
+	addWaitFlags(cmdPromote, &promoteWait)
 	CmdCLI.AddCommand(cmdPromote)
 }
 
@@ -49,4 +52,5 @@ func promote(_ *cobra.Command, args []string) {
 			Int("http_code", httpCode).
 			Msg("promote failed")
 	}
+	waitUntilConverged(ctx, apiClient, promoteWait, "")
 }

@@ -46,6 +46,7 @@ func init() {
 	cmdUpdate.PersistentFlags().StringVarP(&updateOpts.file, flagFile, "f", "",
 		"file containing a complete cluster specification or a patch to apply to the current cluster specification")
 
+	addWaitFlags(cmdUpdate, &updateWait)
 	CmdCLI.AddCommand(cmdUpdate)
 }
 
@@ -103,4 +104,7 @@ func update(_ *cobra.Command, args []string) {
 			Int("http return code", httpCode).
 			Msg("failed to get clusterdata")
 	}
+	waitUntilConverged(ctx, apiClient, updateWait, "")
 }
+
+var updateWait waitOptions

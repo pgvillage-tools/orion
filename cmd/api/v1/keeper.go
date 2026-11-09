@@ -74,5 +74,5 @@ func (h *Handlers) DeleteKeeperHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(ctx, err, w, "failed to delete the keeper")
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	writeAccepted(w)
 }

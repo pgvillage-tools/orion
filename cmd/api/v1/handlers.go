@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 
 	"github.com/pgvillage-tools/orion/internal/consensus"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
 // Route defines a combination of a pattern and the func to handle the request
@@ -78,4 +79,11 @@ func (h *Handlers) writeJSONStatus(ctx context.Context, w http.ResponseWriter, s
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		handleError(ctx, err, w, "error while writing json")
 	}
+}
+
+// writeAccepted answers 202 Accepted for a change the sentinel applies after the request: the Location header points
+// to the cluster status, which shows when it is done (e.g. orion-cli --wait polls it)
+func writeAccepted(w http.ResponseWriter) {
+	w.Header().Set("Location", "/"+endpoints.APIVersion+"/"+string(endpoints.StatusEndPoint))
+	w.WriteHeader(http.StatusAccepted)
 }

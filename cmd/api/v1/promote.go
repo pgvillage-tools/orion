@@ -66,5 +66,5 @@ func (h *Handlers) PromoteClusterHandler(w http.ResponseWriter, r *http.Request)
 		handleError(ctx, err, w, "failed to promote this replicaset")
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	writeAccepted(w)
 }
