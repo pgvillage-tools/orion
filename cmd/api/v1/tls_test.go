@@ -54,7 +54,7 @@ func TestAPIWithClientCertificates(t *testing.T) {
 	}
 	var isReady atomic.Bool
 	isReady.Store(true)
-	h := NewHandlers(nil, &isReady)
+	h := NewHandlers(nil, nil, &isReady)
 
 	server := httptest.NewUnstartedServer(auth.Middleware(newMux(t.Context(), h.Routes()),
 		auth.ClientCertAuthenticator{}))
@@ -96,7 +96,7 @@ func TestProbeRoutes(t *testing.T) {
 	var isReady atomic.Bool
 	store := mockconsensus.NewMockStore(gomock.NewController(t))
 	store.EXPECT().Healthy(gomock.Any()).Return(nil).AnyTimes()
-	h := NewHandlers(store, &isReady)
+	h := NewHandlers(store, nil, &isReady)
 	probe := httptest.NewServer(newMux(t.Context(), h.ProbeRoutes(http.NotFoundHandler())))
 	defer probe.Close()
 

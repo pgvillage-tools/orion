@@ -251,13 +251,11 @@ func NewStore(ctx context.Context, cfg *CommonConfig) (consensus.Store, error) {
 	case "etcdv2":
 		fallthrough
 	case "etcdv3":
-		storePath := filepath.Join(cfg.StorePrefix, cfg.ClusterName)
-
 		kvstore, err := NewKVStore(ctx, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("NewStore: cannot create etcdv3 store: %v", err)
 		}
-		s = consensus.NewKVBackedStore(kvstore, storePath)
+		s = consensus.NewKVBackedStore(kvstore, storePath(cfg))
 	case "kubernetes":
 		kubecli, podName, namespace, err := getKubeValues(cfg)
 		if err != nil {
@@ -282,18 +280,11 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.
 	case "etcdv2":
 		fallthrough
 	case "etcdv3":
-		storePath := filepath.Join(cfg.StorePrefix, cfg.ClusterName)
-
 		kvstore, err := NewKVStore(ctx, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("NewElection: cannot create kv store: %v", err)
 		}
-		election = consensus.NewKVBackedElection(
-			kvstore,
-			filepath.Join(storePath,
-				common.SentinelLeaderKey),
-			uid,
-			cfg.StoreTimeout)
+		election = newKVBackedElection(kvstore, cfg, uid)
 	case "kubernetes":
 		kubecli, podName, namespace, err := getKubeValues(cfg)
 		if err != nil {
@@ -306,6 +297,45 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.
 	}
 
 	return election, nil
+}
+
+// NewStoreAndElection returns a store and an election that share one connection to the store backend. It is meant for
+// a long running process that needs both, like the api: NewStore and NewElection each open their own connection.
+func NewStoreAndElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.Store, consensus.Election,
+	error) {
+	switch cfg.StoreBackend {
+	case "consul", "etcdv2", "etcdv3":
+		kvstore, err := NewKVStore(ctx, cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot create kv store: %w", err)
+		}
+		return consensus.NewKVBackedStore(kvstore, storePath(cfg)), newKVBackedElection(kvstore, cfg, uid), nil
+	case "kubernetes":
+		kubecli, podName, namespace, err := getKubeValues(cfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		s, err := consensus.NewKubeStore(kubecli, podName, namespace, cfg.ClusterName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot create k8s store: %w", err)
+		}
+		e, err := consensus.NewKubeElection(kubecli, podName, namespace, cfg.ClusterName, uid)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot create k8s election: %w", err)
+		}
+		return s, e, nil
+	}
+	return nil, nil, fmt.Errorf("unknown store backend %q", cfg.StoreBackend)
+}
+
+// storePath is the path of the cluster in a kv store
+func storePath(cfg *CommonConfig) string {
+	return filepath.Join(cfg.StorePrefix, cfg.ClusterName)
+}
+
+func newKVBackedElection(kvstore consensus.KVStore, cfg *CommonConfig, uid string) consensus.Election {
+	return consensus.NewKVBackedElection(kvstore, filepath.Join(storePath(cfg), common.SentinelLeaderKey), uid,
+		cfg.StoreTimeout)
 }
 
 func getKubeValues(cfg *CommonConfig) (*kubernetes.Clientset, string, string, error) {

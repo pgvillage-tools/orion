@@ -31,7 +31,7 @@ func TestLivez(t *testing.T) {
 	// liveness doesn't look at readiness or the store: a nil store would panic if it did
 	var notReady atomic.Bool
 	w := httptest.NewRecorder()
-	NewHandlers(nil, &notReady).LivezHandler(w, httptest.NewRequest(http.MethodGet, "/livez", nil))
+	NewHandlers(nil, nil, &notReady).LivezHandler(w, httptest.NewRequest(http.MethodGet, "/livez", nil))
 	if w.Code != http.StatusOK || w.Body.String() != "OK" {
 		t.Errorf("expected 200 OK, got %d %q", w.Code, w.Body.String())
 	}
@@ -57,7 +57,7 @@ func TestReadyz(t *testing.T) {
 				store.EXPECT().Healthy(gomock.Any()).Return(tc.storeErr)
 			}
 			w := httptest.NewRecorder()
-			NewHandlers(store, &ready).ReadyzHandler(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			NewHandlers(store, nil, &ready).ReadyzHandler(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 			if w.Code != tc.status || w.Body.String() != tc.body {
 				t.Errorf("expected %d %q, got %d %q", tc.status, tc.body, w.Code, w.Body.String())
 			}
@@ -74,7 +74,7 @@ func TestShutdown(t *testing.T) {
 
 	store := mockconsensus.NewMockStore(gomock.NewController(t))
 	store.EXPECT().Healthy(gomock.Any()).Return(nil).AnyTimes()
-	h := NewHandlers(store, &ready)
+	h := NewHandlers(store, nil, &ready)
 	probe := httptest.NewServer(newMux(t.Context(), h.ProbeRoutes(http.NotFoundHandler())))
 	defer probe.Close()
 	srv := httptest.NewServer(http.NotFoundHandler())

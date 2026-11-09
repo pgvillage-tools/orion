@@ -36,7 +36,7 @@ func TestMetrics(t *testing.T) {
 	metrics.setCertificates(certs)
 	var isReady atomic.Bool
 	isReady.Store(true)
-	h := NewHandlers(nil, &isReady)
+	h := NewHandlers(nil, nil, &isReady)
 	routes := h.Routes()
 	for i := range routes {
 		routes[i].Handler = metrics.instrument(routes[i])

@@ -195,12 +195,13 @@ func api(c *cobra.Command, _ []string) {
 		}
 	}()
 
-	cl, err := cmdcommon.NewStore(ctx, &cfg.CommonConfig)
+	// one store connection for the whole api, shared by the store and the election client
+	cl, election, err := cmdcommon.NewStoreAndElection(ctx, &cfg.CommonConfig, "")
 	if err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
 
-	h := NewHandlers(cl, &ready)
+	h := NewHandlers(cl, election, &ready)
 	logger.Debug().Msg("registering routes")
 	routes := h.Routes()
 	for i := range routes {
