@@ -249,6 +249,16 @@ jobs:
           go-version-file: go.mod
       - name: Test
         run: make test
+      # The coverage per file of the latest main run, to show in the PR comment what this change does to it.
+      # Caches made on main can be read by PRs; the newest one matches the restore key.
+      - name: restore the coverage breakdown of main
+        id: main-breakdown
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: main.breakdown
+          key: coverage-breakdown-main-
+          restore-keys: coverage-breakdown-main-
       - name: check test coverage
         id: coverage
         uses: vladopajic/go-test-coverage@6890500b00a7e5862e54662c04ea9fa7c799ce1e # v2.23.0
@@ -256,6 +266,16 @@ jobs:
         with:
           config: .testcoverage.yaml
           profile: cover.out
+          # on main: write the breakdown, for the PRs to compare with
+          breakdown-file-name: ${{ github.event_name == 'push' && github.ref_name == 'main' && 'main.breakdown' || '' }}
+          # on a PR: compare with main, when a breakdown of main was found
+          diff-base-breakdown-file-name: ${{ steps.main-breakdown.outputs.cache-matched-key != '' && 'main.breakdown' || '' }}
+      - name: save the coverage breakdown of main
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: main.breakdown
+          key: coverage-breakdown-main-${{ github.sha }}
       - name: Generate test results artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
