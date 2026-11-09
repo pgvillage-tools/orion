@@ -220,6 +220,11 @@ func (e *etcdv3Election) campaign() {
 		case <-e.ctx.Done():
 			return
 		case <-s.Done():
+			// The session is created with e.ctx, so Stop ends it too: then both cases are ready and select picks
+			// one at random. Stopped means stopped: don't report (and possibly block on) another false.
+			if e.ctx.Err() != nil {
+				return
+			}
 			e.electedCh <- false
 		}
 	}
