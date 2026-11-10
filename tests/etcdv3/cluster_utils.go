@@ -7,7 +7,9 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
@@ -78,6 +81,13 @@ func (tc *testCluster) start(ctx context.Context, numKeepers int) {
 	Ω(err).NotTo(HaveOccurred())
 	Ω(httpCode).To(Equal(http.StatusCreated))
 
+	tc.startMembers(ctx, numKeepers)
+}
+
+// startMembers starts the sentinel, numKeepers keepers and the proxy of a cluster whose api runs (startAPI). It is the
+// last part of start; on its own, it is for tests that create the cluster themselves.
+func (tc *testCluster) startMembers(ctx context.Context, numKeepers int) {
+	var err error
 	tc.sentinel, err = runSentinel(ctx, tc.etcdEndpoints, tc.nw)
 	tc.add(tc.sentinel)
 	Ω(err).NotTo(HaveOccurred())
@@ -125,14 +135,16 @@ func (tc *testCluster) startAPI(ctx context.Context) {
 
 	// create the certificates for the api and the client of this test framework
 	tmpDir := GinkgoT().TempDir()
-	tc.pki = pki.InitOptions{CLIDir: filepath.Join(tmpDir, "cli"), APIDir: filepath.Join(tmpDir, "api")}
+	// the api certificate is also valid for apiAlias, so a client in another container (e.g. orion-cli) can connect
+	tc.pki = pki.InitOptions{CLIDir: filepath.Join(tmpDir, "cli"), APIDir: filepath.Join(tmpDir, "api"),
+		APISANs: []string{apiAlias}}
 	_, err = pki.Init(tc.pki)
 	Ω(err).NotTo(HaveOccurred())
 	clientTLS, err := pki.CLIFiles(tc.pki.CLIDir).ClientConfig()
 	Ω(err).NotTo(HaveOccurred())
 
 	// run the api to control orion from this test framework
-	tc.api, err = runAPI(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{}, tc.pki.APIDir)
+	tc.api, err = runAPI(ctx, tc.etcdEndpoints, tc.nw, map[string][]string{tc.nw.Name: {apiAlias}}, tc.pki.APIDir)
 	tc.add(tc.api)
 	Ω(err).NotTo(HaveOccurred())
 	apiPort, err := tc.api.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiInternalPort))
@@ -291,4 +303,45 @@ func (tc *testCluster) dumpLogs(ctx context.Context) {
 		fmt.Println(strings.Join(lines, "\n"))
 		fmt.Print(endGroup)
 	}
+}
+
+// cliTimeout is how long a cli command in a container may run (failkeeper --wait waits for a failover)
+const cliTimeout = 5 * time.Minute
+
+// cli runs orion-cli with args in a container on the network of the cluster, connected to the api and logged in with
+// the client certificate of the cluster, like a user would. It returns the output (stdout and stderr) and the exit
+// code.
+func (tc *testCluster) cli(ctx context.Context, args ...string) (string, int) {
+	var files []testcontainers.ContainerFile
+	for _, f := range []string{pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile} {
+		files = append(files, testcontainers.ContainerFile{
+			HostFilePath:      filepath.Join(tc.pki.CLIDir, f),
+			ContainerFilePath: path.Join(cliPKIDir, f),
+			FileMode:          cliPKIFileMode,
+		})
+	}
+	cmd := append([]string{"--host", apiAlias, "--port", strconv.Itoa(apiInternalPort)}, args...)
+	cnt, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:      "cli",
+			Cmd:        cmd,
+			Files:      files,
+			Networks:   []string{tc.nw.Name},
+			WaitingFor: wait.ForExit().WithExitTimeout(cliTimeout),
+		},
+		Started: true,
+	})
+	if cnt != nil {
+		defer func() { _ = cnt.Terminate(ctx) }()
+	}
+	Ω(err).NotTo(HaveOccurred(), "orion-cli %v", args)
+	state, err := cnt.State(ctx)
+	Ω(err).NotTo(HaveOccurred())
+	logs, err := cnt.Logs(ctx)
+	Ω(err).NotTo(HaveOccurred())
+	defer func() { _ = logs.Close() }()
+	out, err := io.ReadAll(logs)
+	Ω(err).NotTo(HaveOccurred())
+	fmt.Fprintf(GinkgoWriter, "$ orion-cli %s\n%s(exit %d)\n", strings.Join(args, " "), out, state.ExitCode)
+	return string(out), state.ExitCode
 }
