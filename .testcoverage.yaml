@@ -19,7 +19,7 @@ threshold:
 
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
-  total: 88
+  total: 89
 
 # Holds regexp rules which will override thresholds for matched files or packages
 # using their paths.
@@ -48,8 +48,9 @@ override:
 exclude:
   # Exclude files or packages matching their paths
   paths:
-    # the commands, except the api handlers (cmd/api/v1), which have unit tests
-    - ^cmd/(cli|keeper|proxy|sentinel)/
+    # the commands, except the api handlers (cmd/api/v1) and the cli commands (cmd/cli/cmd), which have unit tests
+    - ^cmd/(keeper|proxy|sentinel)/
+    - ^cmd/cli/[^/]+\.go$
     - ^cmd/[^/]+\.go$
     - ^cmd/api/[^/]+\.go$
     - e2e
