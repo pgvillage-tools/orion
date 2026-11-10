@@ -41,7 +41,9 @@ ENV ORIONAPI_CLUSTER_NAME=orion \
     ORIONAPI_STORE_BACKEND=etcdv3 \
     ORIONAPI_PKI_DIR=/etc/orion/api
 
-RUN useradd orion
+# a fixed uid, so the private key on the host can be made readable for it (docs/api/certificates.md), and the
+# certificate directory as a mount point
+RUN useradd --uid 1000 orion && mkdir -p /etc/orion/api && chown orion: /etc/orion/api
 USER orion
 
 # 8443: the api (TLS, a client certificate is required), 8080: /livez, /readyz, /status and /metrics

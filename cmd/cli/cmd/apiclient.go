@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
@@ -39,9 +40,12 @@ func newAPIClient(host string, port uint16) (client.Connection, error) {
 	if err != nil {
 		return client.Connection{}, err
 	}
-	if !files.Exist() {
-		return client.Connection{}, fmt.Errorf("client certificate not found (cert %s, key %s, ca %s): create it "+
-			"with `orion-cli pki init`", files.CertFile, files.KeyFile, files.CAFile)
+	if err = files.Check(); err != nil {
+		if errors.Is(err, pki.ErrFilesNotFound) {
+			return client.Connection{}, fmt.Errorf("client certificate not found (%w): create it with "+
+				"`orion-cli pki init`", err)
+		}
+		return client.Connection{}, err
 	}
 	tlsConfig, err := files.ClientConfig()
 	if err != nil {

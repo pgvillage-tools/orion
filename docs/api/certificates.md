@@ -26,11 +26,16 @@ Copy `~/.orion/api` to the api host (e.g. to `/etc/orion/api`), and start the ap
 orion-api --pki-dir /etc/orion/api --cluster-name mycluster --store-backend etcdv3
 ```
 
-Check the connection from the cli:
+The private key must be readable for the user that runs the api. In a container, see
+[Running the api in a container](#running-the-api-in-a-container).
+
+Check the connection from the cli, and create a cluster:
 
 ```bash
 orion-cli --host orion-api.example.com connect
 # Connected to the api as orion-cli (client-certificate)
+orion-cli init           # a new cluster with the default settings; or pass a cluster spec
+orion-cli status
 ```
 
 ## What `orion-cli pki init` creates
@@ -88,8 +93,28 @@ The api certificate is always valid for `localhost`, `127.0.0.1` and `::1`.
 - The api doesn't start without its certificates. Starting without certificates (bootstrap mode) is planned.
 - The api reads its certificates at start. After you replace them (e.g. after a renewal), restart the api.
 - At start, and once a day, the api logs a warning for every certificate it loaded that expires within 30 days.
-- The api container image reads its certificates from `/etc/orion/api` (`ORIONAPI_PKI_DIR`). Mount them there, e.g.
-  from a Kubernetes Secret, and make sure the `orion` user can read the private key.
+- The private key (`server.key`) must be readable for the user that runs the api, and for nobody else.
+
+### Running the api in a container
+
+The api image reads its certificates from `/etc/orion/api` (`ORIONAPI_PKI_DIR`), and runs as user `orion`, uid 1000.
+Mount the directory with the api files there, read-only, and give it to uid 1000. `orion-cli pki init` creates it
+with mode `0700`, and the key with `0600`: keep those, so only the api can read the key.
+
+```bash
+sudo chown -R 1000 /etc/orion/api
+docker run -d -p 8443:8443 -p 8080:8080 \
+  -v /etc/orion/api:/etc/orion/api:ro \
+  -e ORIONAPI_STORE_ENDPOINTS=http://etcd:2379 \
+  orion-api
+```
+
+- Owned by root (e.g. after `sudo cp -r`), the api can't read the directory or the key, and stops with
+  `permission denied`.
+- On a host with SELinux (Fedora, RHEL), add `,z` to the mount (`-v /etc/orion/api:/etc/orion/api:ro,z`), or the api
+  can't read any file in it.
+- On Kubernetes, mount them from a Secret. Its files are owned by root, with the pod's `fsGroup` as group: set
+  `fsGroup: 1000` in the pod's security context, and `defaultMode: 0440` on the volume.
 
 ### Probe port
 
@@ -157,6 +182,7 @@ curl --cacert ~/.orion/cli/ca.crt --cert ~/.orion/cli/tls.crt --key ~/.orion/cli
 | Error | Cause |
 |-------|-------|
 | `certificates not found` (api) | The files are not in `--pki-dir`. Run `orion-cli pki init`, and copy the api files. |
+| `permission denied` (api) | The api can't read its key or certificates: see [Running the api in a container](#running-the-api-in-a-container). |
 | `client certificate not found` (cli) | The files are not in the `--pki-dir` of the cli. Run `orion-cli pki init`. |
 | `certificate signed by unknown authority` | The cli and the api use certificates of different CAs. Copy the api files of the same `pki init` to the api. |
 | `certificate is valid for ..., not ...` | The name you connect to is not on the api certificate. Add it with `--api-san`, and run `pki init --force`. |

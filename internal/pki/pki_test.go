@@ -3,6 +3,7 @@ package pki_test
 import (
 	"crypto/tls"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -222,5 +223,34 @@ var _ = Describe("Helpers", func() {
 		Expect(pki.APIFiles("/nonexistent").Exist()).To(BeFalse())
 		_, err := pki.APIFiles("/nonexistent").ServerConfig()
 		Expect(err).To(HaveOccurred())
+	})
+	Describe("Check", func() {
+		var files pki.TLSFiles
+		BeforeEach(func() {
+			dir := GinkgoT().TempDir()
+			files = pki.APIFiles(dir)
+			for _, p := range []string{files.CertFile, files.KeyFile, files.CAFile} {
+				Expect(os.WriteFile(p, []byte("x"), 0o600)).To(Succeed())
+			}
+		})
+		It("accepts files it can read", func() {
+			Expect(files.Check()).To(Succeed())
+		})
+		It("reports a missing file as not found, with its name", func() {
+			Expect(os.Remove(files.KeyFile)).To(Succeed())
+			err := files.Check()
+			Expect(err).To(MatchError(pki.ErrFilesNotFound))
+			Expect(err).To(MatchError(ContainSubstring(files.KeyFile)))
+		})
+		It("reports a file it can't read as such, not as not found", func() {
+			if os.Getuid() == 0 {
+				Skip("root reads every file")
+			}
+			Expect(os.Chmod(files.KeyFile, 0)).To(Succeed())
+			err := files.Check()
+			Expect(err).NotTo(MatchError(pki.ErrFilesNotFound))
+			Expect(err).To(MatchError(fs.ErrPermission))
+			Expect(err).To(MatchError(ContainSubstring("cannot read " + files.KeyFile)))
+		})
 	})
 })
