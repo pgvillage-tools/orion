@@ -162,6 +162,87 @@ func TestStatusPrintsTheTreeOfFollowers(t *testing.T) {
 		"")
 }
 
+func TestStatusEndsTheTreeAtTheLastPrintedFollower(t *testing.T) {
+	cd := testClusterData()
+	// the last follower (db5) isn't in the cluster data, and db9 has no spec: keeper3 is the last one printed
+	cd.DBs["db1"].Spec.Followers = []string{"db2", "db3", "db9", "db5"}
+	cd.DBs["db3"] = &apiv1.DB{UID: "db3", Spec: &apiv1.DBSpec{KeeperUID: "keeper3"}}
+	cd.DBs["db9"] = &apiv1.DB{UID: "db9"}
+	api := newFakeAPI(t)
+	handleStatus(api, testStatus())
+	handleClusterData(api, cd)
+	stdout, _, err := api.run("status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectLines(t, stdout, "===== Keepers/DB tree =====", "",
+		"keeper1 (master)",
+		"├─keeper2",
+		"└─keeper3",
+		"")
+}
+
+func TestStatusPrintsATreeWithoutClusterOrSpecs(t *testing.T) {
+	for name, change := range map[string]func(cd *apiv1.Data){
+		"cluster data without a cluster": func(cd *apiv1.Data) { cd.Cluster = nil },
+		"a primary db without a spec":    func(cd *apiv1.Data) { cd.DBs["db1"].Spec = nil },
+		"a primary db that is missing":   func(cd *apiv1.Data) { delete(cd.DBs, "db1") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			cd := testClusterData()
+			change(cd)
+			api := newFakeAPI(t)
+			handleStatus(api, testStatus())
+			handleClusterData(api, cd)
+			if _, _, err := api.run("status"); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestStatusAlignsTheColumnsOfATable(t *testing.T) {
+	status := testStatus()
+	status.Keepers = []apiv1.InfoKeeper{
+		{UID: "k1", ListenAddress: "keeper1:5432", Healthy: true},
+		{UID: "a-much-longer-keeper-uid", ListenAddress: "10.0.0.2:5432", Healthy: true},
+	}
+	api := newFakeAPI(t)
+	handleStatus(api, status)
+	handleClusterData(api, testClusterData())
+	stdout, _, err := api.run("status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// every row of the keepers table starts its second column (HEALTHY) at the same position on a terminal
+	var columns []int
+	for _, line := range strings.Split(stdout, "\n") {
+		for _, first := range []string{"UID\t", "k1\t", "a-much-longer-keeper-uid\t"} {
+			if strings.HasPrefix(line, first) {
+				expanded := expandTabs(line, tabWidth)
+				rest := expanded[len(first)-1:]
+				columns = append(columns, len(expanded)-len(strings.TrimLeft(rest, " ")))
+			}
+		}
+	}
+	if len(columns) != 3 || columns[0] != columns[1] || columns[1] != columns[2] {
+		t.Errorf("expected the second column of the 3 keeper lines at the same position, got %v in\n%s", columns, stdout)
+	}
+}
+
+// expandTabs replaces the tabs in line with spaces up to the next tab stop, like a terminal
+func expandTabs(line string, width int) string {
+	var b strings.Builder
+	for _, r := range line {
+		if r == '\t' {
+			b.WriteString(strings.Repeat(" ", width-b.Len()%width))
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 func TestStatusPrintsTheClusterAsJSON(t *testing.T) {
 	api := newFakeAPI(t)
 	handleStatus(api, testStatus())

@@ -143,8 +143,9 @@ func renderText(apiClient client.Connection, ic *cluster.InfoCluster) error {
 		tabOut.printf("ID\tLEADER\n")
 		for _, s := range ic.Sentinels {
 			tabOut.printf("%s\t%t\n", s.UID, s.Leader)
-			tabOut.flush()
 		}
+		// once per table: the columns are aligned over the rows written since the last flush
+		tabOut.flush()
 	}
 	stdout("")
 	stdout("=== Active proxies ===")
@@ -155,8 +156,8 @@ func renderText(apiClient client.Connection, ic *cluster.InfoCluster) error {
 		tabOut.printf("ID\n")
 		for _, p := range ic.Proxies {
 			tabOut.printf("%s\n", p.UID)
-			tabOut.flush()
 		}
+		tabOut.flush()
 	}
 	stdout("")
 	stdout("=== Keepers ===")
@@ -169,8 +170,8 @@ func renderText(apiClient client.Connection, ic *cluster.InfoCluster) error {
 		for _, k := range ic.Keepers {
 			tabOut.printf("%s\t%t\t%s\t%t\t%d\t%d\t\n", k.UID, k.Healthy, k.ListenAddress, k.PgHealthy,
 				k.PgWantedGeneration, k.PgCurrentGeneration)
-			tabOut.flush()
 		}
+		tabOut.flush()
 	}
 	if tabOut.err != nil {
 		return fmt.Errorf("failed to write the status: %w", tabOut.err)
@@ -203,10 +204,11 @@ func renderText(apiClient client.Connection, ic *cluster.InfoCluster) error {
 	return nil
 }
 
+// printTree prints the db with dbuid and, below it, the tree of its followers. A db that isn't in the cluster data (a
+// follower of a removed keeper), or has no spec, is left out.
 func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bool) {
-	// skip not existing db: specified as a follower but not available in the
-	// cluster spec (this should happen only when doing an `orion-cli removekeeper`)
-	if _, ok := cd.DBs[dbuid]; !ok {
+	db := cd.DBs[dbuid]
+	if db == nil || db.Spec == nil {
 		return
 	}
 	out := prefix
@@ -217,32 +219,28 @@ func printTree(dbuid string, cd *cluster.Data, level int, prefix string, tail bo
 			out += "├─"
 		}
 	}
-	out += cd.DBs[dbuid].Spec.KeeperUID
-	if dbuid == cd.Cluster.Status.Master {
+	out += db.Spec.KeeperUID
+	if cd.Cluster != nil && dbuid == cd.Cluster.Status.Master {
 		out += " (master)"
 	}
 	stdout("%s", out)
-	db := cd.DBs[dbuid]
-	followers := db.Spec.Followers
-	c := len(followers)
-	for i, f := range followers {
-		emptyspace := ""
-		if level > 0 {
-			emptyspace = "  "
+
+	// leave out the followers that can't be printed first, so the last one that is printed gets └─
+	var followers []string
+	for _, f := range db.Spec.Followers {
+		if fdb := cd.DBs[f]; fdb != nil && fdb.Spec != nil {
+			followers = append(followers, f)
 		}
-		linespace := "│ "
-		if i < c-1 {
-			if tail {
-				printTree(f, cd, level+1, prefix+emptyspace, false)
-			} else {
-				printTree(f, cd, level+1, prefix+linespace, false)
-			}
+	}
+	childPrefix := prefix
+	if level > 0 {
+		if tail {
+			childPrefix += "  "
 		} else {
-			if tail {
-				printTree(f, cd, level+1, prefix+emptyspace, true)
-			} else {
-				printTree(f, cd, level+1, prefix+linespace, true)
-			}
+			childPrefix += "│ "
 		}
+	}
+	for i, f := range followers {
+		printTree(f, cd, level+1, childPrefix, i == len(followers)-1)
 	}
 }

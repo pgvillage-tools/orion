@@ -16,17 +16,19 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/spf13/cobra"
 )
 
 var cmdInit = &cobra.Command{
-	Use:   "init",
+	Use:   "init [cluster spec]",
 	RunE:  initCluster,
 	Short: "Initialize a new cluster",
 }
@@ -39,7 +41,8 @@ type InitOptions struct {
 var initOpts InitOptions
 
 func init() {
-	cmdInit.PersistentFlags().StringVarP(&initOpts.file, flagFile, "f", "-", "file to read as input, use - for stdin")
+	cmdInit.PersistentFlags().StringVarP(&initOpts.file, flagFile, "f", "",
+		"file with the cluster spec, - for stdin (without a spec: a new cluster with the default settings)")
 
 	addWaitFlags(cmdInit, &initWait)
 	CmdCLI.AddCommand(cmdInit)
@@ -49,8 +52,10 @@ func initCluster(c *cobra.Command, args []string) error {
 	if len(args) > 1 {
 		return errors.New("too many arguments")
 	}
+	if len(args) == 1 && initOpts.file != "" {
+		return errors.New("pass the cluster spec as an argument or with --file, not both")
+	}
 
-	initSpec := &apiv1.Spec{}
 	var data []byte
 	switch {
 	case len(args) == 1:
@@ -61,10 +66,15 @@ func initCluster(c *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	if data != nil {
+	initSpec := &apiv1.Spec{}
+	// empty input is no spec: a new cluster with the default settings
+	if len(bytes.TrimSpace(data)) > 0 {
 		if err := json.Unmarshal(data, initSpec); err != nil {
 			return fmt.Errorf("invalid cluster spec: %w", err)
 		}
+	}
+	if initSpec.InitMode == nil {
+		initSpec.InitMode = util.ToPtr(apiv1.New)
 	}
 
 	apiClient, err := defaultAPIClient()
