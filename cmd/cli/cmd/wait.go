@@ -29,8 +29,10 @@ const (
 	flagWait           = "wait"
 	flagWaitTimeout    = "wait-timeout"
 	defaultWaitTimeout = 5 * time.Minute
-	waitPollInterval   = 2 * time.Second
 )
+
+// waitPollInterval is how often --wait polls the cluster status (a var, so tests can poll faster)
+var waitPollInterval = 2 * time.Second
 
 // waitOptions are the --wait and --wait-timeout flags of a command
 type waitOptions struct {
