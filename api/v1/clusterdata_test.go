@@ -30,6 +30,31 @@ var _ = Describe("Clusterdata", func() {
 			Ω(d.DeepCopy()).To(Equal(&Data{}))
 		})
 	})
+	When("Finding the db of a keeper", func() {
+		keeper1 := &Keeper{UID: "keeper1"}
+		It("returns the db whose spec has the keeper", func() {
+			d := &Data{DBs: DBs{
+				"db1": {UID: "db1", Spec: &DBSpec{KeeperUID: "keeper2"}},
+				"db2": {UID: "db2", Spec: &DBSpec{KeeperUID: "keeper1"}},
+			}}
+			Ω(d.FindDB(keeper1)).To(HaveField("UID", "db2"))
+		})
+		It("returns nil for a keeper without a db", func() {
+			d := &Data{DBs: DBs{"db1": {UID: "db1", Spec: &DBSpec{KeeperUID: "keeper2"}}}}
+			Ω(d.FindDB(keeper1)).To(BeNil())
+			Ω((&Data{}).FindDB(keeper1)).To(BeNil())
+		})
+		It("skips a db without a spec, or a nil db, instead of panicking", func() {
+			d := &Data{DBs: DBs{
+				"db0": nil,
+				"db1": {UID: "db1"},
+				"db2": {UID: "db2", Spec: &DBSpec{KeeperUID: "keeper1"}},
+			}}
+			Ω(d.FindDB(keeper1)).To(HaveField("UID", "db2"))
+			delete(d.DBs, "db2")
+			Ω(d.FindDB(keeper1)).To(BeNil())
+		})
+	})
 	When("Defining a new cluster data object", func() {
 		It("should return a well defined object", func() {
 			c := randomCluster()
