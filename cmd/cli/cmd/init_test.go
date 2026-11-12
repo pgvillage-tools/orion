@@ -65,13 +65,56 @@ func TestInitPostsTheSpecOfTheArgument(t *testing.T) {
 	}
 }
 
-func TestInitReadsTheSpecFromStdinByDefault(t *testing.T) {
+func TestInitReadsTheSpecFromStdinWithADash(t *testing.T) {
 	api := newInitAPI(t)
-	if _, _, err := api.runWith(context.Background(), `{"maxStandbys": 5}`, "init"); err != nil {
+	if _, _, err := api.runWith(context.Background(), `{"maxStandbys": 5}`, "init", "--file", "-"); err != nil {
 		t.Fatal(err)
 	}
 	if spec := expectPostedSpec(t, api); spec.MaxStandbys == nil || *spec.MaxStandbys != 5 {
 		t.Errorf("unexpected spec %+v", spec)
+	}
+}
+
+func TestInitWithoutASpecCreatesANewClusterWithDefaults(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stdin string
+		args  []string
+	}{
+		// it doesn't read stdin without --file -: at a terminal it would wait for input
+		"no arguments, stdin ignored": {stdin: `{"maxStandbys": 5}`},
+		"empty stdin":                 {stdin: "", args: []string{"--file", "-"}},
+		"stdin with only whitespace":  {stdin: " \n", args: []string{"--file", "-"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := newInitAPI(t)
+			if _, _, err := api.runWith(context.Background(), tc.stdin, append([]string{"init"}, tc.args...)...); err != nil {
+				t.Fatal(err)
+			}
+			spec := expectPostedSpec(t, api)
+			if spec.InitMode == nil || *spec.InitMode != apiv1.New || spec.MaxStandbys != nil {
+				t.Errorf("expected a new cluster with the default settings, got %+v", spec)
+			}
+		})
+	}
+}
+
+func TestInitDefaultsTheInitModeToNew(t *testing.T) {
+	api := newInitAPI(t)
+	if _, _, err := api.run("init", `{"maxStandbys": 3}`); err != nil {
+		t.Fatal(err)
+	}
+	if spec := expectPostedSpec(t, api); spec.InitMode == nil || *spec.InitMode != apiv1.New {
+		t.Errorf("expected initMode new, got %+v", spec)
+	}
+}
+
+func TestInitKeepsAnotherInitMode(t *testing.T) {
+	api := newInitAPI(t)
+	if _, _, err := api.run("init", `{"initMode": "existing", "existingConfig": {"keeperUID": "keeper1"}}`); err != nil {
+		t.Fatal(err)
+	}
+	if spec := expectPostedSpec(t, api); spec.InitMode == nil || *spec.InitMode != apiv1.ExistingCluster {
+		t.Errorf("expected initMode existing, got %+v", spec)
 	}
 }
 
@@ -86,16 +129,6 @@ func TestInitReadsTheSpecFromAFile(t *testing.T) {
 	}
 	if spec := expectPostedSpec(t, api); spec.MaxStandbys == nil || *spec.MaxStandbys != 7 {
 		t.Errorf("unexpected spec %+v", spec)
-	}
-}
-
-func TestInitWithoutAFilePostsAnEmptySpec(t *testing.T) {
-	api := newInitAPI(t)
-	if _, _, err := api.run("init", "--file", ""); err != nil {
-		t.Fatal(err)
-	}
-	if spec := expectPostedSpec(t, api); spec.MaxStandbys != nil || spec.InitMode != nil {
-		t.Errorf("expected an empty spec, got %+v", spec)
 	}
 }
 
@@ -143,6 +176,7 @@ func TestInitRefusesInvalidInput(t *testing.T) {
 		{"two arguments", []string{"{}", "{}"}, "too many arguments"},
 		{"invalid json", []string{"{"}, "invalid cluster spec: "},
 		{"missing file", []string{"--file", missing}, "cannot read " + missing + ": "},
+		{"an argument and a file", []string{"{}", "--file", missing}, "pass the cluster spec as an argument or with --file, not both"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			api := newInitAPI(t)
