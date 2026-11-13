@@ -40,6 +40,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -78,8 +79,8 @@ func runTests(m *testing.M) int {
 	}
 	waitPollInterval = testPollWait
 
-	// The cli certificates go to the default --pki-dir (~/.orion/cli, in testHome): TestCLITLSFiles leaves a
-	// viper.Set of that default behind, which overrules --pki-dir in later tests.
+	// The cli certificates go to the default --pki-dir (~/.orion/cli, in testHome), which every test uses unless it
+	// calls usePKIDir.
 	testAPIDir = filepath.Join(testHome, "api")
 	if _, _, err = execute(context.Background(), "", "pki", "init", "--api-dir", testAPIDir); err != nil {
 		log.Fatalf("pki init failed: %v", err)
@@ -88,6 +89,14 @@ func runTests(m *testing.M) int {
 		log.Fatal(err)
 	}
 	return m.Run()
+}
+
+// usePKIDir makes the cli use dir as its --pki-dir for the rest of the test. A viper.Set overrules the flag; the
+// cleanup sets it to nil, which viper treats as not set, so later tests get --pki-dir (or its default) again.
+func usePKIDir(t *testing.T, dir string) {
+	t.Helper()
+	viper.Set(flagPKIDir, dir)
+	t.Cleanup(func() { viper.Set(flagPKIDir, nil) })
 }
 
 // resetCommands sets every flag of c and its subcommands back to its default, and clears what an earlier Execute

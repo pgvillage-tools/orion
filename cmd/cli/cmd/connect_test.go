@@ -24,7 +24,6 @@ import (
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
-	"github.com/spf13/viper"
 )
 
 func TestConnectPrintsTheIdentityAndSavesTheConfig(t *testing.T) {
@@ -75,9 +74,7 @@ func TestEveryAPICommandNeedsTheClientCertificate(t *testing.T) {
 	} {
 		t.Run(strings.Join(command, " "), func(t *testing.T) {
 			api := newFakeAPI(t)
-			// as TestCLITLSFiles does: a viper.Set overrules --pki-dir
-			viper.Set(flagPKIDir, t.TempDir())
-			defer viper.Set(flagPKIDir, defaultCLIPKIDir)
+			usePKIDir(t, t.TempDir())
 			stdout, stderr, err := api.run(command...)
 			expectError(t, err, "client certificate not found", "create it with `orion-cli pki init`")
 			expectNoUsage(t, stdout, stderr)
@@ -100,8 +97,7 @@ func TestConnectReportsAnInvalidClientCertificate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	viper.Set(flagPKIDir, dir)
-	defer viper.Set(flagPKIDir, defaultCLIPKIDir)
+	usePKIDir(t, dir)
 	_, _, err := api.run("connect")
 	expectError(t, err, "failed to load the client certificate: ", "")
 }
@@ -112,8 +108,7 @@ func TestConnectRefusesAnAPIOfAnotherCA(t *testing.T) {
 		writeJSON(w, http.StatusOK, endpoints.WhoAmIResponse{Name: "orion-cli", Method: "certificate"}, "")
 	})
 	otherCLIDir := t.TempDir()
-	viper.Set(flagPKIDir, otherCLIDir)
-	defer viper.Set(flagPKIDir, defaultCLIPKIDir)
+	usePKIDir(t, otherCLIDir)
 	if _, _, err := run(t, "pki", "init", "--api-dir", t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
@@ -170,8 +165,7 @@ func TestTheRootCommandPrintsTheHelp(t *testing.T) {
 
 func TestPKIInitCreatesTheCertificates(t *testing.T) {
 	cliDir, apiDir := t.TempDir(), t.TempDir()
-	viper.Set(flagPKIDir, cliDir)
-	defer viper.Set(flagPKIDir, defaultCLIPKIDir)
+	usePKIDir(t, cliDir)
 
 	// no --cluster-name or --store-backend: the pki commands don't use the store
 	stdout, _, err := run(t, "pki", "init", "--api-dir", apiDir, "--api-san", "api.example.org",
@@ -202,8 +196,7 @@ func TestPKIInitCreatesTheCertificates(t *testing.T) {
 }
 
 func TestPKIInitRefusesAnInvalidValidity(t *testing.T) {
-	viper.Set(flagPKIDir, t.TempDir())
-	defer viper.Set(flagPKIDir, defaultCLIPKIDir)
+	usePKIDir(t, t.TempDir())
 	_, _, err := run(t, "pki", "init", "--api-dir", t.TempDir(), "--root-validity", "forever")
 	expectError(t, err, "invalid options: --root-validity: ", "")
 }
