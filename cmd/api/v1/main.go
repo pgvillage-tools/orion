@@ -18,6 +18,7 @@ package v1
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -169,13 +170,15 @@ func api(c *cobra.Command, _ []string) {
 	if err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
-	if !files.Exist() {
-		logger.Fatal().
-			Str("cert", files.CertFile).
-			Str("key", files.KeyFile).
-			Str("ca", files.CAFile).
-			Msg("certificates not found: create them with `orion-cli pki init`, and copy the api files to " +
-				"--pki-dir (starting without certificates is not supported yet)")
+	if err = files.Check(); err != nil {
+		if errors.Is(err, pki.ErrFilesNotFound) {
+			logger.Fatal().AnErr(keyError, err).
+				Msg("create the certificates with `orion-cli pki init`, and copy the api files to --pki-dir " +
+					"(starting without certificates is not supported yet)")
+		}
+		logger.Fatal().AnErr(keyError, err).
+			Msg("the api must be able to read its certificates and its key: make them readable for the user it " +
+				"runs as (uid 1000 in the container image)")
 	}
 	tlsConfig, err := files.ServerConfig()
 	if err != nil {

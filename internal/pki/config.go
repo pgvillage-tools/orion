@@ -18,7 +18,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,6 +157,25 @@ func (f TLSFiles) Exist() bool {
 		}
 	}
 	return true
+}
+
+// ErrFilesNotFound is returned by Check when one of the files doesn't exist
+var ErrFilesNotFound = errors.New("certificates not found")
+
+// Check returns nil when the certificate, the key and the CA file can be read. When one doesn't exist, it returns an
+// ErrFilesNotFound that names it; otherwise the error of reading it, e.g. permission denied.
+func (f TLSFiles) Check() error {
+	for _, p := range []string{f.CertFile, f.KeyFile, f.CAFile} {
+		file, err := os.Open(p)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%w: %s doesn't exist", ErrFilesNotFound, p)
+			}
+			return fmt.Errorf("cannot read %s: %w", p, err)
+		}
+		_ = file.Close()
+	}
+	return nil
 }
 
 // Certificates returns all certificates in the files: the certificate, its chain and the CA
