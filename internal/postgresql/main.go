@@ -49,6 +49,8 @@ import (
 const (
 	// logKeyDest is the log field key for a destination path
 	logKeyDest = "dest"
+	// logKeyPath is the log field key for a file or directory path
+	logKeyPath = "path"
 	// pollInterval is the time to wait between checks when waiting for postgres
 	pollInterval = 200 * time.Millisecond
 
@@ -360,7 +362,7 @@ func handledDBClose(fh *sql.DB) {
 
 func handledFileRemove(fh *os.File) {
 	if err := os.Remove(fh.Name()); err != nil {
-		utlLogger.Fatal().Str("path", fh.Name()).AnErr(logging.KeyErr, err).Msg("Failed to remove")
+		utlLogger.Fatal().Str(logKeyPath, fh.Name()).AnErr(logging.KeyErr, err).Msg("Failed to remove")
 	}
 	handledFileClose(fh)
 }
@@ -900,6 +902,8 @@ func moveFile(sourcePath, destPath string) error {
 	if err != nil {
 		return fmt.Errorf("Couldn't open source file: %s", err)
 	}
+	// Closed on every return, also when the copy fails early. The source is only read, so a close error loses nothing.
+	defer func() { _ = inputFile.Close() }()
 	inFileStat, err := inputFile.Stat()
 	if err != nil {
 		return err
@@ -910,11 +914,13 @@ func moveFile(sourcePath, destPath string) error {
 	if err != nil {
 		return err
 	}
-	defer handledFileClose(outputFile)
-	_, err = io.Copy(outputFile, inputFile)
-	handledFileClose(inputFile)
-	if err != nil {
+	if _, err = io.Copy(outputFile, inputFile); err != nil {
+		_ = outputFile.Close()
 		return fmt.Errorf("Writing to output file failed: %s", err)
+	}
+	// Close (and so flush) the copy before the original is removed, and keep the original when that fails.
+	if err = outputFile.Close(); err != nil {
+		return fmt.Errorf("closing output file failed: %w", err)
 	}
 	// The copy was successful, so now delete the original file
 	err = os.Remove(sourcePath)
@@ -938,7 +944,7 @@ func moveDir(ctx context.Context, src string, dst string) (err error) {
 	var stat fs.FileInfo
 	logger.Info().Str("src", src).Str(logKeyDest, dst).Msg("Moving")
 	if stat, err = os.Stat(src); err != nil {
-		logger.Error().Str("path", src).AnErr(logging.KeyErr, err).Msg("could not get stat of file")
+		logger.Error().Str(logKeyPath, src).AnErr(logging.KeyErr, err).Msg("could not get stat of file")
 		return err
 	} else if !stat.IsDir() {
 		return moveFile(src, dst)

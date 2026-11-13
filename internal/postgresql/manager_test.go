@@ -97,7 +97,7 @@ var _ = Describe("Manager", func() {
 		}
 		writeFile(filepath.Join(dataDir, "global", "pg_control"), "")
 	}
-	newManager := func(wal string) *Manager {
+	newManagerIn := func(data, wal string) *Manager {
 		// a unix socket dir that does not exist
 		noServer := ConnParams{
 			ConnParamKeyHost:    filepath.Join(base, "nosocket"),
@@ -106,8 +106,11 @@ var _ = Describe("Manager", func() {
 			ConnParamKeyDbName:  "postgres",
 			ConnParamKeySSLMode: "disable",
 		}
-		return NewManager(binDir, filepath.Join(base, "data"), wal, noServer, noServer.Copy(),
+		return NewManager(binDir, data, wal, noServer, noServer.Copy(),
 			"md5", "postgres", "supass", "md5", "repl", "replpass", time.Second)
+	}
+	newManager := func(wal string) *Manager {
+		return newManagerIn(filepath.Join(base, "data"), wal)
 	}
 
 	BeforeEach(func() {
@@ -610,6 +613,26 @@ var _ = Describe("Manager", func() {
 			Ω(filepath.Join(dataDir, "pg_wal")).To(BeADirectory())
 			Ω(readFile(filepath.Join(dataDir, "pg_wal", "000000010000000000000001"))).To(Equal("wal"))
 			Ω(filepath.Join(dataDir, "pg_wal_new")).NotTo(BeAnExistingFile())
+		})
+		It("leaves pg_wal alone when the data dir path has a symlink", func() {
+			Ω(os.Symlink(filepath.Join(base, "data"), filepath.Join(base, "datalink"))).To(Succeed())
+			before, err := os.Stat(filepath.Join(dataDir, "pg_wal"))
+			Ω(err).NotTo(HaveOccurred())
+			m = newManagerIn(filepath.Join(base, "datalink"), "")
+			Ω(m.Start(ctx)).To(Succeed())
+			after, err := os.Stat(filepath.Join(dataDir, "pg_wal"))
+			Ω(err).NotTo(HaveOccurred())
+			Ω(os.SameFile(before, after)).To(BeTrue(), "pg_wal was moved")
+		})
+		It("leaves the wal dir alone when its path has a symlink", func() {
+			writeFile(filepath.Join(dataDir, "pg_wal", "000000010000000000000001"), "wal")
+			m = newManager(walDir)
+			Ω(m.Start(ctx)).To(Succeed())
+			Ω(os.Symlink(walDir, filepath.Join(base, "wallink"))).To(Succeed())
+			m = newManager(filepath.Join(base, "wallink"))
+			Ω(m.Start(ctx)).To(Succeed())
+			Ω(os.Readlink(filepath.Join(dataDir, "pg_wal"))).To(Equal(walDir))
+			Ω(readFile(filepath.Join(walDir, "000000010000000000000001"))).To(Equal("wal"))
 		})
 		It("does not start with a wal dir inside pg_wal", func() {
 			m = newManager(filepath.Join(dataDir, "pg_wal", "sub"))
