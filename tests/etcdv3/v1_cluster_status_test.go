@@ -9,17 +9,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/tests/helpers"
 )
 
 var _ = Describe("GET /v1/cluster/status", func() {
 	It("returns the keepers, sentinels, proxies and the primary", func() {
-		primary := sharedCluster.waitForPrimary()
+		primary := sharedCluster.WaitForPrimary()
 		Eventually(func(g Gomega) {
-			status, httpCode, err := sharedCluster.apiClient.GetStatus()
+			status, httpCode, err := sharedCluster.APIClient.GetStatus()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(httpCode).To(Equal(http.StatusOK))
 
-			g.Ω(status.Keepers).To(HaveLen(defaultKeepers))
+			g.Ω(status.Keepers).To(HaveLen(helpers.DefaultKeepers))
 			var uids []string
 			for _, k := range status.Keepers {
 				g.Ω(k.Healthy).To(BeTrue(), "keeper %s", k.UID)
@@ -35,12 +36,12 @@ var _ = Describe("GET /v1/cluster/status", func() {
 			g.Ω(status.Status).To(HaveKeyWithValue("primaryKeeper", primary))
 			g.Ω(status.Status).To(HaveKeyWithValue("primaryDB", Not(BeEmpty())))
 			g.Ω(status.Status).To(HaveKeyWithValue("role", string(apiv1.Primary)))
-		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
 	It("returns the uids of the keepers in order", func() {
-		status, _, err := sharedCluster.apiClient.GetStatus()
+		status, _, err := sharedCluster.APIClient.GetStatus()
 		Ω(err).NotTo(HaveOccurred())
-		Ω(status.Keepers).To(HaveLen(defaultKeepers))
+		Ω(status.Keepers).To(HaveLen(helpers.DefaultKeepers))
 		Ω(status.Keepers[0].UID < status.Keepers[1].UID).To(BeTrue())
 		Ω(status.Keepers).To(HaveEach(HaveField("ListenAddress", MatchRegexp(`^keeper_\d:\d+$`))))
 	})
@@ -49,14 +50,14 @@ var _ = Describe("GET /v1/cluster/status", func() {
 var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered, func() {
 	// these tests stop a keeper and pause etcd, so they get their own cluster
 	const numKeepers = 2
-	tc := withOwnCluster(numKeepers)
+	tc := helpers.WithOwnCluster(numKeepers)
 
 	It("shows a stopped standby as unhealthy, and keeps the primary", func(ctx context.Context) {
-		primary := tc.waitForPrimary()
+		primary := tc.WaitForPrimary()
 		// wait until both keepers run and reported their listen address, so the stopped one was healthy before
 		var standby, listenAddress string
 		Eventually(func(g Gomega) {
-			status, _, err := tc.apiClient.GetStatus()
+			status, _, err := tc.APIClient.GetStatus()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(status.Keepers).To(HaveLen(numKeepers))
 			for _, k := range status.Keepers {
@@ -67,17 +68,17 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 					standby, listenAddress = k.UID, k.ListenAddress
 				}
 			}
-		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 
 		// stop the standby; its listen address is keeper_<index>:<port>
 		alias, _, found := strings.Cut(listenAddress, ":")
 		Ω(found).To(BeTrue(), "listen address %q", listenAddress)
 		index, err := strconv.Atoi(strings.TrimPrefix(alias, "keeper_"))
 		Ω(err).NotTo(HaveOccurred())
-		Ω(tc.keepers[index].Stop(ctx, nil)).To(Succeed())
+		Ω(tc.Keepers[index].Stop(ctx, nil)).To(Succeed())
 
 		Eventually(func(g Gomega) {
-			status, httpCode, err := tc.apiClient.GetStatus()
+			status, httpCode, err := tc.APIClient.GetStatus()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(httpCode).To(Equal(http.StatusOK))
 			g.Ω(status.Keepers).To(ContainElement(SatisfyAll(
@@ -91,11 +92,11 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 			)))
 			g.Ω(status.Status).To(HaveKeyWithValue("available", true))
 			g.Ω(status.Status).To(HaveKeyWithValue("primaryKeeper", primary))
-		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
 	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
-		pauseContainer(ctx, tc.etcd)
-		_, httpCode, err := tc.apiClient.GetStatus()
+		helpers.PauseContainer(ctx, tc.Etcd)
+		_, httpCode, err := tc.APIClient.GetStatus()
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
@@ -103,10 +104,10 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 
 var _ = Describe("GET /v1/cluster/status without a cluster", Ordered, func() {
 	// only etcd and the api: no cluster data yet
-	tc := withOwnAPI()
+	tc := helpers.WithOwnAPI()
 
 	It("returns an unavailable cluster without keepers, sentinels or proxies", func() {
-		status, httpCode, err := tc.apiClient.GetStatus()
+		status, httpCode, err := tc.APIClient.GetStatus()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
 		Ω(status.Status).To(Equal(apiv1.InfoGenericStatus{"available": false}))

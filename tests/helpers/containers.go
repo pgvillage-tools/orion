@@ -1,4 +1,4 @@
-package etcdv3_test
+package helpers
 
 import (
 	"context"
@@ -18,14 +18,15 @@ import (
 )
 
 const (
-	etcdImage       = "quay.io/coreos/etcd:v3.6.7"
-	apiInternalPort = 8443
+	etcdImage = "quay.io/coreos/etcd:v3.6.7"
+	// APIInternalPort is the api port inside its container
+	APIInternalPort = 8443
 	// apiProbeInternalPort is the probe port of the api (/livez, /readyz, /status, /metrics)
 	apiProbeInternalPort = 8080
-	// apiStoreTimeout is the store timeout of the api in the tests
-	apiStoreTimeout = 3 * time.Second
-	// clusterTimeout is the time to start a test cluster
-	clusterTimeout = 10 * time.Minute
+	// APIStoreTimeout is the store timeout of the api in the tests
+	APIStoreTimeout = 3 * time.Second
+	// ClusterTimeout is the time to start a test cluster
+	ClusterTimeout = 10 * time.Minute
 	apiPKIDir      = "/etc/orion/api"
 	// apiPKIFileMode makes the api files readable for the api, which runs as orion (the files are owned by root)
 	apiPKIFileMode     = 0o644
@@ -179,9 +180,9 @@ func runAPI(
 		"ORIONAPI_STORE_ENDPOINTS": etcdEndpoints,
 		"ORIONAPI_LOG_LEVEL":       "debug",
 		"ORIONAPI_PKI_DIR":         apiPKIDir,
-		// shorter than apiTimeout (the client), so a store that doesn't respond gives a 500 and not a client timeout;
+		// shorter than APITimeout (the client), so a store that doesn't respond gives a 500 and not a client timeout;
 		// long enough for the first call to etcd after the api starts
-		"ORIONAPI_STORE_TIMEOUT": apiStoreTimeout.String(),
+		"ORIONAPI_STORE_TIMEOUT": APIStoreTimeout.String(),
 	}
 	var files []testcontainers.ContainerFile
 	for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
@@ -198,7 +199,7 @@ func runAPI(
 				Image: "api",
 				Files: files,
 				ExposedPorts: []string{
-					fmt.Sprintf("%d/tcp", apiInternalPort),
+					fmt.Sprintf("%d/tcp", APIInternalPort),
 					fmt.Sprintf("%d/tcp", apiProbeInternalPort),
 				},
 				Networks:       []string{nw.Name},

@@ -19,24 +19,25 @@ import (
 	"github.com/pgvillage-tools/orion/internal/auth"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
+	"github.com/pgvillage-tools/orion/tests/helpers"
 )
 
 var _ = Describe("GET /v1/whoami", func() {
 	// clientWith returns an api client for the shared cluster that trusts its CA, with certificates as the client
 	// certificates
 	clientWith := func(ctx context.Context, certificates []tls.Certificate) client.Connection {
-		tlsConfig, err := pki.CLIFiles(sharedCluster.pki.CLIDir).ClientConfig()
+		tlsConfig, err := pki.CLIFiles(sharedCluster.PKI.CLIDir).ClientConfig()
 		Ω(err).NotTo(HaveOccurred())
 		tlsConfig.Certificates = certificates
-		port, err := sharedCluster.api.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiInternalPort))
+		port, err := sharedCluster.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", helpers.APIInternalPort))
 		Ω(err).NotTo(HaveOccurred())
-		return client.NewTLSConnection(localHost, port.Num(), apiTimeout, tlsConfig)
+		return client.NewTLSConnection(helpers.LocalHost, port.Num(), helpers.APITimeout, tlsConfig)
 	}
 
 	// signClient signs a client certificate for subject with the api-clients intermediate of the shared cluster (the CA
 	// that the api trusts for clients), valid from notBefore until notAfter
 	signClient := func(subject pkix.Name, notBefore, notAfter time.Time) tls.Certificate {
-		imDir := filepath.Join(sharedCluster.pki.CLIDir, pki.CLICADir, pki.APIClientIntermediate)
+		imDir := filepath.Join(sharedCluster.PKI.CLIDir, pki.CLICADir, pki.APIClientIntermediate)
 		im, err := tls.LoadX509KeyPair(filepath.Join(imDir, "ca.crt"), filepath.Join(imDir, "ca.key"))
 		Ω(err).NotTo(HaveOccurred())
 		imCert, err := x509.ParseCertificate(im.Certificate[0])
@@ -59,7 +60,7 @@ var _ = Describe("GET /v1/whoami", func() {
 	}
 
 	It("returns the identity of the client certificate", func() {
-		identity, httpCode, err := sharedCluster.apiClient.WhoAmI()
+		identity, httpCode, err := sharedCluster.APIClient.WhoAmI()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
 		Ω(identity.Name).To(Equal(pki.CLIClientName))
@@ -99,10 +100,10 @@ var _ = Describe("GET /v1/whoami", func() {
 	})
 	It("refuses the server certificate of the api as a client certificate", func(ctx context.Context) {
 		// it is signed by the server intermediate, which the api doesn't trust for clients
-		server, err := tls.LoadX509KeyPair(filepath.Join(sharedCluster.pki.APIDir, pki.APIServerCertFile),
-			filepath.Join(sharedCluster.pki.APIDir, pki.APIServerKeyFile))
+		server, err := tls.LoadX509KeyPair(filepath.Join(sharedCluster.PKI.APIDir, pki.APIServerCertFile),
+			filepath.Join(sharedCluster.PKI.APIDir, pki.APIServerKeyFile))
 		Ω(err).NotTo(HaveOccurred())
-		tlsConfig, err := pki.CLIFiles(sharedCluster.pki.CLIDir).ClientConfig()
+		tlsConfig, err := pki.CLIFiles(sharedCluster.PKI.CLIDir).ClientConfig()
 		Ω(err).NotTo(HaveOccurred())
 		// A Go client doesn't send a certificate that isn't signed by a CA the server asks for; send it anyway, so
 		// the api has to refuse it
@@ -110,21 +111,21 @@ var _ = Describe("GET /v1/whoami", func() {
 		tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			return &server, nil
 		}
-		port, err := sharedCluster.api.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiInternalPort))
+		port, err := sharedCluster.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", helpers.APIInternalPort))
 		Ω(err).NotTo(HaveOccurred())
-		_, _, err = client.NewTLSConnection(localHost, port.Num(), apiTimeout, tlsConfig).WhoAmI()
+		_, _, err = client.NewTLSConnection(helpers.LocalHost, port.Num(), helpers.APITimeout, tlsConfig).WhoAmI()
 		Ω(err).To(MatchError(ContainSubstring("unknown certificate authority")))
 	})
 })
 
 var _ = Describe("GET /v1/whoami without the store", Ordered, func() {
 	// this test pauses etcd, so it gets its own api
-	tc := withOwnAPI()
+	tc := helpers.WithOwnAPI()
 
 	It("still returns the identity while the store doesn't respond: whoami doesn't use the store",
 		func(ctx context.Context) {
-			pauseContainer(ctx, tc.etcd)
-			identity, httpCode, err := tc.apiClient.WhoAmI()
+			helpers.PauseContainer(ctx, tc.Etcd)
+			identity, httpCode, err := tc.APIClient.WhoAmI()
 			Ω(err).NotTo(HaveOccurred())
 			Ω(httpCode).To(Equal(http.StatusOK))
 			Ω(identity.Name).To(Equal(pki.CLIClientName))

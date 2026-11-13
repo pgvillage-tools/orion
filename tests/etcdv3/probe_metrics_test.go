@@ -16,7 +16,7 @@ import (
 var _ = Describe("GET /metrics on the probe port", func() {
 	// scrape returns the metrics of the shared cluster, in the Prometheus text format
 	scrape := func(ctx context.Context) string {
-		code, body := sharedCluster.probeGet(ctx, endpoints.MetricsEndPoint)
+		code, body := sharedCluster.ProbeGet(ctx, endpoints.MetricsEndPoint)
 		Ω(code).To(Equal(http.StatusOK))
 		return body
 	}
@@ -41,7 +41,7 @@ var _ = Describe("GET /metrics on the probe port", func() {
 			durationBefore = value(before, whoamiDuration)
 		}
 		for range 2 {
-			_, httpCode, err := sharedCluster.apiClient.WhoAmI()
+			_, httpCode, err := sharedCluster.APIClient.WhoAmI()
 			Ω(err).NotTo(HaveOccurred())
 			Ω(httpCode).To(Equal(http.StatusOK))
 		}
@@ -69,7 +69,7 @@ var _ = Describe("GET /metrics on the probe port", func() {
 	})
 	It("only allows GET", func(ctx context.Context) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			sharedCluster.probeURL+"/"+string(endpoints.MetricsEndPoint), nil)
+			sharedCluster.ProbeURL+"/"+string(endpoints.MetricsEndPoint), nil)
 		Ω(err).NotTo(HaveOccurred())
 		resp, err := http.DefaultClient.Do(req)
 		Ω(err).NotTo(HaveOccurred())

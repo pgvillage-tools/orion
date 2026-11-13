@@ -9,13 +9,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/internal/pki"
+	"github.com/pgvillage-tools/orion/tests/helpers"
 )
 
 var _ = Describe("Smoke", func() {
 	Context("when connecting to the keepers", func() {
 		It("should work properly", func(ctx context.Context) {
-			for i := range sharedCluster.keepers {
-				Ω(pgPing(ctx, sharedCluster.keeperConn(ctx, i))).To(Succeed())
+			for i := range sharedCluster.Keepers {
+				Ω(helpers.PgPing(ctx, sharedCluster.KeeperConn(ctx, i))).To(Succeed())
 			}
 		})
 	})
@@ -25,23 +26,23 @@ var _ = Describe("Smoke", func() {
 			// So, we will try this for 10 seconds
 			isReadyCtx, cancelFunc := context.WithTimeout(ctx, 10*time.Second)
 			defer cancelFunc()
-			Ω(isReady(isReadyCtx, sharedCluster.proxyConn(ctx), time.Second)).To(Succeed())
+			Ω(helpers.IsReady(isReadyCtx, sharedCluster.ProxyConn(ctx), time.Second)).To(Succeed())
 		})
 	})
 	Context("when using the api", func() {
 		It("identifies the client by its certificate", func() {
-			identity, httpCode, err := sharedCluster.apiClient.WhoAmI()
+			identity, httpCode, err := sharedCluster.APIClient.WhoAmI()
 			Ω(err).NotTo(HaveOccurred())
 			Ω(httpCode).To(Equal(http.StatusOK))
 			Ω(identity.Name).To(Equal(pki.CLIClientName))
 		})
 		It("status return expected result", func() {
-			sharedCluster.waitForPrimary()
-			myStatus, httpCode, statusErr := sharedCluster.apiClient.GetStatus()
+			sharedCluster.WaitForPrimary()
+			myStatus, httpCode, statusErr := sharedCluster.APIClient.GetStatus()
 			Ω(statusErr).NotTo(HaveOccurred())
 			Ω(httpCode).To(Equal(http.StatusOK))
 
-			Ω(myStatus.Keepers).To(HaveLen(defaultKeepers))
+			Ω(myStatus.Keepers).To(HaveLen(helpers.DefaultKeepers))
 			Ω(myStatus.Sentinels).To(HaveLen(1))
 			Ω(myStatus.Proxies).To(HaveLen(1))
 		})

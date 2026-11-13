@@ -5,11 +5,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/pgvillage-tools/orion/tests/helpers"
 )
 
 var _ = Describe("GET /v1/cluster/keepers, and a keeper, proxy or sentinel by uid", func() {
 	uids := func(g Gomega) (keepers, proxies, sentinels []string) {
-		status, _, err := sharedCluster.apiClient.GetStatus()
+		status, _, err := sharedCluster.APIClient.GetStatus()
 		g.Ω(err).NotTo(HaveOccurred())
 		for _, k := range status.Keepers {
 			keepers = append(keepers, k.UID)
@@ -24,12 +25,12 @@ var _ = Describe("GET /v1/cluster/keepers, and a keeper, proxy or sentinel by ui
 	}
 
 	It("lists the keepers of the cluster status, sorted on uid", func() {
-		sharedCluster.waitForPrimary()
-		keepers, httpCode, err := sharedCluster.apiClient.GetKeepers()
+		sharedCluster.WaitForPrimary()
+		keepers, httpCode, err := sharedCluster.APIClient.GetKeepers()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
 		statusKeepers, _, _ := uids(Default)
-		Ω(keepers).To(HaveLen(defaultKeepers))
+		Ω(keepers).To(HaveLen(helpers.DefaultKeepers))
 		for i, k := range keepers {
 			Ω(k.UID).To(Equal(statusKeepers[i]), "keeper %d", i)
 		}
@@ -39,44 +40,44 @@ var _ = Describe("GET /v1/cluster/keepers, and a keeper, proxy or sentinel by ui
 		Ω(proxies).NotTo(BeEmpty())
 		Ω(sentinels).NotTo(BeEmpty())
 		for _, uid := range keepers {
-			k, httpCode, err := sharedCluster.apiClient.GetKeeper(uid)
+			k, httpCode, err := sharedCluster.APIClient.GetKeeper(uid)
 			Ω(err).NotTo(HaveOccurred())
 			Ω(httpCode).To(Equal(http.StatusOK))
 			Ω(k.UID).To(Equal(uid))
 		}
 		for _, uid := range proxies {
-			p, _, err := sharedCluster.apiClient.GetProxy(uid)
+			p, _, err := sharedCluster.APIClient.GetProxy(uid)
 			Ω(err).NotTo(HaveOccurred())
 			Ω(p.UID).To(Equal(uid))
 		}
 		for _, uid := range sentinels {
-			s, _, err := sharedCluster.apiClient.GetSentinel(uid)
+			s, _, err := sharedCluster.APIClient.GetSentinel(uid)
 			Ω(err).NotTo(HaveOccurred())
 			Ω(s.UID).To(Equal(uid))
 		}
 	})
 	It("returns 404 for an unknown keeper, proxy or sentinel", func() {
-		_, httpCode, err := sharedCluster.apiClient.GetKeeper("unknown")
+		_, httpCode, err := sharedCluster.APIClient.GetKeeper("unknown")
 		Ω(err).To(MatchError(ContainSubstring("keeper unknown doesn't exist")))
 		Ω(httpCode).To(Equal(http.StatusNotFound))
-		_, httpCode, _ = sharedCluster.apiClient.GetProxy("unknown")
+		_, httpCode, _ = sharedCluster.APIClient.GetProxy("unknown")
 		Ω(httpCode).To(Equal(http.StatusNotFound))
-		_, httpCode, _ = sharedCluster.apiClient.GetSentinel("unknown")
+		_, httpCode, _ = sharedCluster.APIClient.GetSentinel("unknown")
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
 })
 
 var _ = Describe("GET /v1/cluster/keepers without a cluster", Ordered, func() {
 	// only etcd and the api: no cluster data yet
-	tc := withOwnAPI()
+	tc := helpers.WithOwnAPI()
 
 	It("returns no keepers, and 404 for a keeper", func() {
-		keepers, httpCode, err := tc.apiClient.GetKeepers()
+		keepers, httpCode, err := tc.APIClient.GetKeepers()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusOK))
 		Ω(keepers).To(BeEmpty())
 
-		_, httpCode, err = tc.apiClient.GetKeeper("keeper0")
+		_, httpCode, err = tc.APIClient.GetKeeper("keeper0")
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
