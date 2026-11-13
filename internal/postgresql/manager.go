@@ -16,7 +16,6 @@
 package postgresql
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -250,6 +249,30 @@ func (p *Manager) StartTmpMerged(ctx context.Context) error {
 	return p.start(ctx, "-c", fmt.Sprintf("config_file=%s", tmpPostgresConfPath))
 }
 
+// walInPlace tells whether pg_wal (symlinkPath, which resolves to curPath) already is where walDir wants it: a plain
+// directory when walDir is empty, and else the same directory as walDir. It compares the directories themselves, not
+// their paths, so a symlink elsewhere in a path (e.g. above the data dir) doesn't trigger a needless move.
+func walInPlace(symlinkPath, curPath, walDir string) (bool, error) {
+	if walDir == "" {
+		info, err := os.Lstat(symlinkPath)
+		if err != nil {
+			return false, err
+		}
+		return info.IsDir(), nil
+	}
+	want, err := os.Stat(walDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	cur, err := os.Stat(curPath)
+	if err != nil {
+		return false, err
+	}
+	return os.SameFile(cur, want), nil
+}
+
 func (p *Manager) moveWal(ctx context.Context) (err error) {
 	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
 	var curPath string
@@ -261,7 +284,7 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 		return err
 	}
 	if curPath, err = filepath.EvalSymlinks(symlinkPath); err != nil {
-		logger.Error().Str("path", symlinkPath).AnErr(logging.KeyErr, err).Msg("could not evaluate symlink")
+		logger.Error().Str(logKeyPath, symlinkPath).AnErr(logging.KeyErr, err).Msg("could not evaluate symlink")
 		return err
 	}
 	if p.walDir == "" {
@@ -271,7 +294,10 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 		desiredPath = p.walDir
 		tmpPath = p.walDir
 	}
-	if curPath == desiredPath {
+	if inPlace, err := walInPlace(symlinkPath, curPath, p.walDir); err != nil {
+		logger.Error().Str(logKeyPath, symlinkPath).AnErr(logging.KeyErr, err).Msg("could not check the wal location")
+		return err
+	} else if inPlace {
 		return nil
 	}
 	if p.walDir == "" {
@@ -297,14 +323,14 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 		logger.Debug().Msg("file or folder already removed")
 	} else if err != nil {
 		logger.Error().
-			Str("path", symlinkPath).
+			Str(logKeyPath, symlinkPath).
 			AnErr(logging.KeyErr, err).
 			Msg("could not get info on current pg_wal folder/symlink path")
 		return err
 	} else if symlinkStat.Mode()&os.ModeSymlink != 0 {
 		if err = os.Remove(symlinkPath); err != nil {
 			logger.Error().
-				Str("path", symlinkPath).
+				Str(logKeyPath, symlinkPath).
 				AnErr(logging.KeyErr, err).
 				Msg("could not remove current pg_wal symlink path")
 			return err
@@ -312,7 +338,7 @@ func (p *Manager) moveWal(ctx context.Context) (err error) {
 	} else if symlinkStat.IsDir() {
 		if err = syscall.Rmdir(symlinkPath); err != nil {
 			logger.Error().
-				Str("path", symlinkPath).
+				Str(logKeyPath, symlinkPath).
 				AnErr(logging.KeyErr, err).
 				Msg("could not remove current folder")
 			return err
@@ -418,23 +444,15 @@ func (p *Manager) start(ctx context.Context, args ...string) error {
 	// Wait for the correct pid file to appear or for the process to exit
 	ok := false
 	start := time.Now()
+	pidFile := filepath.Join(p.dataDir, "postmaster.pid")
 	for time.Since(start) < startTimeout {
-		fileName := filepath.Join(p.dataDir, "postmaster.pid")
-		fh, err := os.Open(fileName)
-		defer func() {
-			if err := fh.Close(); err != nil {
-				logger.Debug().Msgf("failed to close %s: %v", fileName, err)
-			}
-		}()
-		if err == nil {
-			scanner := bufio.NewScanner(fh)
-			scanner.Split(bufio.ScanLines)
-			if scanner.Scan() {
-				fpid := scanner.Text()
-				if fpid == strconv.Itoa(pid) {
-					ok = true
-					break
-				}
+		// Read the whole (small) file instead of opening it: a defer in this loop would keep every file handle open
+		// until start returns.
+		if content, err := os.ReadFile(pidFile); err == nil {
+			fpid, _, _ := strings.Cut(string(content), "\n")
+			if fpid == strconv.Itoa(pid) {
+				ok = true
+				break
 			}
 		}
 
@@ -1110,7 +1128,7 @@ func (p *Manager) RemoveAll(ctx context.Context) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
 	if p.walDir != "" {
 		if err := os.RemoveAll(p.walDir); err != nil {
-			logger.Fatal().Str("path", p.walDir).AnErr(logging.KeyErr, err).Msg("failed to remove tree")
+			logger.Fatal().Str(logKeyPath, p.walDir).AnErr(logging.KeyErr, err).Msg("failed to remove tree")
 		}
 	}
 
