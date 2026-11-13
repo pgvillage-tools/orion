@@ -81,9 +81,14 @@ clean-e2e-images: ## Clean containers for previous e2e runs
 	$(CONTAINER_TOOL) images | awk '{if (length($$1)==54)print $$1":"$$2}' | xargs $(CONTAINER_TOOL) rmi
 	$(CONTAINER_TOOL) images | awk '/<none>/{print $$3}' | xargs $(CONTAINER_TOOL) rmi
 
+# E2E_SUITES are the e2e suites (directories in tests) that e2e-test runs; CI runs each suite in a job of its own
+E2E_SUITES ?= system cli
+
 .PHONY: fast-e2e-test
 fast-e2e-test:
-	cd ./tests/system && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./...
+	for suite in $(E2E_SUITES); do \
+		(cd ./tests/$$suite && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./...) || exit 1; \
+	done
 
 .PHONY: full-e2e-test
 full-e2e-test: build-images clean-e2e-containers clean-e2e-images fast-e2e-test

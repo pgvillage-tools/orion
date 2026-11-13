@@ -28,6 +28,14 @@ const (
 	// ClusterTimeout is the time to start a test cluster
 	ClusterTimeout = 10 * time.Minute
 	apiPKIDir      = "/etc/orion/api"
+	// apiAlias is the name of the api on the network of a cluster
+	apiAlias = "api"
+	// cliPKIDir is the default --pki-dir of orion-cli in its image (it runs as root)
+	cliPKIDir = "/root/.orion/cli"
+	// cliPKIFileMode is the mode of the cli files in the cli container, like orion-cli pki init creates them
+	cliPKIFileMode = 0o600
+	// cliPKIDirMode is the mode of the directories PKIInit copies the certificates to (like pki init creates them)
+	cliPKIDirMode = 0o700
 	// apiPKIFileMode makes the api files readable for the api, which runs as orion (the files are owned by root)
 	apiPKIFileMode     = 0o644
 	proxyInternalPort  = 25432
