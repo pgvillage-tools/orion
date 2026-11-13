@@ -9,13 +9,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/tests/helpers"
 )
 
 var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 	// these tests remove keepers, so they get their own cluster: a primary, a standby that is stopped and removed, and
 	// a standby that is removed while it runs
 	const numKeepers = 3
-	tc := withOwnCluster(numKeepers)
+	tc := helpers.WithOwnCluster(numKeepers)
 	var primary string
 	var standbys []apiv1.InfoKeeper
 
@@ -30,10 +31,10 @@ var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 	}
 
 	BeforeAll(func() {
-		primary = tc.waitForPrimary()
+		primary = tc.WaitForPrimary()
 		// wait until every keeper reported its listen address (it is "(unknown)" until its db reports it)
 		Eventually(func(g Gomega) {
-			status, _, err := tc.apiClient.GetStatus()
+			status, _, err := tc.APIClient.GetStatus()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(status.Keepers).To(HaveLen(numKeepers))
 			g.Ω(status.Keepers).To(HaveEach(HaveField("ListenAddress", MatchRegexp(`^keeper_\d+:\d+$`))))
@@ -43,15 +44,15 @@ var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 					standbys = append(standbys, k)
 				}
 			}
-		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
 
 	It("refuses to remove the keeper of the primary", func() {
-		httpCode, err := tc.apiClient.DeleteKeeper(primary)
+		httpCode, err := tc.APIClient.DeleteKeeper(primary)
 		Ω(err).To(MatchError(ContainSubstring("fail it first")))
 		Ω(httpCode).To(Equal(http.StatusConflict))
 
-		cd, _, err := tc.apiClient.GetCluster()
+		cd, _, err := tc.APIClient.GetCluster()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(cd.Keepers).To(HaveKey(primary))
 	})
@@ -62,13 +63,13 @@ var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 		Ω(found).To(BeTrue(), "listen address %q", stopped.ListenAddress)
 		index, err := strconv.Atoi(strings.TrimPrefix(alias, "keeper_"))
 		Ω(err).NotTo(HaveOccurred())
-		Ω(tc.keepers[index].Stop(ctx, nil)).To(Succeed())
+		Ω(tc.Keepers[index].Stop(ctx, nil)).To(Succeed())
 
-		httpCode, err := tc.apiClient.DeleteKeeper(stopped.UID)
+		httpCode, err := tc.APIClient.DeleteKeeper(stopped.UID)
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusAccepted))
 
-		cd, _, err := tc.apiClient.GetCluster()
+		cd, _, err := tc.APIClient.GetCluster()
 		Ω(err).NotTo(HaveOccurred())
 		Ω(cd.Keepers).NotTo(HaveKey(stopped.UID))
 		Ω(hasDB(cd, stopped.UID)).To(BeFalse(), "the db of the removed keeper")
@@ -76,25 +77,25 @@ var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 	})
 	It("doesn't keep out a keeper that still runs: it registers itself again", func() {
 		running := standbys[1]
-		httpCode, err := tc.apiClient.DeleteKeeper(running.UID)
+		httpCode, err := tc.APIClient.DeleteKeeper(running.UID)
 		Ω(err).NotTo(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusAccepted))
 
 		// the sentinel adds it back from the keeper's own registration
 		Eventually(func(g Gomega) {
-			cd, _, err := tc.apiClient.GetCluster()
+			cd, _, err := tc.APIClient.GetCluster()
 			g.Ω(err).NotTo(HaveOccurred())
 			g.Ω(cd.Keepers).To(HaveKey(running.UID))
-		}).WithTimeout(primaryTimeout).WithPolling(pollInterval).Should(Succeed())
+		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
 	It("returns 404 for an unknown keeper", func() {
-		httpCode, err := tc.apiClient.DeleteKeeper("unknown")
+		httpCode, err := tc.APIClient.DeleteKeeper("unknown")
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
 	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
-		pauseContainer(ctx, tc.etcd)
-		httpCode, err := tc.apiClient.DeleteKeeper(standbys[1].UID)
+		helpers.PauseContainer(ctx, tc.Etcd)
+		httpCode, err := tc.APIClient.DeleteKeeper(standbys[1].UID)
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusInternalServerError))
 	})
@@ -102,10 +103,10 @@ var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 
 var _ = Describe("DELETE /v1/cluster/keepers/{uid} without a cluster", Ordered, func() {
 	// only etcd and the api: no cluster data yet
-	tc := withOwnAPI()
+	tc := helpers.WithOwnAPI()
 
 	It("returns 404", func() {
-		httpCode, err := tc.apiClient.DeleteKeeper("keeper0")
+		httpCode, err := tc.APIClient.DeleteKeeper("keeper0")
 		Ω(err).To(MatchError(ContainSubstring("no cluster yet")))
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})

@@ -1,4 +1,4 @@
-package etcdv3_test
+package helpers
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// pauseContainer pauses cnt (like docker pause): its processes are frozen, but it keeps its network address, so
+// PauseContainer pauses cnt (like docker pause): its processes are frozen, but it keeps its network address, so
 // clients get no answer instead of a refused connection. It is unpaused when the spec ends, or earlier with
-// unpauseContainer.
-func pauseContainer(ctx context.Context, cnt testcontainers.Container) {
+// UnpauseContainer.
+func PauseContainer(ctx context.Context, cnt testcontainers.Container) {
 	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
 	Ω(err).NotTo(HaveOccurred())
 	defer func() { _ = cli.Close() }()
@@ -24,8 +24,8 @@ func pauseContainer(ctx context.Context, cnt testcontainers.Container) {
 	})
 }
 
-// unpauseContainer resumes a container that was paused with pauseContainer
-func unpauseContainer(ctx context.Context, cnt testcontainers.Container) {
+// UnpauseContainer resumes a container that was paused with PauseContainer
+func UnpauseContainer(ctx context.Context, cnt testcontainers.Container) {
 	Ω(unpause(ctx, cnt)).To(Succeed())
 }
 
@@ -39,8 +39,8 @@ func unpause(ctx context.Context, cnt testcontainers.Container) error {
 	return err
 }
 
-// signalContainer sends signal (e.g. SIGTERM) to the main process of cnt, like docker kill --signal
-func signalContainer(ctx context.Context, cnt testcontainers.Container, signal string) {
+// SignalContainer sends signal (e.g. SIGTERM) to the main process of cnt, like docker kill --signal
+func SignalContainer(ctx context.Context, cnt testcontainers.Container, signal string) {
 	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
 	Ω(err).NotTo(HaveOccurred())
 	defer func() { _ = cli.Close() }()
