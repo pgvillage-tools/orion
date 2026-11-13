@@ -273,8 +273,7 @@ func Execute() {
 	}
 }
 
-// handleError logs err with msg, and (when w is set) responds with a 500 problem with msg as the detail (or the error,
-// when msg is empty)
+// handleError logs err with msg, and (when w is set) responds with a 500 problem with msg as the detail
 func handleError(ctx context.Context, err error, w http.ResponseWriter, msg string) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	if err != nil {
@@ -283,9 +282,6 @@ func handleError(ctx context.Context, err error, w http.ResponseWriter, msg stri
 	if w == nil {
 		return
 	}
-	detail := msg
-	if detail == "" && err != nil {
-		detail = err.Error()
-	}
-	endpoints.WriteProblem(w, http.StatusInternalServerError, detail)
+	// msg, not err: a store error can name store internals (endpoints, keys), so it is only logged
+	endpoints.WriteProblem(w, http.StatusInternalServerError, msg)
 }

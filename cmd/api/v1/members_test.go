@@ -273,8 +273,11 @@ func TestStatusHandler(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.StatusHandler(w, httptest.NewRequest(http.MethodGet, "/v1/cluster/status", nil))
 			checkResponse(t, w, tc.status, tc.body)
-			if tc.status == http.StatusInternalServerError && !strings.Contains(w.Body.String(), errBoom.Error()) {
-				t.Errorf("expected the problem to name the error, got %s", w.Body)
+			// the store error is logged, not returned: it can name store internals (endpoints, keys)
+			if tc.status == http.StatusInternalServerError &&
+				(!strings.Contains(w.Body.String(), "failed to get the cluster status") ||
+					strings.Contains(w.Body.String(), errBoom.Error())) {
+				t.Errorf("expected a fixed problem detail without the store error, got %s", w.Body)
 			}
 		})
 	}
