@@ -500,3 +500,36 @@ jobs:
           fi
 
           echo Success
+
+  # The only required check of this workflow, so the ruleset doesn't change when jobs are added. It must always run,
+  # and only passes when every job it needs succeeded (a skipped required check would count as a pass).
+  ci-result:
+    name: CI result
+    runs-on: ubuntu-24.04
+    needs:
+      - codechanges
+      - check-go
+      - lint-go
+      - shellcheck
+      - actionlint
+      - check-docs
+      - unit-test
+      - e2e-keeper-images
+      - e2e-other-images
+      - e2e-test
+      - check-e2e-status
+      - license-header-test
+    if: always()
+    steps:
+      - name: Evaluate the results
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "Results: ${RESULTS} (event: ${EVENT})"
+          # A job skipped by a path filter is fine on a pull request; everywhere else everything must run
+          if [ "${EVENT}" = pull_request ]; then ok='. == "success" or . == "skipped"'; else ok='. == "success"'; fi
+          if [ "$(echo "${RESULTS}" | jq -r "all(${ok})")" != true ]; then
+            echo "::error::All CI jobs must succeed"
+            exit 1
+          fi
