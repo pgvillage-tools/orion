@@ -83,7 +83,7 @@ clean-e2e-images: ## Clean containers for previous e2e runs
 
 .PHONY: fast-e2e-test
 fast-e2e-test:
-	cd ./tests/etcdv3 && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./...
+	cd ./tests/system && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./...
 
 .PHONY: full-e2e-test
 full-e2e-test: build-images clean-e2e-containers clean-e2e-images fast-e2e-test

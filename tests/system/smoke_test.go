@@ -1,5 +1,5 @@
-// Package etcdv3_test will run integration tests for using etcd as backend with v3 api
-package etcdv3_test
+// Package system_test runs the end-to-end system tests: a whole orion cluster (etcd v3 as store) in containers
+package system_test
 
 import (
 	"context"
