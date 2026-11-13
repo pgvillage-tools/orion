@@ -61,10 +61,10 @@ func (d *Data) DeepCopy() (dc *Data) {
 	return dc
 }
 
-// FindDB can be used to find a DB belonging to a Keeper
+// FindDB returns the DB of keeper, or nil when it has none. A DB without a spec belongs to no keeper.
 func (d *Data) FindDB(keeper *Keeper) *DB {
 	for _, db := range d.DBs {
-		if db.Spec.KeeperUID == keeper.UID {
+		if db != nil && db.Spec != nil && db.Spec.KeeperUID == keeper.UID {
 			return db
 		}
 	}
