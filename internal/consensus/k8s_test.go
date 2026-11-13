@@ -30,6 +30,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/util"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,15 +47,18 @@ const (
 	testPod       = "pod1"
 	// testConfigMap is the name of the configmap of testCluster
 	testConfigMap = "orion-cluster-test"
+	// leasesPath is the path of the leases of testNamespace
+	leasesPath = "/apis/coordination.k8s.io/v1/namespaces/" + testNamespace + "/leases"
 )
 
-// fakeKubeAPI is a minimal Kubernetes API server for the configmaps and pods of one namespace,
+// fakeKubeAPI is a minimal Kubernetes API server for the configmaps, leases and pods of one namespace,
 // enough for a real *kubernetes.Clientset (the KubeStore doesn't accept the client-go fake
 // clientset). Requests matching a key ("<METHOD> <resource>", e.g. "GET configmaps") in failures
 // fail with that status code; conflicts makes that many updates fail with a conflict first.
 type fakeKubeAPI struct {
 	mu         sync.Mutex
 	configMaps map[string]*corev1.ConfigMap
+	leases     map[string]*coordinationv1.Lease
 	pods       map[string]*corev1.Pod
 	failures   map[string]int
 	conflicts  int
@@ -65,6 +69,7 @@ func newFakeKubeAPI(t *testing.T) (*fakeKubeAPI, *kubernetes.Clientset) {
 	t.Helper()
 	api := &fakeKubeAPI{
 		configMaps: map[string]*corev1.ConfigMap{},
+		leases:     map[string]*coordinationv1.Lease{},
 		pods:       map[string]*corev1.Pod{},
 		failures:   map[string]int{},
 	}
@@ -167,6 +172,15 @@ func (a *fakeKubeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"gitVersion": "v1.37.0"})
 		return
 	}
+	if name, ok := strings.CutPrefix(r.URL.Path, leasesPath); ok {
+		if code, ok := a.failures[r.Method+" leases"]; ok {
+			writeStatus(w, code, metav1.StatusReasonInternalError)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		a.serveLease(w, r.Method, strings.TrimPrefix(name, "/"), body)
+		return
+	}
 
 	// /api/v1/namespaces/<ns>/<resource>[/<name>]
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/namespaces/"+testNamespace+"/"), "/")
@@ -228,6 +242,52 @@ func (a *fakeKubeAPI) serveConfigMap(w http.ResponseWriter, method, name string,
 	default:
 		writeStatus(w, http.StatusMethodNotAllowed, metav1.StatusReasonMethodNotAllowed)
 	}
+}
+
+// serveLease serves the leases like serveConfigMap the configmaps: get, create, and update with a resource version
+// check
+func (a *fakeKubeAPI) serveLease(w http.ResponseWriter, method, name string, body []byte) {
+	lease, exists := a.leases[name]
+	switch method {
+	case http.MethodGet:
+		if !exists {
+			writeStatus(w, http.StatusNotFound, metav1.StatusReasonNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, lease)
+	case http.MethodPost, http.MethodPut:
+		var newLease coordinationv1.Lease
+		if err := json.Unmarshal(body, &newLease); err != nil {
+			writeStatus(w, http.StatusBadRequest, metav1.StatusReasonBadRequest)
+			return
+		}
+		if method == http.MethodPost && a.leases[newLease.Name] != nil {
+			writeStatus(w, http.StatusConflict, metav1.StatusReasonAlreadyExists)
+			return
+		}
+		if method == http.MethodPut && (!exists || newLease.ResourceVersion != lease.ResourceVersion) {
+			writeStatus(w, http.StatusConflict, metav1.StatusReasonConflict)
+			return
+		}
+		a.version++
+		newLease.ResourceVersion = strconv.Itoa(a.version)
+		newLease.Kind, newLease.APIVersion = "Lease", "coordination.k8s.io/v1"
+		a.leases[newLease.Name] = &newLease
+		writeJSON(w, http.StatusOK, &newLease)
+	default:
+		writeStatus(w, http.StatusMethodNotAllowed, metav1.StatusReasonMethodNotAllowed)
+	}
+}
+
+// leaseHolder returns the holder of the lease of testCluster
+func (a *fakeKubeAPI) leaseHolder() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	lease, ok := a.leases[testConfigMap]
+	if !ok || lease.Spec.HolderIdentity == nil {
+		return ""
+	}
+	return *lease.Spec.HolderIdentity
 }
 
 func (a *fakeKubeAPI) servePod(w http.ResponseWriter, r *http.Request, name string, body []byte) {
@@ -559,6 +619,8 @@ func TestKubeStoreGetSentinelsInfo(t *testing.T) {
 	}
 
 	api.addPod("sentinel1", SentinelLabelValue, &cluster.SentinelInfo{UID: "s1"})
+	// a sentinel that didn't publish its info yet
+	api.addPod("sentinel0", SentinelLabelValue, nil)
 	api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
 	sentinels, err = s.GetSentinelsInfo(ctx)
 	if err != nil {
@@ -609,11 +671,48 @@ func TestKubeStoreGetProxiesInfo(t *testing.T) {
 	}
 }
 
-func TestNewKubeElection(t *testing.T) {
-	_, client := newFakeKubeAPI(t)
-	// client-go removed the configmaps resource lock, so this always fails
-	if _, err := NewKubeElection(client, testPod, testNamespace, testCluster, "uid"); err == nil {
-		t.Error("expected an error")
+// TestKubeElectionWithALease runs the election with the client-go Lease lock against the fake api
+func TestKubeElectionWithALease(t *testing.T) {
+	api, client := newFakeKubeAPI(t)
+	e1, err := NewKubeElection(client, testPod, testNamespace, testCluster, "sentinel1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err = e1.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
+		t.Fatalf("expected no leader before any campaign, got %v", err)
+	}
+
+	electedCh, errCh := e1.RunForElection(t.Context())
+	expectElected(t, electedCh, false)
+	expectElected(t, electedCh, true)
+	if holder := api.leaseHolder(); holder != "sentinel1" {
+		t.Errorf("expected the lease to be held by sentinel1, got %q", holder)
+	}
+
+	// another candidate sees the leader, and doesn't get elected while the lease is renewed
+	e2, err := NewKubeElection(client, "pod2", testNamespace, testCluster, "sentinel2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if leader, err := e2.Leader(t.Context()); err != nil || leader != "sentinel1" {
+		t.Errorf("expected leader sentinel1, got %q, %v", leader, err)
+	}
+	electedCh2, errCh2 := e2.RunForElection(t.Context())
+	expectElected(t, electedCh2, false)
+	select {
+	case elected := <-electedCh2:
+		t.Errorf("expected no election result while sentinel1 holds the lease, got %t", elected)
+	case <-time.After(2 * retryPeriod):
+	}
+
+	e1.Stop()
+	expectClosed(t, electedCh, errCh)
+	e2.Stop()
+	expectClosed(t, electedCh2, errCh2)
+
+	api.fail("GET leases", http.StatusInternalServerError)
+	if _, err = e1.Leader(t.Context()); err == nil || errors.Is(err, ErrElectionNoLeader) {
+		t.Errorf("expected an error, got %v", err)
 	}
 }
 
@@ -666,22 +765,30 @@ func TestKubeElectionLeader(t *testing.T) {
 	lock := &fakeResourceLock{}
 	e := &KubeElection{rl: lock}
 
-	if _, err := e.Leader(t.Context()); err == nil {
-		t.Error("expected an error without a record")
+	if _, err := e.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
+		t.Errorf("expected no leader without a lease, got %v", err)
+	}
+	lock.record = &resourcelock.LeaderElectionRecord{}
+	if _, err := e.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
+		t.Errorf("expected no leader for a lease without a holder, got %v", err)
 	}
 	lock.record = &resourcelock.LeaderElectionRecord{HolderIdentity: "keeper2"}
 	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper2" {
 		t.Errorf("expected leader keeper2, got %q, %v", leader, err)
 	}
-	if leader, err := (&KubeElection{rl: &nilRecordLock{}}).Leader(t.Context()); err != nil || leader != "" {
-		t.Errorf("expected no leader, got %q, %v", leader, err)
+	if _, err := (&KubeElection{rl: &nilRecordLock{}}).Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
+		t.Errorf("expected no leader, got %v", err)
+	}
+	lock.getErr = errors.New("boom")
+	if _, err := e.Leader(t.Context()); err == nil || errors.Is(err, ErrElectionNoLeader) {
+		t.Errorf("expected the error, got %v", err)
 	}
 }
 
 func TestKubeElectionRunForElection(t *testing.T) {
 	e := &KubeElection{rl: &fakeResourceLock{}}
 
-	electedCh, _ := e.RunForElection(context.Background())
+	electedCh, errCh := e.RunForElection(context.Background())
 	expectElected(t, electedCh, false)
 	expectElected(t, electedCh, true)
 	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
@@ -698,9 +805,7 @@ func TestKubeElectionRunForElection(t *testing.T) {
 	}()
 
 	e.Stop()
-	expectElected(t, electedCh, false)
-	// the campaign doesn't stop on a canceled context: it keeps sending false, so the channels are
-	// never closed and its goroutine stays blocked once nobody reads them anymore
+	expectClosed(t, electedCh, errCh)
 
 	func() {
 		defer func() {
@@ -710,4 +815,11 @@ func TestKubeElectionRunForElection(t *testing.T) {
 		}()
 		e.Stop()
 	}()
+
+	// a new campaign after Stop gets new channels; stopping it while nobody reads them ends it too
+	electedCh, errCh = e.RunForElection(context.Background())
+	expectElected(t, electedCh, false)
+	time.Sleep(100 * time.Millisecond) // it is elected, and waits to report that
+	e.Stop()
+	expectClosed(t, electedCh, errCh)
 }
