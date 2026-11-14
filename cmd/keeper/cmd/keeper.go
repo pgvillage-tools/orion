@@ -55,10 +55,12 @@ const (
 	// defaultWalSegmentSizeMB is the default PostgreSQL wal segment size in MB
 	defaultWalSegmentSizeMB = 16
 
-	errorMsgPgInst          = "failed to stop pg instance"
-	errorMsgDbState         = "failed to save db local state"
-	followedStr             = "followedDB"
-	ownerRWPermisions       = 0600
+	errorMsgPgInst    = "failed to stop pg instance"
+	errorMsgDbState   = "failed to save db local state"
+	followedStr       = "followedDB"
+	ownerRWPermisions = 0600
+	// groupOtherPermissions are the permission bits for the group and others; a password file should have none
+	groupOtherPermissions   = 0o077
 	ownerRWExecPermisions   = 0700
 	ownerRWOtherRPermisions = 0644
 	decimal                 = 10
@@ -179,22 +181,22 @@ func init() {
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgAdvertisePort, "pg-advertise-port", "", "postgresql instance port from outside. Use it to expose port different than local port with a PAT networking config")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgBinPath, "pg-bin-path", "", "absolute path to postgresql binaries. If empty they will be searched in the current PATH")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplConnType, "pg-repl-connection-type", connTypeHost, "postgres replication user connection type. Default is host.")
-	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplAuthMethod, "pg-repl-auth-method", authMd5, "postgres replication user auth method. Default is authMd5.")
+	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplAuthMethod, "pg-repl-auth-method", authMd5, "postgres replication user auth method. Default is md5.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplLocalAuthMethod, "pg-repl-local-auth-method", "", "postgres replication user auth method. Default is same as pg-repl-auth-method.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplSslMode, "pg-repl-ssl-mode", "prefer", "postgres replication user ssl-mode. Default is prefer.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplUsername, "pg-repl-username", "", "postgres replication user name. Required. It'll be created on db initialization. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplPassword, "pg-repl-password", "", "postgres replication user password. Only one of --pg-repl-password or --pg-repl-passwordfile must be provided. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgReplPasswordFile, "pg-repl-passwordfile", "", "postgres replication user password file. Only one of --pg-repl-password or --pg-repl-passwordfile must be provided. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUConnType, "pg-su-connection-type", connTypeHost, "postgres superuser connection type. Default is host.")
-	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUAuthMethod, "pg-su-auth-method", authMd5, "postgres superuser auth method. Default is authMd5.")
+	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUAuthMethod, "pg-su-auth-method", authMd5, "postgres superuser auth method. Default is md5.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSULocalAuthMethod, "pg-su-local-auth-method", "", "postgres superuser auth method. Default is same as pg-su-auth-method.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUUsername, "pg-su-username", "", "postgres superuser user name. Used for keeper managed instance access and pg_rewind based synchronization. It'll be created on db initialization. Defaults to the name of the effective user running orion-keeper. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUPassword, "pg-su-password", "", "postgres superuser password. Only one of --pg-su-password or --pg-su-passwordfile must be provided. Must be the same for all keepers.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.pgSUPasswordFile, "pg-su-passwordfile", "", "postgres superuser password file. Only one of --pg-su-password or --pg-su-passwordfile must be provided. Must be the same for all keepers)")
 	CmdKeeper.PersistentFlags().BoolVar(&cfg.debug, "debug", false, "enable debug logging")
 
-	CmdKeeper.PersistentFlags().BoolVar(&cfg.canBeMaster, "can-be-master", true, "prevent keeper from being elected as master")
-	CmdKeeper.PersistentFlags().BoolVar(&cfg.canBeSynchronousReplica, "can-be-synchronous-replica", true, "prevent keeper from being chosen as synchronous replica")
+	CmdKeeper.PersistentFlags().BoolVar(&cfg.canBeMaster, "can-be-master", true, "whether the keeper can be elected as master (false prevents it)")
+	CmdKeeper.PersistentFlags().BoolVar(&cfg.canBeSynchronousReplica, "can-be-synchronous-replica", true, "whether the keeper can be chosen as synchronous replica (false prevents it)")
 	CmdKeeper.PersistentFlags().BoolVar(&cfg.disableDataDirLocking, "disable-data-dir-locking", false, "disable locking on data dir. Warning! It'll cause data corruptions if two keepers are concurrently running with the same data dir.")
 	// revive:enable
 
@@ -235,15 +237,16 @@ var managedPGParameters = []string{
 }
 
 func readPasswordFromFile(ctx context.Context, filePath string) (string, error) {
-	fi, err := os.Lstat(filePath)
+	// Stat, not Lstat: a symlink (as Kubernetes mounts a Secret) has the mode of the file it points to
+	fi, err := os.Stat(filePath)
 	if err != nil {
 		return "", fmt.Errorf("unable to read password from file %s: %v", filePath, err)
 	}
 	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
 
-	if fi.Mode() > ownerRWPermisions {
-		// TODO: enforce this by exiting with an error. Kubernetes makes this file too open today.
-		logger.Warn().Str("file", filePath).Str("mode", fmt.Sprintf("%#o", fi.Mode())).
+	if fi.Mode().Perm()&groupOtherPermissions != 0 {
+		// TODO: enforce this by exiting with an error
+		logger.Warn().Str("file", filePath).Str("mode", fmt.Sprintf("%#o", fi.Mode().Perm())).
 			Msgf("password file permissions are too open. " +
 				"This file should only be readable to the user executing orion! Continuing...")
 	}
@@ -2136,6 +2139,125 @@ func Execute() {
 	}
 }
 
+// validAuthMethods are the auth methods the keeper accepts for the superuser and the replication user
+var validAuthMethods = map[string]struct{}{authTrust: {}, authMd5: {}, authCert: {}, authIdent: {}, authPeer: {}}
+
+// validConnectionTypes are the pg_hba connection types the keeper accepts for the superuser and the replication user
+var validConnectionTypes = map[string]struct{}{
+	connTypeHost: {}, connTypeHostSsl: {}, connTypeHostNoSsl: {}, connTypeHostGssEnc: {}, connTypeHostNoGssEnc: {},
+}
+
+// validateUsersConfig checks the superuser and replication user settings of c: connection types, auth methods and
+// passwords. It also fills in the defaults of the local auth methods, reads the password files, and removes trailing
+// new lines from the passwords.
+func validateUsersConfig(ctx context.Context, c *config) error {
+	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
+	var err error
+	if c.pgSULocalAuthMethod == "" {
+		c.pgSULocalAuthMethod = c.pgSUAuthMethod
+	}
+	if c.pgReplLocalAuthMethod == "" {
+		c.pgReplLocalAuthMethod = c.pgReplAuthMethod
+	}
+	if _, ok := validConnectionTypes[c.pgReplConnType]; !ok {
+		return errors.New("--pg-repl-connection-type must be one of: " +
+			"host, hostssl, hostnossl, hostgssenc, hostnogssenc")
+	}
+	if _, ok := validConnectionTypes[c.pgSUConnType]; !ok {
+		return errors.New("--pg-su-connection-type must be one of: host, hostssl, hostnossl, hostgssenc, hostnogssenc")
+	}
+	if _, ok := validAuthMethods[c.pgReplAuthMethod]; !ok {
+		return errors.New("--pg-repl-auth-method must be one of: md5, trust, cert, ident or peer")
+	}
+	if c.pgReplUsername == "" {
+		return errors.New("--pg-repl-username is required")
+	}
+	if _, ok := validAuthMethods[c.pgReplLocalAuthMethod]; !ok {
+		return errors.New("--pg-repl-local-auth-method must be one of: md5, trust, cert, ident or peer")
+	}
+	if c.pgReplAuthMethod == authTrust {
+		logger.Warn().
+			Msg("not utilizing a password for replication between hosts is extremely dangerous")
+		if c.pgReplPassword != "" || c.pgReplPasswordFile != "" {
+			// revive:disable-next-line
+			return errors.New("can not utilize --pg-repl-auth-method trust together with --pg-repl-password " +
+				"or --pg-repl-passwordfile")
+		}
+	}
+	if c.pgSUAuthMethod == authTrust || c.pgSULocalAuthMethod == authTrust {
+		logger.Warn().Msg("not utilizing a password for superuser is extremely dangerous")
+		if (c.pgSUAuthMethod == authTrust ||
+			c.pgSULocalAuthMethod == authTrust) && (c.pgSUPassword != "" ||
+			c.pgSUPasswordFile != "") {
+			// revive:disable-next-line
+			return errors.New("can not utilize --pg-su-auth-method trust and --pg-su-auth-method trust together with --pg-su-password or --pg-su-passwordfile")
+		}
+	}
+	if c.pgReplAuthMethod == authMd5 && c.pgReplPassword == "" && c.pgReplPasswordFile == "" {
+		return errors.New("one of --pg-repl-password or --pg-repl-passwordfile is required")
+	}
+	if c.pgReplAuthMethod == authMd5 && c.pgReplPassword != "" && c.pgReplPasswordFile != "" {
+		return errors.New("only one of --pg-repl-password or --pg-repl-passwordfile must be provided")
+	}
+	if _, ok := validAuthMethods[c.pgSUAuthMethod]; !ok {
+		return errors.New("--pg-su-auth-method must be one of: md5, trust, cert, ident or peer")
+	}
+	if c.pgSUAuthMethod == authMd5 && c.pgSUPassword == "" && c.pgSUPasswordFile == "" {
+		return errors.New("one of --pg-su-password or --pg-su-passwordfile is required")
+	}
+	if c.pgSUAuthMethod == authMd5 && c.pgSUPassword != "" && c.pgSUPasswordFile != "" {
+		return errors.New("only one of --pg-su-password or --pg-su-passwordfile must be provided")
+	}
+	if _, ok := validAuthMethods[c.pgSULocalAuthMethod]; !ok {
+		return errors.New("--pg-su-local-auth-method must be one of: md5, trust, cert, ident or peer")
+	}
+
+	if c.pgReplPasswordFile != "" {
+		c.pgReplPassword, err = readPasswordFromFile(ctx, c.pgReplPasswordFile)
+		if err != nil {
+			return fmt.Errorf("cannot read pg replication user password: %w", err)
+		}
+	}
+	if c.pgSUPasswordFile != "" {
+		c.pgSUPassword, err = readPasswordFromFile(ctx, c.pgSUPasswordFile)
+		if err != nil {
+			return fmt.Errorf("cannot read pg superuser password: %w", err)
+		}
+	}
+
+	// Trim trailing new lines from passwords
+	tp := strings.TrimRight(c.pgSUPassword, "\r\n")
+	if c.pgSUPassword != tp {
+		logger.Warn().Msg("superuser password contain trailing new line, removing")
+		if tp == "" {
+			return errors.New("superuser password is empty after removing trailing new line")
+		}
+		c.pgSUPassword = tp
+	}
+
+	tp = strings.TrimRight(c.pgReplPassword, "\r\n")
+	if c.pgReplPassword != tp {
+		logger.Warn().Msg("replication user password contain trailing new line, removing")
+		if tp == "" {
+			return errors.New("replication user password is empty after removing trailing new line")
+		}
+		c.pgReplPassword = tp
+	}
+
+	if c.pgSUUsername == c.pgReplUsername {
+		logger.Warn().
+			Msg("superuser name and replication user name are the same. Different users are suggested.")
+		if c.pgReplAuthMethod != c.pgSUAuthMethod {
+			return errors.New("do not support different auth methods when utilizing superuser for replication.")
+		}
+		if c.pgSUPassword != c.pgReplPassword && c.pgSUAuthMethod == authMd5 && c.pgReplAuthMethod == authMd5 {
+			// revive:disable-next-line
+			return errors.New("provided superuser name and replication user name are the same but provided passwords are different")
+		}
+	}
+	return nil
+}
+
 func keeper(c *cobra.Command, _ []string) {
 	ctx, logger := logging.GetLogComponent(context.Background(), logging.KeeperComponent)
 	var (
@@ -2155,18 +2277,6 @@ func keeper(c *cobra.Command, _ []string) {
 		cfg.pgSUUsername = user
 	}
 
-	validAuthMethods := map[string]struct{}{}
-	validAuthMethods[authTrust] = struct{}{}
-	validAuthMethods[authMd5] = struct{}{}
-	validAuthMethods[authCert] = struct{}{}
-	validAuthMethods[authIdent] = struct{}{}
-	validAuthMethods[authPeer] = struct{}{}
-	validConnectionTypes := map[string]struct{}{}
-	validConnectionTypes[connTypeHost] = struct{}{}
-	validConnectionTypes[connTypeHostSsl] = struct{}{}
-	validConnectionTypes[connTypeHostNoSsl] = struct{}{}
-	validConnectionTypes[connTypeHostGssEnc] = struct{}{}
-	validConnectionTypes[connTypeHostNoGssEnc] = struct{}{}
 	logging.SetStaticLevel(cfg.LogLevel)
 	if cfg.debug {
 		logging.SetStaticLevel("debug")
@@ -2230,115 +2340,8 @@ func keeper(c *cobra.Command, _ []string) {
 		}
 	}
 
-	if cfg.pgSULocalAuthMethod == "" {
-		cfg.pgSULocalAuthMethod = cfg.pgSUAuthMethod
-	}
-	if cfg.pgReplLocalAuthMethod == "" {
-		cfg.pgReplLocalAuthMethod = cfg.pgReplAuthMethod
-	}
-	if _, ok := validConnectionTypes[cfg.pgReplConnType]; !ok {
-		logger.Fatal().
-			Msg("--pg-repl-connection-type must be one of: host, hostssl, hostnossl, hostgssenc, hostnogssenc")
-	}
-	if _, ok := validConnectionTypes[cfg.pgSUConnType]; !ok {
-		logger.Fatal().
-			Msg("--pg-su-connection-type must be one of: host, hostssl, hostnossl, hostgssenc, hostnogssenc")
-	}
-	if _, ok := validAuthMethods[cfg.pgReplAuthMethod]; !ok {
-		logger.Fatal().
-			Msg("--pg-repl-auth-method must be one of: ident, authMd5, password, trust or cert")
-	}
-	if cfg.pgReplUsername == "" {
-		logger.Fatal().
-			Msg("--pg-repl-username is required")
-	}
-	if _, ok := validAuthMethods[cfg.pgReplLocalAuthMethod]; !ok {
-		logger.Fatal().
-			Msg("--pg-repl-local-auth-method must be one of: ident, authMd5, password, trust or cert")
-	}
-	if cfg.pgReplAuthMethod == authTrust {
-		logger.Warn().
-			Msg("not utilizing a password for replication between hosts is extremely dangerous")
-		if cfg.pgReplPassword != "" || cfg.pgReplPasswordFile != "" {
-			// revive:disable-next-line
-			logger.Fatal().
-				Msg("can not utilize --pg-repl-auth-method trust together with --pg-repl-password " +
-					"or --pg-repl-passwordfile")
-		}
-	}
-	if cfg.pgSUAuthMethod == authTrust || cfg.pgSULocalAuthMethod == authTrust {
-		logger.Warn().Msg("not utilizing a password for superuser is extremely dangerous")
-		if (cfg.pgSUAuthMethod == authTrust ||
-			cfg.pgSULocalAuthMethod == authTrust) && (cfg.pgSUPassword != "" ||
-			cfg.pgSUPasswordFile != "") {
-			// revive:disable-next-line
-			logger.Fatal().Msg("can not utilize --pg-su-auth-method trust and --pg-su-auth-method trust together with --pg-su-password or --pg-su-passwordfile")
-		}
-	}
-	if cfg.pgReplAuthMethod == authMd5 && cfg.pgReplPassword == "" && cfg.pgReplPasswordFile == "" {
-		logger.Fatal().Msg("one of --pg-repl-password or --pg-repl-passwordfile is required")
-	}
-	if cfg.pgReplAuthMethod == authMd5 && cfg.pgReplPassword != "" && cfg.pgReplPasswordFile != "" {
-		logger.Fatal().Msg("only one of --pg-repl-password or --pg-repl-passwordfile must be provided")
-	}
-	if _, ok := validAuthMethods[cfg.pgSUAuthMethod]; !ok {
-		logger.Fatal().Msg("--pg-su-auth-method must be one of: ident, authMd5, password, trust or cert")
-	}
-	if cfg.pgSUAuthMethod == authMd5 && cfg.pgSUPassword == "" && cfg.pgSUPasswordFile == "" {
-		logger.Fatal().Msg("one of --pg-su-password or --pg-su-passwordfile is required")
-	}
-	if cfg.pgSUAuthMethod == authMd5 && cfg.pgSUPassword != "" && cfg.pgSUPasswordFile != "" {
-		logger.Fatal().Msg("only one of --pg-su-password or --pg-su-passwordfile must be provided")
-	}
-	if _, ok := validAuthMethods[cfg.pgSULocalAuthMethod]; !ok {
-		logger.Fatal().
-			Msg("--pg-su-local-auth-method must be one of: ident, authMd5, password, trust or cert")
-	}
-
-	if cfg.pgReplPasswordFile != "" {
-		cfg.pgReplPassword, err = readPasswordFromFile(ctx, cfg.pgReplPasswordFile)
-		if err != nil {
-			logger.Fatal().
-				AnErr(logging.KeyErr, err).
-				Msg("cannot read pg replication user password")
-		}
-	}
-	if cfg.pgSUPasswordFile != "" {
-		cfg.pgSUPassword, err = readPasswordFromFile(ctx, cfg.pgSUPasswordFile)
-		if err != nil {
-			logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot read pg superuser password")
-		}
-	}
-
-	// Trim trailing new lines from passwords
-	tp := strings.TrimRight(cfg.pgSUPassword, "\r\n")
-	if cfg.pgSUPassword != tp {
-		logger.Warn().Msg("superuser password contain trailing new line, removing")
-		if tp == "" {
-			logger.Fatal().Msg("superuser password is empty after removing trailing new line")
-		}
-		cfg.pgSUPassword = tp
-	}
-
-	tp = strings.TrimRight(cfg.pgReplPassword, "\r\n")
-	if cfg.pgReplPassword != tp {
-		logger.Warn().Msg("replication user password contain trailing new line, removing")
-		if tp == "" {
-			logger.Fatal().Msg("replication user password is empty after removing trailing new line")
-		}
-		cfg.pgReplPassword = tp
-	}
-
-	if cfg.pgSUUsername == cfg.pgReplUsername {
-		logger.Warn().
-			Msg("superuser name and replication user name are the same. Different users are suggested.")
-		if cfg.pgReplAuthMethod != cfg.pgSUAuthMethod {
-			logger.Fatal().Msg("do not support different auth methods when utilizing superuser for replication.")
-		}
-		if cfg.pgSUPassword != cfg.pgReplPassword && cfg.pgSUAuthMethod == authMd5 && cfg.pgReplAuthMethod == authMd5 {
-			// revive:disable-next-line
-			logger.Fatal().Msg("provided superuser name and replication user name are the same but provided passwords are different")
-		}
+	if err = validateUsersConfig(ctx, &cfg); err != nil {
+		logger.Fatal().Msg(err.Error())
 	}
 
 	// Open (and create if needed) the lock file.
