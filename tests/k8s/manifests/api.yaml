@@ -17,8 +17,6 @@ spec:
         - name: api
           image: ghcr.io/pgvillage-tools/orion/api:latest
           env:
-            - name: POD_NAME
-              valueFrom: {fieldRef: {fieldPath: metadata.name}}
             - {name: ORIONAPI_CLUSTER_NAME, value: mycluster}
             - {name: ORIONAPI_STORE_BACKEND, value: kubernetes}
             - {name: ORIONAPI_KUBE_RESOURCE_KIND, value: configmap}
