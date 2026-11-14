@@ -341,4 +341,41 @@ var _ = Describe("orion on Kubernetes", Ordered, func() {
 			WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
 		Ω(count(ctx, "pods")).To(Equal(105))
 	})
+
+	It("hands the Lease to the other sentinel when the leader hangs, and keeps it when the leader wakes up",
+		func(ctx context.Context) {
+			Eventually(func(g Gomega) { primary = converged(g) }).
+				WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+			leader := leaseHolder(ctx)
+			Ω(leader).NotTo(BeEmpty())
+			pod := mustPodOf(ctx, "orion-sentinel", leader)
+
+			// the process hangs, but its pod stays: only the Lease can tell the other sentinel to take over
+			signalContainer(ctx, pod, "sentinel", "STOP")
+			resumed := false
+			resume := func(ctx context.Context) {
+				if !resumed {
+					signalContainer(ctx, pod, "sentinel", "CONT")
+					resumed = true
+				}
+			}
+			DeferCleanup(resume)
+
+			var newLeader string
+			Eventually(func(g Gomega) {
+				newLeader = leaseHolder(ctx)
+				g.Ω(newLeader).NotTo(BeEmpty())
+				g.Ω(newLeader).NotTo(Equal(leader))
+				g.Ω(status(g).Sentinels).To(ContainElement(apiv1.InfoSentinel{UID: newLeader, Leader: true}))
+			}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+			Ω(converged(Default)).To(Equal(primary))
+
+			// the old leader wakes up with a Lease that isn't its own any more: it stays a follower, and the cluster
+			// keeps its primary
+			resume(ctx)
+			Consistently(func(g Gomega) {
+				g.Ω(leaseHolder(ctx)).To(Equal(newLeader))
+				g.Ω(converged(g)).To(Equal(primary))
+			}).WithContext(ctx).WithTimeout(convergedFor).WithPolling(helpers.PollInterval).Should(Succeed())
+		})
 })
