@@ -38,14 +38,15 @@ COPY --from=builder /workspace/orion-keeper ./
 
 RUN mkdir /pgdata /pgwal && chown postgres: /pgdata /pgwal
 
+# The superuser is postgres (the user that runs the keeper); replication uses a user of its own (the keeper warns when
+# they are the same, and then both passwords must be the same)
 ENV ORIONKEEPER_PG_BIN_PATH=/usr/lib/postgresql/${PGVERSION}/bin \
     ORIONKEEPER_CLUSTER_NAME=orion \
     ORIONKEEPER_STORE_BACKEND=etcdv3 \
     ORIONKEEPER_DATA_DIR=/pgdata \
-    ORIONKEEPER_PGDATA_DIR=/pgdata/pgdata \
     ORIONKEEPER_WAL_DIR=/pgwal/pgwal \
     ORIONKEEPER_PG_PORT=5432 \
-    ORIONKEEPER_PG_REPL_USERNAME=postgres
+    ORIONKEEPER_PG_REPL_USERNAME=repluser
 
 ENTRYPOINT ["/orion-keeper"]
 USER postgres
