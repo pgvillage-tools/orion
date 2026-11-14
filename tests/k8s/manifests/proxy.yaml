@@ -19,7 +19,6 @@ spec:
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
             - {name: ORIONPROXY_CLUSTER_NAME, value: mycluster}
             - {name: ORIONPROXY_STORE_BACKEND, value: kubernetes}
-            - {name: ORIONPROXY_KUBE_RESOURCE_KIND, value: configmap}
             - {name: ORIONPROXY_METRICS_LISTEN_ADDRESS, value: "0.0.0.0:8080"}
           ports:
             - {name: postgres, containerPort: 25432}

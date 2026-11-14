@@ -34,7 +34,6 @@ spec:
               valueFrom: {fieldRef: {fieldPath: status.podIP}}
             - {name: ORIONKEEPER_CLUSTER_NAME, value: mycluster}
             - {name: ORIONKEEPER_STORE_BACKEND, value: kubernetes}
-            - {name: ORIONKEEPER_KUBE_RESOURCE_KIND, value: configmap}
             - {name: ORIONKEEPER_PG_SU_PASSWORDFILE, value: /etc/orion/pg/su-password}
             - {name: ORIONKEEPER_PG_REPL_USERNAME, value: repluser}
             - {name: ORIONKEEPER_PG_REPL_PASSWORDFILE, value: /etc/orion/pg/repl-password}

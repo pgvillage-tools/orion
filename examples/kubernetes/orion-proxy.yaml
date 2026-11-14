@@ -36,8 +36,6 @@ spec:
                   fieldPath: metadata.labels['orion-cluster']
             - name: ORIONPROXY_STORE_BACKEND
               value: "kubernetes"
-            - name: ORIONPROXY_KUBE_RESOURCE_KIND
-              value: "configmap"
             - name: ORIONPROXY_LISTEN_ADDRESS
               value: "0.0.0.0"
             - name: ORIONPROXY_METRICS_LISTEN_ADDRESS

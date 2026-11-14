@@ -19,7 +19,6 @@ spec:
           env:
             - {name: ORIONAPI_CLUSTER_NAME, value: mycluster}
             - {name: ORIONAPI_STORE_BACKEND, value: kubernetes}
-            - {name: ORIONAPI_KUBE_RESOURCE_KIND, value: configmap}
           ports:
             - {name: api, containerPort: 8443}
             - {name: probe, containerPort: 8080}
