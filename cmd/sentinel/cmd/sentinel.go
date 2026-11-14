@@ -831,8 +831,8 @@ func (s *Sentinel) findBestStandbys(ctx context.Context, cd *cluster.Data, maste
 		}
 		bestDBs = append(bestDBs, db)
 	}
-	// Sort by XLogPos
-	sort.Sort(dbSlice(bestDBs))
+	// Sort by XLogPos, the highest (the least behind) first
+	sort.Sort(sort.Reverse(dbSlice(bestDBs)))
 	return bestDBs
 }
 
@@ -893,8 +893,8 @@ func (s *Sentinel) findBestNewMasters(ctx context.Context, cd *cluster.Data, mas
 		bestNewMasters = append(bestNewMasters, db)
 	}
 
-	// Sort by XLogPos
-	sort.Sort(dbSlice(bestNewMasters))
+	// Sort by XLogPos, the highest first: with async replication the first one is elected, so the least data is lost
+	sort.Sort(sort.Reverse(dbSlice(bestNewMasters)))
 	logger.Debug().Any("bestNewMasters", spew.Sdump(bestNewMasters)).Msg("bestNewMasters")
 	return bestNewMasters
 }
