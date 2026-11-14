@@ -122,55 +122,67 @@ var _ = Describe("Cluster", func() {
 			var spec Spec
 			Ω(spec.Validate()).To(HaveOccurred())
 		})
-		It("should return an error when something is not properly set", func() {
-			var (
-				invalidDuration         = Duration{time.Duration(-1)}
-				invalidUInt16           = uint16(0)
-				invalidInitMode         = InitMode("invalid")
-				initModeNew             = New
-				initModeExistingCluster = ExistingCluster
-				initModePITR            = PITR
-				roleReplica             = Replica
-				roleInvalid             = Role("invalid")
-				suram                   = SUReplAccessMode("invalid")
-			)
-			for _, spec := range []Spec{
-				{SleepInterval: &invalidDuration},
-				{RequestTimeout: &invalidDuration},
-				{ConvergenceTimeout: &invalidDuration},
-				{InitTimeout: &invalidDuration},
-				{SyncTimeout: &invalidDuration},
-				{DBWaitReadyTimeout: &invalidDuration},
-				{FailInterval: &invalidDuration},
-				{DeadKeeperRemovalInterval: &invalidDuration},
-				{ProxyCheckInterval: &invalidDuration},
-				{ProxyTimeout: &invalidDuration},
-				{MaxStandbys: &invalidUInt16},
-				{MaxStandbysPerSender: &invalidUInt16},
-				{MaxSynchronousStandbys: &invalidUInt16},
-				{MaxSynchronousStandbys: &invalidUInt16,
-					MinSynchronousStandbys: util.ToPtr(uint16(1))},
-				{InitMode: nil},
-				{AdditionalMasterReplicationSlots: []string{"slot-1"}},
-				{AdditionalMasterReplicationSlots: []string{"orion_slot"}},
-				{PGHBA: []string{"local all all md5\n"}},
-				{InitMode: &invalidInitMode},
-				{InitMode: &initModeNew, Role: &roleReplica},
-				{InitMode: &initModeExistingCluster, ExistingConfig: nil},
-				{InitMode: &initModeExistingCluster,
-					ExistingConfig: &ExistingConfig{KeeperUID: ""}},
-				{InitMode: &initModePITR, PITRConfig: nil},
-				{InitMode: &initModePITR,
-					PITRConfig: &PITRConfig{DataRestoreCommand: ""}},
-				{InitMode: &initModePITR,
-					PITRConfig: &PITRConfig{RecoveryTargetSettings: &RecoveryTargetSettings{}},
-					Role:       &roleReplica},
-				{InitMode: &invalidInitMode},
-				{DefaultSUReplAccessMode: &suram},
-				{Role: &roleReplica, StandbyConfig: nil},
-				{Role: &roleInvalid},
+		It("accepts a valid spec", func() {
+			spec := Spec{InitMode: util.ToPtr(New)}
+			Ω(spec.Validate()).To(Succeed())
+		})
+		It("returns the error of the setting that is wrong", func() {
+			invalidDuration := &Duration{time.Duration(-1)}
+			zero := util.ToPtr(uint16(0))
+			for _, tt := range []struct {
+				change func(s *Spec)
+				want   string
+			}{
+				{func(s *Spec) { s.SleepInterval = invalidDuration }, "sleepInterval must be positive"},
+				{func(s *Spec) { s.RequestTimeout = invalidDuration }, "requestTimeout must be positive"},
+				{func(s *Spec) { s.ConvergenceTimeout = invalidDuration }, "convergenceTimeout must be positive"},
+				{func(s *Spec) { s.InitTimeout = invalidDuration }, "initTimeout must be positive"},
+				{func(s *Spec) { s.SyncTimeout = invalidDuration }, "syncTimeout must be positive"},
+				{func(s *Spec) { s.DBWaitReadyTimeout = invalidDuration }, "dbWaitReadyTimeout must be positive"},
+				{func(s *Spec) { s.FailInterval = invalidDuration }, "failInterval must be positive"},
+				{func(s *Spec) { s.DeadKeeperRemovalInterval = invalidDuration },
+					"deadKeeperRemovalInterval must be positive"},
+				{func(s *Spec) { s.ProxyCheckInterval = invalidDuration }, "proxyCheckInterval must be positive"},
+				{func(s *Spec) { s.ProxyTimeout = invalidDuration }, "proxyTimeout must be positive"},
+				{func(s *Spec) { s.ProxyCheckInterval = &Duration{time.Minute} },
+					"proxyCheckInterval should be less than proxyTimeout"},
+				{func(s *Spec) { s.MaxStandbys = zero }, "maxStandbys must be at least 1"},
+				{func(s *Spec) { s.MaxStandbysPerSender = zero }, "maxStandbysPerSender must be at least 1"},
+				{func(s *Spec) { s.MaxSynchronousStandbys = zero }, "maxSynchronousStandbys must be at least 1"},
+				{func(s *Spec) { s.MinSynchronousStandbys = util.ToPtr(uint16(2)) },
+					"maxSynchronousStandbys must be greater or equal to minSynchronousStandbys"},
+				{func(s *Spec) { s.InitMode = nil }, "initMode undefined"},
+				{func(s *Spec) { s.AdditionalMasterReplicationSlots = []string{"slot-1"} },
+					`wrong replication slot name: "slot-1"`},
+				{func(s *Spec) { s.AdditionalMasterReplicationSlots = []string{"orion_slot"} },
+					`replication slot name is reserved: "orion_slot"`},
+				{func(s *Spec) { s.PGHBA = []string{"local all all md5\n"} },
+					"pgHBA entries cannot contain newline characters"},
+				{func(s *Spec) { s.InitMode = util.ToPtr(InitMode("invalid")) }, `unknown initMode: "invalid"`},
+				{func(s *Spec) { s.Role = util.ToPtr(Replica) }, `invalid cluster role standby when initMode is "new"`},
+				{func(s *Spec) { s.InitMode = util.ToPtr(ExistingCluster) },
+					`existingConfig undefined. Required when initMode is "existing"`},
+				{func(s *Spec) {
+					s.InitMode, s.ExistingConfig = util.ToPtr(ExistingCluster), &ExistingConfig{}
+				}, "existingConfig.keeperUID undefined"},
+				{func(s *Spec) { s.InitMode = util.ToPtr(PITR) }, `pitrConfig undefined. Required when initMode is "pitr"`},
+				{func(s *Spec) { s.InitMode, s.PITRConfig = util.ToPtr(PITR), &PITRConfig{} },
+					"pitrConfig.DataRestoreCommand undefined"},
+				{func(s *Spec) {
+					s.InitMode, s.Role = util.ToPtr(PITR), util.ToPtr(Replica)
+					s.PITRConfig = &PITRConfig{DataRestoreCommand: "restore", RecoveryTargetSettings: &RecoveryTargetSettings{}}
+				}, "cannot define pitrConfig.RecoveryTargetSettings when required cluster role is standby"},
+				{func(s *Spec) { s.DefaultSUReplAccessMode = util.ToPtr(SUReplAccessMode("invalid")) },
+					`unknown defaultSUReplAccessMode: "invalid"`},
+				{func(s *Spec) {
+					s.InitMode, s.Role = util.ToPtr(PITR), util.ToPtr(Replica)
+					s.PITRConfig = &PITRConfig{DataRestoreCommand: "restore"}
+				}, `standbyConfig undefined. Required when cluster role is "standby"`},
+				{func(s *Spec) { s.Role = util.ToPtr(Role("invalid")) }, `unknown role: "invalid"`},
 			} {
-				Ω(spec.Validate()).To(HaveOccurred())
+				spec := Spec{InitMode: util.ToPtr(New)}
+				tt.change(&spec)
+				Ω(spec.Validate()).To(MatchError(tt.want))
 			}
 		})
 	})
