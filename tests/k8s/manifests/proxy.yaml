@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orion-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {component: orion-proxy, orion-cluster: mycluster}
+  template:
+    metadata:
+      labels: {component: orion-proxy, orion-cluster: mycluster}
+    spec:
+      serviceAccountName: orion
+      containers:
+        - name: proxy
+          image: ghcr.io/pgvillage-tools/orion/proxy:latest
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - {name: ORIONPROXY_CLUSTER_NAME, value: mycluster}
+            - {name: ORIONPROXY_STORE_BACKEND, value: kubernetes}
+            - {name: ORIONPROXY_KUBE_RESOURCE_KIND, value: configmap}
+            - {name: ORIONPROXY_METRICS_LISTEN_ADDRESS, value: "0.0.0.0:8080"}
+          ports:
+            - {name: postgres, containerPort: 25432}
+            - {name: metrics, containerPort: 8080}
+          readinessProbe:
+            tcpSocket: {port: 25432}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orion-proxy
+spec:
+  selector: {component: orion-proxy, orion-cluster: mycluster}
+  ports:
+    - {name: postgres, port: 5432, targetPort: 25432}

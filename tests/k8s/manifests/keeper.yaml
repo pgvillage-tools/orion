@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: orion-keeper
+spec:
+  clusterIP: None
+  selector: {component: orion-keeper, orion-cluster: mycluster}
+  ports:
+    - {name: postgres, port: 5432}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orion-keeper
+spec:
+  serviceName: orion-keeper
+  replicas: 2
+  selector:
+    matchLabels: {component: orion-keeper, orion-cluster: mycluster}
+  template:
+    metadata:
+      labels: {component: orion-keeper, orion-cluster: mycluster}
+    spec:
+      serviceAccountName: orion
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: keeper
+          image: ghcr.io/pgvillage-tools/orion/keeper:18
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: ORIONKEEPER_PG_LISTEN_ADDRESS
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - {name: ORIONKEEPER_CLUSTER_NAME, value: mycluster}
+            - {name: ORIONKEEPER_STORE_BACKEND, value: kubernetes}
+            - {name: ORIONKEEPER_KUBE_RESOURCE_KIND, value: configmap}
+            - {name: ORIONKEEPER_PG_SU_PASSWORDFILE, value: /etc/orion/pg/su-password}
+            - {name: ORIONKEEPER_PG_REPL_USERNAME, value: repluser}
+            - {name: ORIONKEEPER_PG_REPL_PASSWORDFILE, value: /etc/orion/pg/repl-password}
+            - {name: ORIONKEEPER_METRICS_LISTEN_ADDRESS, value: "0.0.0.0:8080"}
+          ports:
+            - {name: postgres, containerPort: 5432}
+            - {name: metrics, containerPort: 8080}
+          volumeMounts:
+            - {name: data, mountPath: /pgdata}
+            - {name: wal, mountPath: /pgwal}
+            - {name: pg, mountPath: /etc/orion/pg, readOnly: true}
+      volumes:
+        - name: pg
+          secret: {secretName: orion-pg, defaultMode: 0440}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 10Gi}}
+    - metadata: {name: wal}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 2Gi}}

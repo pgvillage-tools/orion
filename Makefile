@@ -74,6 +74,7 @@ build-images: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t cli -f Dockerfile.cli .
 	$(CONTAINER_TOOL) build -t proxy -f Dockerfile.proxy .
 	$(CONTAINER_TOOL) build -t sentinel -f Dockerfile.sentinel .
+	$(CONTAINER_TOOL) build -t api -f Dockerfile.api .
 
 .PHONY: clean-e2e-containers
 clean-e2e-containers: ## Clean containers for previous e2e runs
@@ -99,3 +100,29 @@ full-e2e-test: build-images clean-e2e-containers clean-e2e-images fast-e2e-test
 
 .PHONY: e2e-test
 e2e-test: fast-e2e-test
+
+# The e2e tests on Kubernetes (tests/k8s) run in a kind cluster, with the images of build-images. kind uses podman when
+# CONTAINER_TOOL is podman.
+KIND ?= kind
+KIND_CLUSTER ?= orion-e2e
+KIND_IMAGES_DIR = bin/kind-images
+export KIND_EXPERIMENTAL_PROVIDER ?= $(if $(filter podman,$(CONTAINER_TOOL)),podman,)
+
+.PHONY: kind-e2e-setup
+kind-e2e-setup: ## Create the kind cluster for the k8s e2e tests (when needed), and load the images into it
+	kubectl --context kind-$(KIND_CLUSTER) get nodes >/dev/null 2>&1 || $(KIND) create cluster --name $(KIND_CLUSTER) --wait 2m
+	mkdir -p $(KIND_IMAGES_DIR)
+	for img in sentinel proxy api keeper-$(PGVERSION); do \
+		name=$${img%%-*}; \
+		$(CONTAINER_TOOL) tag $$img orion.local/$$name:e2e && \
+		$(CONTAINER_TOOL) save -o $(KIND_IMAGES_DIR)/$$name.tar orion.local/$$name:e2e && \
+		$(KIND) load image-archive --name $(KIND_CLUSTER) $(KIND_IMAGES_DIR)/$$name.tar || exit 1; \
+	done
+
+.PHONY: kind-e2e-clean
+kind-e2e-clean: ## Remove the kind cluster of the k8s e2e tests
+	$(KIND) delete cluster --name $(KIND_CLUSTER)
+
+.PHONY: k8s-e2e-test
+k8s-e2e-test: kind-e2e-setup ## Run the e2e tests on Kubernetes (kind)
+	cd ./tests/k8s && KUBE_CONTEXT=kind-$(KIND_CLUSTER) go test -count=1 -v -timeout 30m ./...

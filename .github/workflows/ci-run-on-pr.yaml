@@ -446,6 +446,54 @@ jobs:
           PGVERSION: ${{ matrix.pgversion }}
           E2E_SUITES: ${{ matrix.suite }}
 
+  # The e2e tests on Kubernetes (tests/k8s): kind (preinstalled on the runner, like kubectl) with the images of this
+  # run, the kubernetes store backend and the manifests of docs/deploy/k8s.md. PostgreSQL 18 only: it tests orion on
+  # Kubernetes, not PostgreSQL.
+  e2e-k8s-test:
+    name: Run e2e tests on Kubernetes
+    runs-on: ubuntu-24.04
+    needs:
+      - codechanges
+      - e2e-keeper-images
+      - e2e-other-images
+    if: ${{ needs.codechanges.outputs.e2e == 'true' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Golang
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Download keeper artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: images
+          merge-multiple: true
+          pattern: keeper-image-18
+
+      - name: Download other artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: images
+          merge-multiple: true
+          pattern: '*-image'
+
+      - name: Load images
+        run: |
+          for f in images/*.tar; do
+            echo "Loading $f..."
+            docker load < "$f"
+          done
+          kind version
+          kubectl version --client
+
+      - name: Test
+        run: make k8s-e2e-test
+        env:
+          PGVERSION: '18'
+
   # The required check for the e2e tests. It must always run: when e2e tests are not needed it passes, and when they
   # are, it only passes when the images were built and the e2e tests passed on every PostgreSQL version (a failed image
   # build makes e2e-test skipped, which must not count as a pass).
@@ -456,6 +504,7 @@ jobs:
       - e2e-keeper-images
       - e2e-other-images
       - e2e-test
+      - e2e-k8s-test
     if: always()
     steps:
       - name: Evaluate e2e status
@@ -465,9 +514,10 @@ jobs:
           KEEPER_IMAGES: ${{ needs.e2e-keeper-images.result }}
           OTHER_IMAGES: ${{ needs.e2e-other-images.result }}
           E2E_TEST: ${{ needs.e2e-test.result }}
+          E2E_K8S_TEST: ${{ needs.e2e-k8s-test.result }}
         run: |
           echo "codechanges: ${CODECHANGES}, e2e needed: ${E2E_NEEDED:-unknown}"
-          echo "keeper images: ${KEEPER_IMAGES}, other images: ${OTHER_IMAGES}, e2e tests: ${E2E_TEST}"
+          echo "keeper images: ${KEEPER_IMAGES}, other images: ${OTHER_IMAGES}, e2e tests: ${E2E_TEST}, k8s e2e tests: ${E2E_K8S_TEST}"
           if [ "${CODECHANGES}" != success ]; then
             echo "::error::Could not determine whether the e2e tests are needed"
             exit 1
@@ -476,7 +526,7 @@ jobs:
             echo "No e2e tests needed for these changes"
             exit 0
           fi
-          for result in "${KEEPER_IMAGES}" "${OTHER_IMAGES}" "${E2E_TEST}"; do
+          for result in "${KEEPER_IMAGES}" "${OTHER_IMAGES}" "${E2E_TEST}" "${E2E_K8S_TEST}"; do
             if [ "${result}" != success ]; then
               echo "::error::The image builds and e2e tests must all succeed"
               exit 1
@@ -526,6 +576,7 @@ jobs:
       - e2e-keeper-images
       - e2e-other-images
       - e2e-test
+      - e2e-k8s-test
       - check-e2e-status
       - license-header-test
     if: always()

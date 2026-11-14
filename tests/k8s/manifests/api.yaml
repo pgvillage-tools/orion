@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orion-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: orion-api}
+  template:
+    metadata:
+      labels: {app: orion-api}
+    spec:
+      serviceAccountName: orion
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: ghcr.io/pgvillage-tools/orion/api:latest
+          env:
+            - {name: ORIONAPI_CLUSTER_NAME, value: mycluster}
+            - {name: ORIONAPI_STORE_BACKEND, value: kubernetes}
+            - {name: ORIONAPI_KUBE_RESOURCE_KIND, value: configmap}
+          ports:
+            - {name: api, containerPort: 8443}
+            - {name: probe, containerPort: 8080}
+          livenessProbe:
+            httpGet: {path: /livez, port: 8080}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+          volumeMounts:
+            - {name: pki, mountPath: /etc/orion/api, readOnly: true}
+      volumes:
+        - name: pki
+          secret: {secretName: orion-api-pki, defaultMode: 0440}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orion-api
+spec:
+  selector: {app: orion-api}
+  ports:
+    - {name: api, port: 8443, targetPort: 8443}

@@ -1,0 +1,206 @@
+package k8s_test
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	apiv1 "github.com/pgvillage-tools/orion/api/v1"
+	"github.com/pgvillage-tools/orion/internal/pki"
+	"github.com/pgvillage-tools/orion/internal/util"
+	client "github.com/pgvillage-tools/orion/pkg/api_client"
+	"github.com/pgvillage-tools/orion/tests/helpers"
+)
+
+const (
+	clusterName = "mycluster"
+	// leaseName is the Lease of the sentinel election: orion-cluster-<cluster name>
+	leaseName = "orion-cluster-" + clusterName
+	// suPassword and replPassword go in the Secret orion-pg
+	suPassword   = "su-secret"
+	replPassword = "repl-secret"
+	// deployTimeout is the time for the pods to start, and for a deployment to roll out
+	deployTimeout = 5 * time.Minute
+	// convergedFor is how long the keepers must stay converged before a failover (two sentinel checks)
+	convergedFor = 15 * time.Second
+	apiPort      = 8443
+	proxyPort    = 5432
+)
+
+// The path of docs/deploy/k8s.md, front to back, on kind: deploy the manifests, create a cluster through the api, see
+// it come up with the sentinel leader in a Lease, use it through the proxy Service, fail over, and lose the sentinel
+// leader.
+var _ = Describe("orion on Kubernetes", Ordered, func() {
+	var (
+		apiClient client.Connection
+		primary   string
+		failed    bool
+	)
+	// status returns the status of the cluster from the api
+	status := func(g Gomega) *apiv1.InfoCluster {
+		st, code, err := apiClient.GetStatus()
+		g.Ω(err).NotTo(HaveOccurred())
+		g.Ω(code).To(Equal(http.StatusOK))
+		return st
+	}
+	// converged checks that both keepers are healthy and run the wanted generation, and returns the primary
+	converged := func(g Gomega) string {
+		st := status(g)
+		g.Ω(st.Keepers).To(HaveLen(2))
+		for _, k := range st.Keepers {
+			g.Ω(k.Healthy && k.PgHealthy).To(BeTrue(), "keeper %s healthy", k.UID)
+			g.Ω(k.PgCurrentGeneration).To(Equal(k.PgWantedGeneration), "keeper %s converged", k.UID)
+		}
+		p, ok := st.Status["primaryKeeper"].(string)
+		g.Ω(ok && p != "").To(BeTrue(), "no primary in %v", st.Status)
+		return p
+	}
+	// leaseHolder returns the holder of the Lease of the sentinel election
+	leaseHolder := func(ctx context.Context) string {
+		out, err := kubectl(ctx, "get", "lease", leaseName, "-o", "jsonpath={.spec.holderIdentity}")
+		if err != nil {
+			return ""
+		}
+		return out
+	}
+
+	BeforeAll(func(ctx context.Context) {
+		// a namespace of its own, without what an earlier run left
+		_, _ = kubectl(ctx, "delete", "namespace", namespace, "--ignore-not-found", "--wait")
+		mustKubectl(ctx, "create", "namespace", namespace)
+
+		// Certificates for the api: the names of the api Service are on the api certificate
+		dir := GinkgoT().TempDir()
+		opts := pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api"),
+			APISANs: []string{"orion-api", "orion-api." + namespace + ".svc"}}
+		_, err := pki.Init(opts)
+		Ω(err).NotTo(HaveOccurred())
+		mustKubectl(ctx, "create", "secret", "generic", "orion-api-pki", "--from-file="+opts.APIDir+"/")
+
+		// Passwords for PostgreSQL
+		mustKubectl(ctx, "create", "secret", "generic", "orion-pg",
+			"--from-literal=su-password="+suPassword, "--from-literal=repl-password="+replPassword)
+
+		// RBAC, sentinels, keepers, proxies and the api
+		mustKubectl(ctx, "apply", "--kustomize", "manifests")
+		timeout := "--timeout=" + deployTimeout.String()
+		for _, workload := range []string{"deployment/orion-sentinel", "deployment/orion-proxy", "deployment/orion-api",
+			"statefulset/orion-keeper"} {
+			mustKubectl(ctx, "rollout", "status", workload, timeout)
+		}
+
+		// the api through its Service, with the client certificate of the cli
+		clientTLS, err := pki.CLIFiles(opts.CLIDir).ClientConfig()
+		Ω(err).NotTo(HaveOccurred())
+		// the forward lives until the end of the specs; the context of BeforeAll ends with it
+		forwardCtx, stopForward := context.WithCancel(context.Background())
+		DeferCleanup(stopForward)
+		apiClient = client.NewTLSConnection(helpers.LocalHost, portForward(forwardCtx, "svc/orion-api", apiPort),
+			helpers.APITimeout, clientTLS)
+	}, NodeTimeout(deployTimeout+time.Minute))
+
+	AfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			failed = true
+		}
+	})
+
+	AfterAll(func(ctx context.Context) {
+		if failed {
+			// keep the namespace, to look into it
+			showState(ctx)
+			return
+		}
+		_, _ = kubectl(ctx, "delete", "namespace", namespace, "--wait=false")
+	})
+
+	It("connects to the api through its Service, with the client certificate", func() {
+		Eventually(func(g Gomega) {
+			identity, code, err := apiClient.WhoAmI()
+			g.Ω(err).NotTo(HaveOccurred())
+			g.Ω(code).To(Equal(http.StatusOK))
+			g.Ω(identity.Name).To(Equal(pki.CLIClientName))
+		}).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+	})
+
+	It("creates a new cluster with the default settings", func() {
+		// what orion-cli init sends
+		code, err := apiClient.PostCluster(&apiv1.Spec{InitMode: util.ToPtr(apiv1.New)})
+		Ω(err).NotTo(HaveOccurred())
+		Ω(code).To(Equal(http.StatusCreated))
+	})
+
+	It("comes up with a primary and a standby, two sentinels and two proxies", func(ctx context.Context) {
+		Eventually(func(g Gomega) {
+			primary = converged(g)
+			st := status(g)
+			g.Ω(st.Sentinels).To(HaveLen(2))
+			g.Ω(st.Proxies).To(HaveLen(2))
+		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+	})
+
+	It("keeps the sentinel leader in the Lease", func(ctx context.Context) {
+		Eventually(func(g Gomega) {
+			holder := leaseHolder(ctx)
+			g.Ω(holder).NotTo(BeEmpty())
+			g.Ω(status(g).Sentinels).To(ContainElement(apiv1.InfoSentinel{UID: holder, Leader: true}))
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+	})
+
+	It("serves postgres through the proxy Service", func(ctx context.Context) {
+		forwardCtx, stopForward := context.WithCancel(context.Background())
+		defer stopForward()
+		conn := helpers.PgConnParams{"host": helpers.LocalHost, "user": "postgres", "password": suPassword,
+			"dbname": "postgres", "port": strconv.Itoa(int(portForward(forwardCtx, "svc/orion-proxy", proxyPort)))}
+		Eventually(func() error { return helpers.PgPing(ctx, conn) }).
+			WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+	})
+
+	It("fails over to the standby when the primary is failed", func(ctx context.Context) {
+		// the standby takes over only once it converged
+		Consistently(func(g Gomega) { converged(g) }).
+			WithContext(ctx).WithTimeout(convergedFor).WithPolling(helpers.PollInterval).Should(Succeed())
+
+		code, err := apiClient.FailKeeper(primary)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(code).To(Equal(http.StatusAccepted))
+
+		Eventually(func(g Gomega) {
+			g.Ω(converged(g)).NotTo(Equal(primary))
+		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+	})
+
+	It("elects the other sentinel when the pod of the leader is deleted", func(ctx context.Context) {
+		leader := leaseHolder(ctx)
+		Ω(leader).NotTo(BeEmpty())
+		// the sentinel writes its uid in the orion-status annotation of its pod
+		pods := mustKubectl(ctx, "get", "pods", "-l", "component=orion-sentinel", "-o",
+			`jsonpath={range .items[*]}{.metadata.name}{" "}{.metadata.annotations.orion-status}{"\n"}{end}`)
+		var leaderPod string
+		for line := range strings.Lines(pods) {
+			if name, annotation, ok := strings.Cut(strings.TrimSpace(line), " "); ok &&
+				strings.Contains(annotation, fmt.Sprintf("%q", leader)) {
+				leaderPod = name
+			}
+		}
+		Ω(leaderPod).NotTo(BeEmpty(), "no pod for sentinel %s in\n%s", leader, pods)
+
+		mustKubectl(ctx, "delete", "pod", leaderPod, "--wait=false")
+
+		Eventually(func(g Gomega) {
+			holder := leaseHolder(ctx)
+			g.Ω(holder).NotTo(BeEmpty())
+			g.Ω(holder).NotTo(Equal(leader))
+			g.Ω(status(g).Sentinels).To(ContainElement(apiv1.InfoSentinel{UID: holder, Leader: true}))
+		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+		// the cluster still has its primary
+		Eventually(func(g Gomega) { converged(g) }).
+			WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+	})
+})
