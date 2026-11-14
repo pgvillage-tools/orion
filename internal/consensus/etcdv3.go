@@ -149,12 +149,7 @@ type etcdv3Election struct {
 	requestTimeout time.Duration
 
 	running bool
-
-	electedCh chan bool
-	errCh     chan error
-
-	ctx    context.Context
-	cancel context.CancelFunc
+	cancel  context.CancelFunc
 }
 
 func (e *etcdv3Election) RunForElection(_ context.Context) (<-chan bool, <-chan error) {
@@ -162,14 +157,17 @@ func (e *etcdv3Election) RunForElection(_ context.Context) (<-chan bool, <-chan 
 		panic("already running")
 	}
 
-	e.electedCh = make(chan bool)
-	e.errCh = make(chan error)
-	e.ctx, e.cancel = context.WithCancel(context.Background())
+	// every campaign has its own context and channels: a campaign that is still ending after Stop doesn't share them
+	// with the next one
+	electedCh := make(chan bool)
+	errCh := make(chan error)
+	var ctx context.Context
+	ctx, e.cancel = context.WithCancel(context.Background())
 
 	e.running = true
-	go e.campaign()
+	go e.campaign(ctx, electedCh, errCh)
 
-	return e.electedCh, e.errCh
+	return electedCh, errCh
 }
 
 func (e *etcdv3Election) Stop() {
@@ -196,36 +194,56 @@ func (e *etcdv3Election) Leader(ctx context.Context) (string, error) {
 	return string(resp.Kvs[0].Value), nil
 }
 
-func (e *etcdv3Election) campaign() {
-	defer close(e.electedCh)
-	defer close(e.errCh)
+// campaign runs for election until ctx is done (Stop), and then closes its channels. It never blocks on a send after
+// Stop: the caller stops reading then.
+func (e *etcdv3Election) campaign(ctx context.Context, electedCh chan<- bool, errCh chan<- error) {
+	defer close(electedCh)
+	defer close(errCh)
 
-	for {
-		e.electedCh <- false
-		s, err := concurrency.NewSession(e.c, concurrency.WithTTL(int(e.ttl.Seconds())), concurrency.WithContext(e.ctx))
+	// sendElected sends v on electedCh, unless ctx is done (checked first): it returns whether the campaign goes on
+	sendElected := func(v bool) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		select {
+		case electedCh <- v:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	sendErr := func(err error) {
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case errCh <- err:
+		case <-ctx.Done():
+		}
+	}
+
+	for sendElected(false) {
+		s, err := concurrency.NewSession(e.c, concurrency.WithTTL(int(e.ttl.Seconds())), concurrency.WithContext(ctx))
 		if err != nil {
-			e.errCh <- err
+			sendErr(err)
 			return
 		}
 
 		etcdElection := concurrency.NewElection(s, e.path)
-		if err = etcdElection.Campaign(e.ctx, e.candidateUID); err != nil {
-			e.errCh <- err
+		if err = etcdElection.Campaign(ctx, e.candidateUID); err != nil {
+			sendErr(err)
 			return
 		}
 
-		e.electedCh <- true
+		if !sendElected(true) {
+			return
+		}
 
 		select {
-		case <-e.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-s.Done():
-			// The session is created with e.ctx, so Stop ends it too: then both cases are ready and select picks
-			// one at random. Stopped means stopped: don't report (and possibly block on) another false.
-			if e.ctx.Err() != nil {
-				return
-			}
-			e.electedCh <- false
+			// The session is created with ctx, so Stop ends it too: sendElected(false) then sees ctx is done
 		}
 	}
 }
