@@ -1,0 +1,12 @@
+# A minimal orion cluster with the kubernetes store backend: see docs/deploy/k8s.md.
+# The e2e tests (tests/k8s) deploy exactly these manifests on kind, for every change.
+#   kubectl create namespace orion
+#   kubectl -n orion apply -k examples/kubernetes
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - rbac.yaml
+  - sentinel.yaml
+  - keeper.yaml
+  - proxy.yaml
+  - api.yaml

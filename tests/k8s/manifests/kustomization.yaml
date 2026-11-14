@@ -1,14 +1,10 @@
-# The manifests of docs/deploy/k8s.md, as the e2e tests (tests/k8s) deploy them: in the namespace orion, with the
+# The example (examples/kubernetes), as the e2e tests (tests/k8s) deploy it: in the namespace orion, with the
 # images that make kind-e2e-setup built and loaded into kind (orion.local/<component>:e2e).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: orion
 resources:
-  - rbac.yaml
-  - sentinel.yaml
-  - keeper.yaml
-  - proxy.yaml
-  - api.yaml
+  - ../../../examples/kubernetes
 images:
   - {name: ghcr.io/pgvillage-tools/orion/sentinel, newName: orion.local/sentinel, newTag: e2e}
   - {name: ghcr.io/pgvillage-tools/orion/keeper, newName: orion.local/keeper, newTag: e2e}

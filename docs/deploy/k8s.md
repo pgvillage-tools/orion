@@ -12,7 +12,7 @@ This page describes how to run Orion on Kubernetes with the `kubernetes` store b
 cluster data and does the sentinel leader election, so you don't need etcd or consul.
 
 The steps and manifests on this page are the ones the end-to-end tests run on [kind](https://kind.sigs.k8s.io/) for
-every change (`tests/k8s`): the manifests below are included from `tests/k8s/manifests`. They are a minimal setup to
+every change (`tests/k8s`): the manifests below are included from `examples/kubernetes`. They are a minimal setup to
 start from, not a production setup: add resource requests and limits, PodDisruptionBudgets and anti-affinity, and use
 your own StorageClass.
 
@@ -109,13 +109,13 @@ The sentinel records events about the leader election. One Role for all componen
 per component (with a ServiceAccount each) to give each only what it needs.
 
 ```yaml title="rbac.yaml"
---8<-- "tests/k8s/manifests/rbac.yaml"
+--8<-- "examples/kubernetes/rbac.yaml"
 ```
 
 ## Sentinels
 
 ```yaml title="sentinel.yaml"
---8<-- "tests/k8s/manifests/sentinel.yaml"
+--8<-- "examples/kubernetes/sentinel.yaml"
 ```
 
 ## Keepers
@@ -125,7 +125,7 @@ directory and `/pgwal/pgwal` as WAL directory: both need a persistent volume, or
 The keeper generates its uid on the first start, and keeps it in its data directory.
 
 ```yaml title="keeper.yaml"
---8<-- "tests/k8s/manifests/keeper.yaml"
+--8<-- "examples/kubernetes/keeper.yaml"
 ```
 
 - The superuser is `postgres` (the user that runs the keeper) unless you set `ORIONKEEPER_PG_SU_USERNAME`. The
@@ -138,7 +138,7 @@ The keeper generates its uid on the first start, and keeps it in its data direct
 The proxy image listens on port 25432. Clients connect through the Service, which only reaches the primary.
 
 ```yaml title="proxy.yaml"
---8<-- "tests/k8s/manifests/proxy.yaml"
+--8<-- "examples/kubernetes/proxy.yaml"
 ```
 
 ## Api
@@ -147,7 +147,7 @@ The api doesn't need the `orion-cluster` label: the components don't look for it
 [Probe port](../api/certificates.md#probe-port).
 
 ```yaml title="api.yaml"
---8<-- "tests/k8s/manifests/api.yaml"
+--8<-- "examples/kubernetes/api.yaml"
 ```
 
 ## Deploying
@@ -161,8 +161,9 @@ for w in deployment/orion-sentinel deployment/orion-proxy deployment/orion-api s
 done
 ```
 
-With the files in one directory, a `kustomization.yaml` can set the namespace and the images for all of them; the
-e2e tests do that in `tests/k8s/manifests/kustomization.yaml` (`kubectl apply -k`).
+Or apply them all at once with the kustomization of the example: `kubectl -n orion apply -k examples/kubernetes`. A
+kustomization of your own can set the namespace and the images on top of it, as the e2e tests do in
+`tests/k8s/manifests/kustomization.yaml`.
 
 ## Creating the cluster
 
