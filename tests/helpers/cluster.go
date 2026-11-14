@@ -24,6 +24,7 @@ import (
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/testcontainers/testcontainers-go"
+	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -48,14 +49,16 @@ var failed bool
 
 // Cluster is an orion cluster in containers: etcd, the api, a sentinel, keepers and a proxy
 type Cluster struct {
-	Network       *testcontainers.DockerNetwork
-	Etcd          *etcd.EtcdContainer
-	EtcdEndpoints string
-	API           testcontainers.Container
-	Sentinel      testcontainers.Container
-	Proxy         testcontainers.Container
-	Keepers       []testcontainers.Container
-	all           []testcontainers.Container
+	Network *testcontainers.DockerNetwork
+	Etcd    *etcd.EtcdContainer
+	// StoreTLS makes etcd require TLS with client certificates; set it before the cluster starts
+	StoreTLS bool
+	store    store
+	API      testcontainers.Container
+	Sentinel testcontainers.Container
+	Proxy    testcontainers.Container
+	Keepers  []testcontainers.Container
+	all      []testcontainers.Container
 	// tmpDir holds the files of the cluster (e.g. the certificates); it is removed with the cluster, when the node
 	// that started it (StartStore) ends
 	tmpDir string
@@ -105,7 +108,7 @@ func (tc *Cluster) StartWithSpec(ctx context.Context, numKeepers int, spec *apiv
 // last part of start; on its own, it is for tests that create the cluster themselves.
 func (tc *Cluster) StartMembers(ctx context.Context, numKeepers int) {
 	var err error
-	tc.Sentinel, err = runSentinel(ctx, tc.EtcdEndpoints, tc.Network)
+	tc.Sentinel, err = runSentinel(ctx, tc.store, tc.Network)
 	tc.add(tc.Sentinel)
 	Ω(err).NotTo(HaveOccurred())
 
@@ -116,14 +119,14 @@ func (tc *Cluster) StartMembers(ctx context.Context, numKeepers int) {
 			"pg-su-password":    pgPassword,
 			"pg-listen-address": alias,
 		}
-		cnt, keeperErr := runKeeper(ctx, tc.EtcdEndpoints, tc.Network, map[string][]string{tc.Network.Name: {alias}},
+		cnt, keeperErr := runKeeper(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {alias}},
 			maps.Clone(settings))
 		tc.add(cnt)
 		Ω(keeperErr).NotTo(HaveOccurred())
 		tc.Keepers = append(tc.Keepers, cnt)
 	}
 
-	tc.Proxy, err = runProxy(ctx, tc.EtcdEndpoints, tc.Network, map[string][]string{tc.Network.Name: {"proxy"}})
+	tc.Proxy, err = runProxy(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {"proxy"}})
 	tc.add(tc.Proxy)
 	Ω(err).NotTo(HaveOccurred())
 }
@@ -160,7 +163,16 @@ func (tc *Cluster) StartStore(ctx context.Context) {
 	tc.Network, err = network.New(ctx)
 	Ω(err).NotTo(HaveOccurred())
 
-	tc.Etcd, tc.EtcdEndpoints, err = runEtcd(ctx, etcdImage, tc.Network)
+	var storeTLS *pki.InitOptions
+	if tc.StoreTLS {
+		// certificates for etcd and its clients, like the ones of the api: a server certificate for etcd, and a
+		// client certificate for the orion containers
+		storeTLS = &pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "store-client"),
+			APIDir: filepath.Join(tc.tmpDir, "store-server"), APISANs: []string{"etcd"}}
+		_, err = pki.Init(*storeTLS)
+		Ω(err).NotTo(HaveOccurred())
+	}
+	tc.Etcd, tc.store, err = runEtcd(ctx, etcdImage, tc.Network, storeTLS)
 	if tc.Etcd != nil {
 		tc.all = []testcontainers.Container{tc.Etcd}
 	}
@@ -174,7 +186,7 @@ func (tc *Cluster) RunAPI(ctx context.Context) {
 	Ω(err).NotTo(HaveOccurred())
 
 	// run the api to control orion from this test framework
-	tc.API, err = runAPI(ctx, tc.EtcdEndpoints, tc.Network, map[string][]string{tc.Network.Name: {apiAlias}},
+	tc.API, err = runAPI(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {apiAlias}},
 		tc.PKI.APIDir)
 	tc.add(tc.API)
 	Ω(err).NotTo(HaveOccurred())
@@ -218,6 +230,31 @@ func WithOwnCluster(numKeepers int) *Cluster {
 // WithOwnClusterSpec is WithOwnCluster for a cluster created with spec (e.g. DefaultSpec with sync replication)
 func WithOwnClusterSpec(numKeepers int, spec *apiv1.Spec) *Cluster {
 	return withOwn(func(tc *Cluster, ctx context.Context) { tc.StartWithSpec(ctx, numKeepers, spec) })
+}
+
+// WithOwnClusterStoreTLS is WithOwnCluster with an etcd that requires TLS with client certificates
+func WithOwnClusterStoreTLS(numKeepers int) *Cluster {
+	return withOwn(func(tc *Cluster, ctx context.Context) {
+		tc.StoreTLS = true
+		tc.Start(ctx, numKeepers)
+	})
+}
+
+// Etcdctl runs etcdctl in the etcd container of a cluster with StoreTLS, against https://localhost:2379 with the root
+// CA of the store, and with the client certificate when withClientCert is set. It returns the exit code and the
+// output.
+func (tc *Cluster) Etcdctl(ctx context.Context, withClientCert bool, args ...string) (int, string) {
+	cmd := []string{"etcdctl", "--endpoints=https://localhost:2379",
+		"--cacert=" + path.Join(storeClientPKIDir, pki.CLICAFile)}
+	if withClientCert {
+		cmd = append(cmd, "--cert="+path.Join(storeClientPKIDir, pki.CLICertFile),
+			"--key="+path.Join(storeClientPKIDir, pki.CLIKeyFile))
+	}
+	code, out, err := tc.Etcd.Exec(ctx, append(cmd, args...), tcexec.Multiplexed())
+	Ω(err).NotTo(HaveOccurred())
+	output, err := io.ReadAll(out)
+	Ω(err).NotTo(HaveOccurred())
+	return code, string(output)
 }
 
 // WithOwnAPI starts etcd and the api (no sentinel, keepers or proxy) for the specs of the (Ordered) container it is
@@ -329,7 +366,7 @@ func (tc *Cluster) ProbeGet(ctx context.Context, ep endpoints.ProbeEndPoint) (in
 
 // AddSentinel starts another sentinel in the cluster, and returns its container
 func (tc *Cluster) AddSentinel(ctx context.Context) testcontainers.Container {
-	cnt, err := runSentinel(ctx, tc.EtcdEndpoints, tc.Network)
+	cnt, err := runSentinel(ctx, tc.store, tc.Network)
 	tc.add(cnt)
 	Ω(err).NotTo(HaveOccurred())
 	return cnt
