@@ -18,6 +18,9 @@ var _ = Describe("a crashing primary", Ordered, func() {
 	const table = "crash"
 	const rows = 100
 	var oldPrimary string
+	// oldIndex is the index of the old primary in tc.Keepers: KeeperIndex needs its listen address, which the
+	// sentinel removes once it fails the keeper over
+	var oldIndex int
 
 	count := func(ctx context.Context, conn helpers.PgConnParams) func() (int, error) {
 		return func() (int, error) {
@@ -27,6 +30,7 @@ var _ = Describe("a crashing primary", Ordered, func() {
 
 	It("has data on the primary and the standby", func(ctx context.Context) {
 		oldPrimary = tc.WaitForConverged(2)
+		oldIndex = tc.KeeperIndex(oldPrimary)
 		Eventually(func() error {
 			return helpers.PgExec(ctx, tc.ProxyConn(ctx), fmt.Sprintf("create table %s (id int primary key)", table))
 		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
@@ -39,7 +43,7 @@ var _ = Describe("a crashing primary", Ordered, func() {
 	})
 
 	It("fails over to the standby when the primary is killed, with all the data", func(ctx context.Context) {
-		helpers.SignalContainer(ctx, tc.Keepers[tc.KeeperIndex(oldPrimary)], "SIGKILL")
+		helpers.SignalContainer(ctx, tc.Keepers[oldIndex], "SIGKILL")
 
 		Eventually(func(g Gomega) {
 			status, _, err := tc.APIClient.GetStatus()
@@ -55,7 +59,7 @@ var _ = Describe("a crashing primary", Ordered, func() {
 	})
 
 	It("rejoins as a standby of the new primary when the old primary comes back", func(ctx context.Context) {
-		i := tc.KeeperIndex(oldPrimary)
+		i := oldIndex
 		Ω(tc.Keepers[i].Start(ctx)).To(Succeed())
 
 		newPrimary := tc.WaitForConverged(2)

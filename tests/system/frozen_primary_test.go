@@ -19,6 +19,9 @@ var _ = Describe("a frozen primary", Ordered, func() {
 	const table = "frozen"
 	const rows = 100
 	var oldPrimary string
+	// oldIndex is the index of the old primary in tc.Keepers: KeeperIndex needs its listen address, which the
+	// sentinel removes once it fails the keeper over
+	var oldIndex int
 
 	count := func(ctx context.Context, conn helpers.PgConnParams) func() (int, error) {
 		return func() (int, error) {
@@ -28,6 +31,7 @@ var _ = Describe("a frozen primary", Ordered, func() {
 
 	It("has data on the primary and the standby", func(ctx context.Context) {
 		oldPrimary = tc.WaitForConverged(2)
+		oldIndex = tc.KeeperIndex(oldPrimary)
 		Eventually(func() error {
 			return helpers.PgExec(ctx, tc.ProxyConn(ctx), fmt.Sprintf("create table %s (id int primary key)", table))
 		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
@@ -40,7 +44,7 @@ var _ = Describe("a frozen primary", Ordered, func() {
 	})
 
 	It("fails over to the standby while the primary is frozen", func(ctx context.Context) {
-		helpers.PauseContainer(ctx, tc.Keepers[tc.KeeperIndex(oldPrimary)])
+		helpers.PauseContainer(ctx, tc.Keepers[oldIndex])
 
 		Eventually(func(g Gomega) {
 			status, _, err := tc.APIClient.GetStatus()
@@ -55,11 +59,11 @@ var _ = Describe("a frozen primary", Ordered, func() {
 			To(Succeed())
 
 		// the old primary wakes up (in this spec: PauseContainer would unpause it after the spec)
-		helpers.UnpauseContainer(ctx, tc.Keepers[tc.KeeperIndex(oldPrimary)])
+		helpers.UnpauseContainer(ctx, tc.Keepers[oldIndex])
 	})
 
 	It("steps down and follows the new primary when the old primary wakes up", func(ctx context.Context) {
-		i := tc.KeeperIndex(oldPrimary)
+		i := oldIndex
 		// no split brain: the old primary becomes a standby, with the row written after the failover
 		Eventually(func() (int, error) {
 			return helpers.PgQueryInt(ctx, tc.KeeperConn(ctx, i), "select pg_is_in_recovery()::int")
