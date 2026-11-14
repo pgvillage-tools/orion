@@ -494,46 +494,6 @@ jobs:
         env:
           PGVERSION: '18'
 
-  # The required check for the e2e tests. It must always run: when e2e tests are not needed it passes, and when they
-  # are, it only passes when the images were built and the e2e tests passed on every PostgreSQL version (a failed image
-  # build makes e2e-test skipped, which must not count as a pass).
-  check-e2e-status:
-    runs-on: ubuntu-24.04
-    needs:
-      - codechanges
-      - e2e-keeper-images
-      - e2e-other-images
-      - e2e-test
-      - e2e-k8s-test
-    if: always()
-    steps:
-      - name: Evaluate e2e status
-        env:
-          E2E_NEEDED: ${{ needs.codechanges.outputs.e2e }}
-          CODECHANGES: ${{ needs.codechanges.result }}
-          KEEPER_IMAGES: ${{ needs.e2e-keeper-images.result }}
-          OTHER_IMAGES: ${{ needs.e2e-other-images.result }}
-          E2E_TEST: ${{ needs.e2e-test.result }}
-          E2E_K8S_TEST: ${{ needs.e2e-k8s-test.result }}
-        run: |
-          echo "codechanges: ${CODECHANGES}, e2e needed: ${E2E_NEEDED:-unknown}"
-          echo "keeper images: ${KEEPER_IMAGES}, other images: ${OTHER_IMAGES}, e2e tests: ${E2E_TEST}, k8s e2e tests: ${E2E_K8S_TEST}"
-          if [ "${CODECHANGES}" != success ]; then
-            echo "::error::Could not determine whether the e2e tests are needed"
-            exit 1
-          fi
-          if [ "${E2E_NEEDED}" != true ]; then
-            echo "No e2e tests needed for these changes"
-            exit 0
-          fi
-          for result in "${KEEPER_IMAGES}" "${OTHER_IMAGES}" "${E2E_TEST}" "${E2E_K8S_TEST}"; do
-            if [ "${result}" != success ]; then
-              echo "::error::The image builds and e2e tests must all succeed"
-              exit 1
-            fi
-          done
-          echo "Images built and e2e tests passed"
-
   license-header-test:
     name: License header test
     runs-on: ubuntu-24.04
@@ -577,7 +537,6 @@ jobs:
       - e2e-other-images
       - e2e-test
       - e2e-k8s-test
-      - check-e2e-status
       - license-header-test
     if: always()
     steps:
