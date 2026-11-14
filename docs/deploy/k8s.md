@@ -51,7 +51,6 @@ All objects live in the namespace of the pods. Every component (keeper, sentinel
 |--------|----------------------|-------|
 | `--cluster-name` | `ORION<COMPONENT>_CLUSTER_NAME` | The cluster name. It must match the `orion-cluster` label of the pods. |
 | `--store-backend` | `ORION<COMPONENT>_STORE_BACKEND` | `kubernetes` |
-| `--kube-resource-kind` | `ORION<COMPONENT>_KUBE_RESOURCE_KIND` | `configmap`, the only supported (and required) value. |
 
 The keepers, sentinels and proxies also need `POD_NAME`, the name of their own pod (from the downward api): they
 publish their state on it. `<COMPONENT>` is `KEEPER`, `SENTINEL`, `PROXY` or `API`; every option can be set with its
@@ -221,8 +220,6 @@ When the pod of the leading sentinel goes away, the other sentinel takes over th
 
 ## Limitations
 
-- The components need `--kube-resource-kind=configmap`, although the election uses a Lease. This option is a leftover
-  of stolon and may go away.
 - The kubernetes backend keeps all cluster data in one annotation, so it is limited by the maximum size of the
   annotations of an object (256 KiB).
 - Keepers, sentinels and proxies find each other by the labels of their pods, in their own namespace: a cluster name
