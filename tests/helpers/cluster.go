@@ -1,5 +1,5 @@
-// Package helpers runs orion clusters in containers for the end-to-end test suites in tests: etcd, the api, sentinels,
-// keepers and a proxy, with Ginkgo and Gomega assertions.
+// Package helpers runs orion clusters in containers for the end-to-end test suites (tests/system, tests/cli, ...):
+// etcd, the api, sentinels, keepers, a proxy, and orion-cli commands, with Ginkgo and Gomega assertions.
 package helpers
 
 import (
@@ -9,7 +9,9 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/etcd"
 	"github.com/testcontainers/testcontainers-go/network"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 const (
@@ -52,14 +55,17 @@ type Cluster struct {
 	Proxy         testcontainers.Container
 	Keepers       []testcontainers.Container
 	all           []testcontainers.Container
+	// tmpDir holds the files of the cluster (e.g. the certificates); it is removed with the cluster, when the node
+	// that started it (StartStore) ends
+	tmpDir string
 
-	// pki holds the directories with the certificates of the api and of the client of the tests
+	// PKI holds the directories with the certificates of the api and of the client of the tests
 	PKI pki.InitOptions
-	// apiClient connects to the api over mTLS, with the certificate of the cli
+	// APIClient connects to the api over mTLS, with the certificate of the cli
 	APIClient client.Connection
-	// probeURL is the base url of the probe port of the api, e.g. http://127.0.0.1:32768
+	// ProbeURL is the base url of the probe port of the api, e.g. http://127.0.0.1:32768
 	ProbeURL string
-	// probeClient connects to the probe port of the api (plain http)
+	// ProbeClient connects to the probe port of the api (plain http)
 	ProbeClient client.Connection
 	// pgConn holds the connection parameters for postgres, without the port
 	pgConn PgConnParams
@@ -81,6 +87,13 @@ func (tc *Cluster) Start(ctx context.Context, numKeepers int) {
 	Ω(err).NotTo(HaveOccurred())
 	Ω(httpCode).To(Equal(http.StatusCreated))
 
+	tc.StartMembers(ctx, numKeepers)
+}
+
+// StartMembers starts the sentinel, numKeepers keepers and the proxy of a cluster whose api runs (startAPI). It is the
+// last part of start; on its own, it is for tests that create the cluster themselves.
+func (tc *Cluster) StartMembers(ctx context.Context, numKeepers int) {
+	var err error
 	tc.Sentinel, err = runSentinel(ctx, tc.EtcdEndpoints, tc.Network)
 	tc.add(tc.Sentinel)
 	Ω(err).NotTo(HaveOccurred())
@@ -107,8 +120,24 @@ func (tc *Cluster) Start(ctx context.Context, numKeepers int) {
 // StartAPI starts the network, etcd and the api (with new certificates), and connects the clients of the tests to the
 // api. It is the first part of start; on its own, it is for tests of the api that need no keepers.
 func (tc *Cluster) StartAPI(ctx context.Context) {
+	tc.StartStore(ctx)
+
+	// create the certificates for the api and the client of this test framework
+	// the api certificate is also valid for apiAlias, so a client in another container (e.g. orion-cli) can connect
+	tc.PKI = pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "cli"), APIDir: filepath.Join(tc.tmpDir, "api"),
+		APISANs: []string{apiAlias}}
+	_, err := pki.Init(tc.PKI)
+	Ω(err).NotTo(HaveOccurred())
+
+	tc.RunAPI(ctx)
+}
+
+// StartStore starts the network and etcd: the first part of StartAPI. On its own, it is for tests that create the
+// certificates of the api themselves (e.g. with PKIInit), and then start the api with RunAPI.
+func (tc *Cluster) StartStore(ctx context.Context) {
 	// RYUK requires permissions we don't need and don't want to implement
 	Ω(os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")).To(Succeed())
+	tc.tmpDir = GinkgoT().TempDir()
 
 	tc.pgConn = PgConnParams{
 		"host":     "localhost",
@@ -125,17 +154,17 @@ func (tc *Cluster) StartAPI(ctx context.Context) {
 		tc.all = []testcontainers.Container{tc.Etcd}
 	}
 	Ω(err).NotTo(HaveOccurred())
+}
 
-	// create the certificates for the api and the client of this test framework
-	tmpDir := GinkgoT().TempDir()
-	tc.PKI = pki.InitOptions{CLIDir: filepath.Join(tmpDir, "cli"), APIDir: filepath.Join(tmpDir, "api")}
-	_, err = pki.Init(tc.PKI)
-	Ω(err).NotTo(HaveOccurred())
+// RunAPI starts the api with the certificates in tc.PKI.APIDir, and connects the clients of the tests to it, the api
+// client with the cli certificate in tc.PKI.CLIDir: the last part of StartAPI
+func (tc *Cluster) RunAPI(ctx context.Context) {
 	clientTLS, err := pki.CLIFiles(tc.PKI.CLIDir).ClientConfig()
 	Ω(err).NotTo(HaveOccurred())
 
 	// run the api to control orion from this test framework
-	tc.API, err = runAPI(ctx, tc.EtcdEndpoints, tc.Network, map[string][]string{}, tc.PKI.APIDir)
+	tc.API, err = runAPI(ctx, tc.EtcdEndpoints, tc.Network, map[string][]string{tc.Network.Name: {apiAlias}},
+		tc.PKI.APIDir)
 	tc.add(tc.API)
 	Ω(err).NotTo(HaveOccurred())
 	apiPort, err := tc.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", APIInternalPort))
@@ -179,6 +208,12 @@ func WithOwnCluster(numKeepers int) *Cluster {
 // called in, and removes them after them. Use it for tests that break the api or its store, e.g. pause etcd.
 func WithOwnAPI() *Cluster {
 	return withOwn((*Cluster).StartAPI)
+}
+
+// WithOwnStore starts the network and etcd (no api) for the specs of the (Ordered) container it is called in, and
+// removes them after them. Use it for tests that start the api themselves, e.g. with certificates from PKIInit.
+func WithOwnStore() *Cluster {
+	return withOwn((*Cluster).StartStore)
 }
 
 // withOwn registers the BeforeAll that starts a test cluster with start, and the AfterAll that removes it (and shows
@@ -316,4 +351,88 @@ func (tc *Cluster) dumpLogs(ctx context.Context) {
 		fmt.Println(strings.Join(lines, "\n"))
 		fmt.Print(endGroup)
 	}
+}
+
+// cliTimeout is how long a cli command in a container may run (failkeeper --wait waits for a failover)
+const cliTimeout = 5 * time.Minute
+
+// CLI runs orion-cli with args in a container on the network of the cluster, connected to the api and logged in with
+// the client certificate of the cluster, like a user would. It returns the output (stdout and stderr) and the exit
+// code.
+func (tc *Cluster) CLI(ctx context.Context, args ...string) (string, int) {
+	var files []testcontainers.ContainerFile
+	for _, f := range []string{pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile} {
+		files = append(files, testcontainers.ContainerFile{
+			HostFilePath:      filepath.Join(tc.PKI.CLIDir, f),
+			ContainerFilePath: path.Join(cliPKIDir, f),
+			FileMode:          cliPKIFileMode,
+		})
+	}
+	return tc.runCLI(ctx, files, nil, args...)
+}
+
+// cliAPIDir is where PKIInit lets orion-cli pki init write the api certificates, in the cli container
+const cliAPIDir = "/tmp/orion-api"
+
+// PKIInit creates the certificates like a user does, with `orion-cli pki init` in a cli container, and copies them
+// out of it: the cli files to tc.PKI.CLIDir (for CLI and the api client of the tests), the api files to
+// tc.PKI.APIDir (for RunAPI). The api certificate is also valid for apiAlias. It returns the output of the command.
+func (tc *Cluster) PKIInit(ctx context.Context) string {
+	tc.PKI = pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "cli"), APIDir: filepath.Join(tc.tmpDir, "api")}
+	copyOut := func(cnt testcontainers.Container) {
+		for dir, files := range map[string][]string{
+			tc.PKI.CLIDir: {pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile},
+			tc.PKI.APIDir: {pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile},
+		} {
+			from := cliPKIDir
+			if dir == tc.PKI.APIDir {
+				from = cliAPIDir
+			}
+			Ω(os.MkdirAll(dir, cliPKIDirMode)).To(Succeed())
+			for _, f := range files {
+				rc, err := cnt.CopyFileFromContainer(ctx, path.Join(from, f))
+				Ω(err).NotTo(HaveOccurred(), "copying %s from the cli container", path.Join(from, f))
+				data, err := io.ReadAll(rc)
+				_ = rc.Close()
+				Ω(err).NotTo(HaveOccurred())
+				Ω(os.WriteFile(filepath.Join(dir, f), data, cliPKIFileMode)).To(Succeed())
+			}
+		}
+	}
+	out, code := tc.runCLI(ctx, nil, copyOut, "pki", "init", "--api-dir", cliAPIDir, "--api-san", apiAlias)
+	Ω(code).To(Equal(0), out)
+	return out
+}
+
+// runCLI runs orion-cli with args in a container on the network of the cluster, with files copied into it. after (when
+// set) gets the container once the command exited, before it is removed. It returns the output and the exit code.
+func (tc *Cluster) runCLI(ctx context.Context, files []testcontainers.ContainerFile,
+	after func(testcontainers.Container), args ...string) (string, int) {
+	cmd := append([]string{"--host", apiAlias, "--port", strconv.Itoa(APIInternalPort)}, args...)
+	cnt, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:      "cli",
+			Cmd:        cmd,
+			Files:      files,
+			Networks:   []string{tc.Network.Name},
+			WaitingFor: wait.ForExit().WithExitTimeout(cliTimeout),
+		},
+		Started: true,
+	})
+	if cnt != nil {
+		defer func() { _ = cnt.Terminate(ctx) }()
+	}
+	Ω(err).NotTo(HaveOccurred(), "orion-cli %v", args)
+	state, err := cnt.State(ctx)
+	Ω(err).NotTo(HaveOccurred())
+	logs, err := cnt.Logs(ctx)
+	Ω(err).NotTo(HaveOccurred())
+	defer func() { _ = logs.Close() }()
+	out, err := io.ReadAll(logs)
+	Ω(err).NotTo(HaveOccurred())
+	fmt.Fprintf(GinkgoWriter, "$ orion-cli %s\n%s(exit %d)\n", strings.Join(args, " "), out, state.ExitCode)
+	if after != nil {
+		after(cnt)
+	}
+	return string(out), state.ExitCode
 }
