@@ -104,7 +104,8 @@ func (h *Handlers) proxyInfo(ctx context.Context) (ip apiv1.InfoProxies, err err
 	return ip, nil
 }
 
-func (h *Handlers) keepersInfo(ctx context.Context, cd *apiv1.Data) (ik apiv1.InfoKeepers, err error) {
+// keepersInfo returns the keepers of cd, sorted on uid. It only reads cd, so it cannot fail.
+func keepersInfo(cd *apiv1.Data) (ik apiv1.InfoKeepers) {
 	kssKeys := cd.Keepers.SortedKeys()
 	for _, kuid := range kssKeys {
 		k := cd.Keepers[kuid]
@@ -134,7 +135,7 @@ func (h *Handlers) keepersInfo(ctx context.Context, cd *apiv1.Data) (ik apiv1.In
 			PgCurrentGeneration: pgCurrentGeneration,
 		})
 	}
-	return ik, err
+	return ik
 }
 
 func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
@@ -142,7 +143,6 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 		cd  *apiv1.Data
 		p   apiv1.InfoProxies
 		s   apiv1.InfoSentinels
-		k   apiv1.InfoKeepers
 		err error
 	)
 	cd, _, err = h.client.GetClusterData(ctx)
@@ -153,10 +153,6 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 		// no cluster data yet (no cluster was created): no keepers, and the cluster isn't available
 		cd = &apiv1.Data{}
 	}
-	k, err = h.keepersInfo(ctx, cd)
-	if err != nil {
-		return apiv1.InfoCluster{}, err
-	}
 	p, err = h.proxyInfo(ctx)
 	if err != nil {
 		return apiv1.InfoCluster{}, err
@@ -166,7 +162,7 @@ func (h *Handlers) clusterInfo(ctx context.Context) (apiv1.InfoCluster, error) {
 		return apiv1.InfoCluster{}, err
 	}
 
-	return newInfoCluster(k, p, s, clusterStatus(cd)), nil
+	return newInfoCluster(keepersInfo(cd), p, s, clusterStatus(cd)), nil
 }
 
 // newInfoCluster returns the cluster info, with empty lists instead of nil ones, so they are encoded as [] and not as
@@ -219,7 +215,7 @@ func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	ic, err := h.clusterInfo(ctx)
 	if err != nil {
-		handleError(ctx, err, w, "")
+		handleError(ctx, err, w, "failed to get the cluster status")
 		return
 	}
 	h.writeJSON(ctx, w, ic)

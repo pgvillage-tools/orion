@@ -1,21 +1,27 @@
 package v1
 
 import (
+	"bytes"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/pgvillage-tools/orion/internal/auth"
+	"github.com/pgvillage-tools/orion/internal/logging"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
+	"github.com/rs/zerolog"
 )
 
 func TestTLSFiles(t *testing.T) {
@@ -128,5 +134,25 @@ func TestProbeRoutes(t *testing.T) {
 	}
 	if mode.Mode != endpoints.ModeNormal {
 		t.Errorf("unexpected mode %q", mode.Mode)
+	}
+}
+
+func TestWarnExpiring(t *testing.T) {
+	// a logger at the level of the api component, so GetLogComponent keeps it (and its output)
+	_, componentLogger := logging.GetLogComponent(t.Context(), logging.WebApiComponent)
+	var out bytes.Buffer
+	logger := zerolog.New(&out).Level(componentLogger.GetLevel())
+	ctx := logger.WithContext(t.Context())
+
+	soon := &x509.Certificate{Subject: pkix.Name{CommonName: "orion-api"}, NotAfter: time.Now().Add(time.Hour)}
+	later := &x509.Certificate{Subject: pkix.Name{CommonName: "orion-ca"},
+		NotAfter: time.Now().Add(2 * pki.ExpiryWarning)}
+	warnExpiring(ctx, []*x509.Certificate{soon, later})
+
+	if !strings.Contains(out.String(), "orion-api expires at") {
+		t.Errorf("expected a warning for the certificate that expires soon, got %q", out.String())
+	}
+	if strings.Contains(out.String(), "orion-ca") {
+		t.Errorf("expected no warning for the certificate that expires later, got %q", out.String())
 	}
 }

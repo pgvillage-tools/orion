@@ -42,11 +42,11 @@ func (h *Handlers) keepers(ctx context.Context) (apiv1.InfoKeepers, error) {
 	if cd == nil {
 		return apiv1.InfoKeepers{}, nil
 	}
-	keepers, err := h.keepersInfo(ctx, cd)
+	keepers := keepersInfo(cd)
 	if keepers == nil {
 		keepers = apiv1.InfoKeepers{}
 	}
-	return keepers, err
+	return keepers, nil
 }
 
 // KeepersHandler returns the keepers, sorted on uid (the same list as in the cluster status)
