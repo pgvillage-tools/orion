@@ -301,7 +301,8 @@ func (tc *Cluster) WaitForConverged(numKeepers int) string {
 // keeperAddressRe matches the listen address of a keeper of a test cluster: its network alias keeper_<index>
 var keeperAddressRe = regexp.MustCompile(`^keeper_(\d+):\d+$`)
 
-// KeeperIndex returns the index in tc.Keepers of the keeper with uid, from its listen address (keeper_<index>:port)
+// KeeperIndex returns the index in tc.Keepers of the keeper with uid, from its listen address (keeper_<index>:port).
+// Call it while the keeper is healthy: once the sentinel fails a keeper over, its listen address is gone.
 func (tc *Cluster) KeeperIndex(uid string) int {
 	keeper, httpCode, err := tc.APIClient.GetKeeper(uid)
 	Ω(err).NotTo(HaveOccurred())
