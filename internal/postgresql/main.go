@@ -75,12 +75,11 @@ var (
 	// ErrInaccessibleDatadir is raised when pg_ctl returns an unknown state
 	ErrInaccessibleDatadir = errors.New("unknown postgres state")
 
-	utlCtx    context.Context
 	utlLogger *zerolog.Logger
 )
 
 func init() {
-	utlCtx, utlLogger = logging.GetLogComponent(context.Background(), logging.PgUtilsComponent)
+	_, utlLogger = logging.GetLogComponent(context.Background(), logging.PgUtilsComponent)
 }
 
 // TODO: implement all other options as well

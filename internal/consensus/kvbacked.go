@@ -76,7 +76,6 @@ const (
 // TODO(sgotti) fix this in libkv?
 // consul min ttl is 10s and libkv divides this by 2
 const minTTL = 20 * time.Second
-const dialTimeout = 20 * time.Second
 
 var urlSchemeRegexp = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+-.]*)://`)
 
