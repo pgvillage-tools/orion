@@ -77,14 +77,24 @@ type Cluster struct {
 // the cluster (e.g. fail or remove a keeper) should start their own cluster; tests that only read can use
 // sharedCluster.
 func (tc *Cluster) Start(ctx context.Context, numKeepers int) {
-	tc.StartAPI(ctx)
+	tc.StartWithSpec(ctx, numKeepers, DefaultSpec())
+}
 
-	httpCode, err := tc.APIClient.PostCluster(&apiv1.Spec{
+// DefaultSpec returns the spec Start creates a test cluster with: a new cluster, with the defaults of orion
+func DefaultSpec() *apiv1.Spec {
+	return &apiv1.Spec{
 		DefaultSUReplAccessMode: util.ToPtr(apiv1.SUReplAccessAll),
 		PGParameters:            apiv1.PGParameters{},
 		PGHBA:                   []string{},
 		InitMode:                util.ToPtr(apiv1.New),
-	})
+	}
+}
+
+// StartWithSpec starts a cluster like Start, created with spec
+func (tc *Cluster) StartWithSpec(ctx context.Context, numKeepers int, spec *apiv1.Spec) {
+	tc.StartAPI(ctx)
+
+	httpCode, err := tc.APIClient.PostCluster(spec)
 	Ω(err).NotTo(HaveOccurred())
 	Ω(httpCode).To(Equal(http.StatusCreated))
 
@@ -203,6 +213,11 @@ func SharedCluster(numKeepers int) *Cluster {
 // Use it for tests that change the cluster, e.g. fail or remove a keeper.
 func WithOwnCluster(numKeepers int) *Cluster {
 	return withOwn(func(tc *Cluster, ctx context.Context) { tc.Start(ctx, numKeepers) })
+}
+
+// WithOwnClusterSpec is WithOwnCluster for a cluster created with spec (e.g. DefaultSpec with sync replication)
+func WithOwnClusterSpec(numKeepers int, spec *apiv1.Spec) *Cluster {
+	return withOwn(func(tc *Cluster, ctx context.Context) { tc.StartWithSpec(ctx, numKeepers, spec) })
 }
 
 // WithOwnAPI starts etcd and the api (no sentinel, keepers or proxy) for the specs of the (Ordered) container it is
