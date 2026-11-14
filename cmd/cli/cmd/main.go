@@ -50,26 +50,15 @@ var CmdCLI = &cobra.Command{
 		// The flags and arguments are fine once we get here: from now on an error isn't a usage error, so don't
 		// print the usage with it
 		c.SilenceUsage = true
-		if c.HasParent() && c.Name() != "version" && !isPKICommand(c) {
-			if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-				return err
-			}
-		}
 		return initConfig()
 	},
 	// just defined to make --version work
 	Run: func(c *cobra.Command, _ []string) { _ = c.Help() },
 }
 
-type config struct {
-	cmd.CommonConfig
-}
-
-var cfg config
-
+// The cli only talks to the api: unlike the other components, it has no store options (--cluster-name,
+// --store-backend, ...).
 func init() {
-	cfg.IsCLI = true
-	cmd.AddCommonFlags(CmdCLI, &cfg.CommonConfig)
 	flags := CmdCLI.PersistentFlags()
 	flags.String(flagPKIDir, defaultCLIPKIDir, "directory with the client certificate of the cli, and the CA")
 	// The connection to the api, for every command. They are defined (and bound to viper) once, on the root: a flag
@@ -145,14 +134,4 @@ func readInput(file string) ([]byte, error) {
 		return nil, fmt.Errorf("cannot read %s: %w", file, err)
 	}
 	return data, nil
-}
-
-// isPKICommand returns true for the pki commands, which don't need a store
-func isPKICommand(c *cobra.Command) bool {
-	for ; c != nil; c = c.Parent() {
-		if c == cmdPKI {
-			return true
-		}
-	}
-	return false
 }

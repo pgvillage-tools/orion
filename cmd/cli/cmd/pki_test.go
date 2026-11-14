@@ -61,15 +61,6 @@ func TestPKIInitOptions(t *testing.T) {
 	}
 }
 
-func TestIsPKICommand(t *testing.T) {
-	if !isPKICommand(cmdPKIInit) || !isPKICommand(cmdPKI) {
-		t.Error("expected the pki commands to be recognized")
-	}
-	if isPKICommand(cmdConnect) || isPKICommand(CmdCLI) {
-		t.Error("expected other commands not to be recognized as pki commands")
-	}
-}
-
 func TestCLITLSFiles(t *testing.T) {
 	dir := t.TempDir()
 	usePKIDir(t, dir)

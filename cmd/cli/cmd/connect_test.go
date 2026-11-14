@@ -120,23 +120,10 @@ func TestConnectRefusesAnAPIOfAnotherCA(t *testing.T) {
 	}
 }
 
-func TestCommandsNeedAClusterNameAndAStoreBackend(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		args     []string
-		expected string
-	}{
-		{"no cluster name", []string{"connect", "--store-backend", "etcdv3"}, "cluster name required"},
-		{"no store backend", []string{"connect", "--cluster-name", "c"}, "store backend type required"},
-		{"unknown store backend", []string{"connect", "--cluster-name", "c", "--store-backend", "x"},
-			`Unknown store backend: "x"`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			stdout, stderr, err := run(t, tc.args...)
-			expectError(t, err, tc.expected, tc.expected)
-			expectNoUsage(t, stdout, stderr)
-		})
-	}
+func TestTheStoreOptionsAreGone(t *testing.T) {
+	// the cli only talks to the api: it has no store options
+	_, _, err := run(t, "connect", "--cluster-name", "c")
+	expectError(t, err, "unknown flag: --cluster-name", "")
 }
 
 func TestAnUnknownFlagPrintsTheUsage(t *testing.T) {
@@ -145,7 +132,7 @@ func TestAnUnknownFlagPrintsTheUsage(t *testing.T) {
 	expectContains(t, stdout+stderr, "Usage:", "orion-cli status [flags]")
 }
 
-func TestVersionNeedsNoClusterName(t *testing.T) {
+func TestVersion(t *testing.T) {
 	stdout, _, err := run(t, "version")
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +154,6 @@ func TestPKIInitCreatesTheCertificates(t *testing.T) {
 	cliDir, apiDir := t.TempDir(), t.TempDir()
 	usePKIDir(t, cliDir)
 
-	// no --cluster-name or --store-backend: the pki commands don't use the store
 	stdout, _, err := run(t, "pki", "init", "--api-dir", apiDir, "--api-san", "api.example.org",
 		"--key-algorithm", "ecdsa-p256", "--leaf-validity", "30d")
 	if err != nil {
