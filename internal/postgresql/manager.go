@@ -672,17 +672,11 @@ func (p *Manager) SetupRoles(ctx context.Context) error {
 	if p.suUsername == p.replUsername {
 		logger.Info().Msg("adding replication role to superuser")
 		if p.suAuthMethod == "trust" {
-			if err := alterPasswordlessRole(ctx, p.localConnParams, []string{"replication"}, p.suUsername); err != nil {
+			if err := alterPasswordlessRole(ctx, p.localConnParams, p.suUsername); err != nil {
 				return fmt.Errorf("error adding replication role to superuser: %v", err)
 			}
 		} else {
-			if err := alterRole(
-				ctx,
-				p.localConnParams,
-				[]string{"replication"},
-				p.suUsername,
-				p.suPassword,
-			); err != nil {
+			if err := alterRole(ctx, p.localConnParams, p.suUsername, p.suPassword); err != nil {
 				return fmt.Errorf("error adding replication role to superuser: %v", err)
 			}
 		}
@@ -696,14 +690,13 @@ func (p *Manager) SetupRoles(ctx context.Context) error {
 			}
 			logger.Info().Msg("superuser password set")
 		}
-		roles := []string{"login", "replication"}
 		logger.Info().Msg("creating replication role")
 		if p.replAuthMethod != "trust" {
-			if err := createRole(ctx, p.localConnParams, roles, p.replUsername, p.replPassword); err != nil {
+			if err := createRole(ctx, p.localConnParams, p.replUsername, p.replPassword); err != nil {
 				return fmt.Errorf("error creating replication role: %v", err)
 			}
 		} else {
-			if err := createPasswordlessRole(ctx, p.localConnParams, roles, p.replUsername); err != nil {
+			if err := createPasswordlessRole(ctx, p.localConnParams, p.replUsername); err != nil {
 				return fmt.Errorf("error creating replication role: %v", err)
 			}
 		}
