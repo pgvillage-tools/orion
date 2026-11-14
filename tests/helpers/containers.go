@@ -30,6 +30,8 @@ const (
 	apiPKIDir      = "/etc/orion/api"
 	// storeClientPKIDir holds the client certificate for a store with TLS, in the orion containers (and in etcd)
 	storeClientPKIDir = "/etc/orion/store"
+	// sentinelInitialSpecPath is where a sentinel finds its --initial-cluster-spec
+	sentinelInitialSpecPath = "/etc/orion/initial-cluster-spec.json"
 	// storeServerPKIDir holds the server certificate of etcd, for a store with TLS
 	storeServerPKIDir = "/etc/etcd/pki"
 	// apiAlias is the name of the api on the network of a cluster
@@ -178,18 +180,30 @@ func runKeeper(
 		})
 }
 
+// runSentinel runs a sentinel; with initialSpecFile (a cluster spec in JSON on the host) it runs with
+// --initial-cluster-spec, so it creates the cluster itself when there is no cluster data yet
 func runSentinel(
 	ctx context.Context,
 	st store,
 	nw *testcontainers.DockerNetwork,
+	initialSpecFile string,
 ) (testcontainers.Container, error) {
 	envSettings := st.env("ORIONSENTINEL")
 	envSettings["ORIONSENTINEL_LOG_LEVEL"] = "debug"
+	files := st.files()
+	if initialSpecFile != "" {
+		envSettings["ORIONSENTINEL_INITIAL_CLUSTER_SPEC"] = sentinelInitialSpecPath
+		files = append(files, testcontainers.ContainerFile{
+			HostFilePath:      initialSpecFile,
+			ContainerFilePath: sentinelInitialSpecPath,
+			FileMode:          apiPKIFileMode,
+		})
+	}
 	return testcontainers.GenericContainer(
 		ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
 				Env:        envSettings,
-				Files:      st.files(),
+				Files:      files,
 				Networks:   []string{nw.Name},
 				ExtraHosts: []string{},
 				Image:      "sentinel",

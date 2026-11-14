@@ -4,6 +4,7 @@ package helpers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -52,13 +53,16 @@ type Cluster struct {
 	Network *testcontainers.DockerNetwork
 	Etcd    *etcd.EtcdContainer
 	// StoreTLS makes etcd require TLS with client certificates; set it before the cluster starts
-	StoreTLS bool
-	store    store
-	API      testcontainers.Container
-	Sentinel testcontainers.Container
-	Proxy    testcontainers.Container
-	Keepers  []testcontainers.Container
-	all      []testcontainers.Container
+	// InitialClusterSpec starts the sentinel with --initial-cluster-spec: the sentinel, not the api, creates the
+	// cluster; set it before StartMembers
+	InitialClusterSpec *apiv1.Spec
+	StoreTLS           bool
+	store              store
+	API                testcontainers.Container
+	Sentinel           testcontainers.Container
+	Proxy              testcontainers.Container
+	Keepers            []testcontainers.Container
+	all                []testcontainers.Container
 	// tmpDir holds the files of the cluster (e.g. the certificates); it is removed with the cluster, when the node
 	// that started it (StartStore) ends
 	tmpDir string
@@ -108,7 +112,14 @@ func (tc *Cluster) StartWithSpec(ctx context.Context, numKeepers int, spec *apiv
 // last part of start; on its own, it is for tests that create the cluster themselves.
 func (tc *Cluster) StartMembers(ctx context.Context, numKeepers int) {
 	var err error
-	tc.Sentinel, err = runSentinel(ctx, tc.store, tc.Network)
+	var initialSpecFile string
+	if tc.InitialClusterSpec != nil {
+		initialSpecFile = filepath.Join(tc.tmpDir, "initial-cluster-spec.json")
+		data, marshalErr := json.Marshal(tc.InitialClusterSpec)
+		Ω(marshalErr).NotTo(HaveOccurred())
+		Ω(os.WriteFile(initialSpecFile, data, apiPKIFileMode)).To(Succeed())
+	}
+	tc.Sentinel, err = runSentinel(ctx, tc.store, tc.Network, initialSpecFile)
 	tc.add(tc.Sentinel)
 	Ω(err).NotTo(HaveOccurred())
 
@@ -230,6 +241,16 @@ func WithOwnCluster(numKeepers int) *Cluster {
 // WithOwnClusterSpec is WithOwnCluster for a cluster created with spec (e.g. DefaultSpec with sync replication)
 func WithOwnClusterSpec(numKeepers int, spec *apiv1.Spec) *Cluster {
 	return withOwn(func(tc *Cluster, ctx context.Context) { tc.StartWithSpec(ctx, numKeepers, spec) })
+}
+
+// WithOwnClusterInitialSpec starts etcd, the api, a sentinel with --initial-cluster-spec (spec), numKeepers keepers
+// and a proxy, without creating the cluster through the api: the sentinel creates it
+func WithOwnClusterInitialSpec(numKeepers int, spec *apiv1.Spec) *Cluster {
+	return withOwn(func(tc *Cluster, ctx context.Context) {
+		tc.InitialClusterSpec = spec
+		tc.StartAPI(ctx)
+		tc.StartMembers(ctx, numKeepers)
+	})
 }
 
 // WithOwnClusterStoreTLS is WithOwnCluster with an etcd that requires TLS with client certificates
@@ -366,7 +387,7 @@ func (tc *Cluster) ProbeGet(ctx context.Context, ep endpoints.ProbeEndPoint) (in
 
 // AddSentinel starts another sentinel in the cluster, and returns its container
 func (tc *Cluster) AddSentinel(ctx context.Context) testcontainers.Container {
-	cnt, err := runSentinel(ctx, tc.store, tc.Network)
+	cnt, err := runSentinel(ctx, tc.store, tc.Network, "")
 	tc.add(cnt)
 	Ω(err).NotTo(HaveOccurred())
 	return cnt
