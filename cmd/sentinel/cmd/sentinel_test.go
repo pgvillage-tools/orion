@@ -6572,8 +6572,9 @@ func TestIsLagBelowMax(t *testing.T) {
 
 // TestFindBestNewMastersOrder documents the order in which candidates are
 // returned. With async replication updateCluster elects bestNewMasters[0].
-// NOTE: dbSlice sorts by XLogPos ascending, so the candidate that is FURTHEST
-// BEHIND comes first and gets elected. This test pins the current behaviour.
+// The candidate with the highest XLogPos comes first, so the standby that is
+// least behind is elected and the least data is lost (stolon elected the one
+// furthest behind).
 func TestFindBestNewMastersOrder(t *testing.T) {
 	const masterXLogPos = 10000
 	master := etMaster(etD1, etK1, masterXLogPos, etD2, etD3)
@@ -6585,12 +6586,12 @@ func TestFindBestNewMastersOrder(t *testing.T) {
 	})
 	s := etSentinel(cd)
 	best := s.findBestNewMasters(context.Background(), cd, cd.DBs[etD1])
-	if got, want := etUIDs(best), []string{etD3, etD2}; !reflect.DeepEqual(got, want) {
+	if got, want := etUIDs(best), []string{etD2, etD3}; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	outcd := etUpdateCluster(t, cd)
-	if got := outcd.Cluster.Status.Master; got != etD3 {
-		t.Errorf("got elected master %q, want %q (the standby with the lowest xlogpos)", got, etD3)
+	if got := outcd.Cluster.Status.Master; got != etD2 {
+		t.Errorf("got elected master %q, want %q (the standby with the highest xlogpos)", got, etD2)
 	}
 }
 
@@ -6860,11 +6861,12 @@ func TestElectionElectedStandbyFailsBeforePromotion(t *testing.T) {
 			t.Errorf("got master %q, want %q", got, etD2)
 		}
 	})
-	t.Run("sync: elected db with stale status from an earlier term elects the old master", func(t *testing.T) {
-		// Status.SynchronousStandbys is only maintained for the current
-		// master and is not cleared when a db becomes a standby. If db2 was
-		// master before (with db1 as sync standby), the stale status matches
-		// its new spec and db1 is elected again. Pinned as current behaviour.
+	t.Run("sync: elected db with a synchronous standbys status elects the old master", func(t *testing.T) {
+		// Not reachable in practice: after an election the old master's db
+		// is removed and a new standby db (new uid) is created for its
+		// keeper, so a db never carries the synchronous standbys it reported
+		// in an earlier term as master. This pins what updateCluster does
+		// with such a status.
 		cd := etFailedElectionCluster(etSyncSpec(), true)
 		cd.DBs[etD2].Status.SynchronousStandbys = []string{etD1}
 		outcd := etUpdateCluster(t, cd)
