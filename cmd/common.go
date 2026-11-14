@@ -257,7 +257,7 @@ func NewStore(ctx context.Context, cfg *CommonConfig) (consensus.Store, error) {
 		}
 		s = consensus.NewKVBackedStore(kvstore, storePath(cfg))
 	case "kubernetes":
-		kubecli, podName, namespace, err := getKubeValues(cfg)
+		kubecli, podName, namespace, err := getKubeValues(cfg, !cfg.IsCLI)
 		if err != nil {
 			return nil, err
 		}
@@ -286,7 +286,7 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.
 		}
 		election = newKVBackedElection(kvstore, cfg, uid)
 	case "kubernetes":
-		kubecli, podName, namespace, err := getKubeValues(cfg)
+		kubecli, podName, namespace, err := getKubeValues(cfg, !cfg.IsCLI)
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +300,9 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.
 }
 
 // NewStoreAndElection returns a store and an election that share one connection to the store backend. It is meant for
-// a long running process that needs both, like the api: NewStore and NewElection each open their own connection.
+// a long running process that needs both, like the api: NewStore and NewElection each open their own connection. The
+// process is not a member of the cluster (it doesn't publish its own state), so with the kubernetes backend it needs
+// no POD_NAME.
 func NewStoreAndElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.Store, consensus.Election,
 	error) {
 	switch cfg.StoreBackend {
@@ -311,7 +313,7 @@ func NewStoreAndElection(ctx context.Context, cfg *CommonConfig, uid string) (co
 		}
 		return consensus.NewKVBackedStore(kvstore, storePath(cfg)), newKVBackedElection(kvstore, cfg, uid), nil
 	case "kubernetes":
-		kubecli, podName, namespace, err := getKubeValues(cfg)
+		kubecli, podName, namespace, err := getKubeValues(cfg, false)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -338,7 +340,9 @@ func newKVBackedElection(kvstore consensus.KVStore, cfg *CommonConfig, uid strin
 		cfg.StoreTimeout)
 }
 
-func getKubeValues(cfg *CommonConfig) (*kubernetes.Clientset, string, string, error) {
+// getKubeValues returns a kubernetes client, the name of the own pod (POD_NAME, required for a member: a keeper,
+// sentinel or proxy publishes its state on its pod), and the namespace
+func getKubeValues(cfg *CommonConfig, member bool) (*kubernetes.Clientset, string, string, error) {
 	kubeClientConfig := util.NewKubeClientConfig(cfg.KubeConfig, cfg.KubeContext, cfg.KubeNamespace)
 	kubecfg, err := kubeClientConfig.ClientConfig()
 	if err != nil {
@@ -350,7 +354,7 @@ func getKubeValues(cfg *CommonConfig) (*kubernetes.Clientset, string, string, er
 		return nil, "", "", fmt.Errorf("cannot create kubernetes client: %v", err)
 	}
 	var podName string
-	if !cfg.IsCLI {
+	if member {
 		podName, err = util.PodName()
 		if err != nil {
 			return nil, "", "", err
