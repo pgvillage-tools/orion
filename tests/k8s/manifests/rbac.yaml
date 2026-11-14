@@ -1,0 +1,36 @@
+# One ServiceAccount and Role for all components: the simplest start. Split it per component to give each only what
+# it needs (see docs/deploy/k8s.md).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orion
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: orion
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, patch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, create, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: orion
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: orion
+subjects:
+  - kind: ServiceAccount
+    name: orion
