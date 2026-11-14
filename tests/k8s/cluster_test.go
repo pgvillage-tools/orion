@@ -378,4 +378,27 @@ var _ = Describe("orion on Kubernetes", Ordered, func() {
 				g.Ω(converged(g)).To(Equal(primary))
 			}).WithContext(ctx).WithTimeout(convergedFor).WithPolling(helpers.PollInterval).Should(Succeed())
 		})
+
+	It("keeps a primary and its data through a rolling update of the keepers", func(ctx context.Context) {
+		var uids []string
+		Eventually(func(g Gomega) {
+			converged(g)
+			uids = keeperUIDs(g)
+		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+		Consistently(func(g Gomega) { converged(g) }).
+			WithContext(ctx).WithTimeout(convergedFor).WithPolling(helpers.PollInterval).Should(Succeed())
+		Ω(pgExec(ctx, "INSERT INTO pods VALUES (106)")).To(Succeed())
+
+		// what a new image or a changed setting does: the StatefulSet replaces the pods one by one
+		mustKubectl(ctx, "rollout", "restart", "statefulset/orion-keeper")
+		mustKubectl(ctx, "rollout", "status", "statefulset/orion-keeper", "--timeout="+deployTimeout.String())
+
+		Eventually(func(g Gomega) {
+			converged(g)
+			g.Ω(keeperUIDs(g)).To(ConsistOf(uids))
+		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+		Eventually(func() error { return pgExec(ctx, "INSERT INTO pods VALUES (107)") }).
+			WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+		Ω(count(ctx, "pods")).To(Equal(107))
+	})
 })
