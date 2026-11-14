@@ -82,9 +82,9 @@ const (
 	// DefaultMaxStandbysPerSender sets the default for number of standby's before cleanup of old standby's is triggered
 	DefaultMaxStandbysPerSender uint16 = 3
 
-	// DefaultMaxStandbyLag sets the default for maximum standby lag for sync replica's (1MiB).
-	// Replicas with more lag are assumed not to be valid sync replica's (yet)
-	DefaultMaxStandbyLag = 1024 * 1204
+	// DefaultMaxStandbyLag sets the default for the maximum lag of a standby (1MiB of WAL): a standby that lags more
+	// is not elected as new primary, nor chosen as synchronous standby (yet)
+	DefaultMaxStandbyLag = 1024 * 1024
 
 	// DefaultSynchronousReplication sets the default for sync replication when not set by config
 	DefaultSynchronousReplication = false
