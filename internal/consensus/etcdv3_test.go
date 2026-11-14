@@ -541,3 +541,22 @@ func TestEtcdv3ElectionSessionFails(t *testing.T) {
 	expectClosed(t, electedCh, errCh)
 	e.Stop()
 }
+
+func TestEtcdv3ElectionStopsWithoutAReader(t *testing.T) {
+	c, _, _ := newFakeEtcdClient()
+	e := newTestEtcdv3Election(c)
+
+	// stopped before anybody reads the first false: the campaign must end (and close its channels) instead of
+	// blocking on the send forever
+	electedCh, errCh := e.RunForElection(context.Background())
+	e.Stop()
+	time.Sleep(50 * time.Millisecond)
+	expectClosed(t, electedCh, errCh)
+
+	// the next campaign has channels of its own
+	electedCh, errCh = e.RunForElection(context.Background())
+	expectElected(t, electedCh, false)
+	expectElected(t, electedCh, true)
+	e.Stop()
+	expectClosed(t, electedCh, errCh)
+}
