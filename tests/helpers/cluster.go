@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -256,6 +257,46 @@ func (tc *Cluster) WaitForPrimary() string {
 		g.Ω(primary).NotTo(BeEmpty())
 	}).WithTimeout(PrimaryTimeout).WithPolling(PollInterval).Should(Succeed())
 	return primary
+}
+
+// ConvergedFor is how long WaitForConverged wants the keepers to stay converged (two sentinel checks)
+const ConvergedFor = 10 * time.Second
+
+// WaitForConverged waits until all numKeepers keepers are healthy with their db at its wanted generation, and stay
+// so for ConvergedFor (so they aren't between two generations). It returns the primary.
+func (tc *Cluster) WaitForConverged(numKeepers int) string {
+	var primary string
+	converged := func(g Gomega) {
+		status, _, err := tc.APIClient.GetStatus()
+		g.Ω(err).NotTo(HaveOccurred())
+		g.Ω(status.Keepers).To(HaveLen(numKeepers))
+		for _, k := range status.Keepers {
+			g.Ω(k.Healthy && k.PgHealthy).To(BeTrue(), "keeper %s", k.UID)
+			g.Ω(k.PgCurrentGeneration).To(Equal(k.PgWantedGeneration), "keeper %s converged", k.UID)
+		}
+		var ok bool
+		primary, ok = status.Status["primaryKeeper"].(string)
+		g.Ω(ok && primary != "").To(BeTrue(), "no primary keeper in %v", status.Status)
+	}
+	Eventually(converged).WithTimeout(PrimaryTimeout).WithPolling(PollInterval).Should(Succeed())
+	Consistently(converged).WithTimeout(ConvergedFor).WithPolling(PollInterval).Should(Succeed())
+	return primary
+}
+
+// keeperAddressRe matches the listen address of a keeper of a test cluster: its network alias keeper_<index>
+var keeperAddressRe = regexp.MustCompile(`^keeper_(\d+):\d+$`)
+
+// KeeperIndex returns the index in tc.Keepers of the keeper with uid, from its listen address (keeper_<index>:port)
+func (tc *Cluster) KeeperIndex(uid string) int {
+	keeper, httpCode, err := tc.APIClient.GetKeeper(uid)
+	Ω(err).NotTo(HaveOccurred())
+	Ω(httpCode).To(Equal(http.StatusOK))
+	m := keeperAddressRe.FindStringSubmatch(keeper.ListenAddress)
+	Ω(m).NotTo(BeNil(), "keeper %s listens on %q", uid, keeper.ListenAddress)
+	i, err := strconv.Atoi(m[1])
+	Ω(err).NotTo(HaveOccurred())
+	Ω(i).To(BeNumerically("<", len(tc.Keepers)))
+	return i
 }
 
 // ProbeGet gets ep from the probe port and returns the status code and the body
