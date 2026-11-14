@@ -47,13 +47,13 @@ You can execute orionctl in different ways:
 * as a one shot command executed inside a temporary pod:
 
 ```
-kubectl run -i -t orionctl --image=ghcr.io/pgvillage-tools/orion-keeper:17-latest --restart=Never --rm -- /usr/local/bin/orionctl --cluster-name=kube-orion --store-backend=kubernetes --kube-resource-kind=configmap init
+kubectl run -i -t orionctl --image=ghcr.io/pgvillage-tools/orion-keeper:17-latest --restart=Never --rm -- /usr/local/bin/orionctl --cluster-name=kube-orion --store-backend=kubernetes init
 ```
 
 * from a machine that can access the store backend:
 
 ```
-orionctl --cluster-name=kube-orion --store-backend=kubernetes --kube-resource-kind=configmap init
+orionctl --cluster-name=kube-orion --store-backend=kubernetes init
 ```
 
 * later from one of the pods running the orion components.

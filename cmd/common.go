@@ -50,7 +50,6 @@ type CommonConfig struct {
 	LogColor             bool
 	LogLevel             string
 	Debug                bool
-	KubeResourceKind     string
 	KubeConfig           string
 	KubeContext          string
 	KubeNamespace        string
@@ -119,13 +118,6 @@ func AddCommonFlags(cmd *cobra.Command, cfg *CommonConfig) {
 		"metrics-listen-address",
 		"",
 		"metrics listen address i.e \"0.0.0.0:8080\" (disabled by default)")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.KubeResourceKind,
-		"kube-resource-kind",
-		"",
-		// revive:disable-next-line
-		`the k8s resource kind to be used to store orion clusterdata and do sentinel leader election (only "configmap" is currently supported)`)
 
 	if !cfg.IsCLI {
 		cmd.PersistentFlags().BoolVar(
@@ -198,12 +190,6 @@ func CheckCommonConfig(cfg *CommonConfig) error {
 	case "etcdv2":
 	case "etcdv3":
 	case "kubernetes":
-		if cfg.KubeResourceKind == "" {
-			return errors.New("unspecified kubernetes resource kind")
-		}
-		if cfg.KubeResourceKind != "configmap" {
-			return fmt.Errorf("wrong kubernetes resource kind: %q", cfg.KubeResourceKind)
-		}
 	default:
 		return fmt.Errorf("Unknown store backend: %q", cfg.StoreBackend)
 	}

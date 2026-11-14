@@ -49,8 +49,6 @@ spec:
                   fieldPath: metadata.labels['orion-cluster']
             - name: ORIONKEEPER_STORE_BACKEND
               value: "kubernetes"
-            - name: ORIONKEEPER_KUBE_RESOURCE_KIND
-              value: "configmap"
             - name: ORIONKEEPER_PG_REPL_USERNAME
               value: "repluser"
               # Or use a password file like in the below supersuser password

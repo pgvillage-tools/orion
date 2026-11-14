@@ -36,8 +36,6 @@ spec:
                   fieldPath: metadata.labels['orion-cluster']
             - name: ORIONSENTINEL_STORE_BACKEND
               value: "kubernetes"
-            - name: ORIONSENTINEL_KUBE_RESOURCE_KIND
-              value: "configmap"
             - name: ORIONSENTINEL_METRICS_LISTEN_ADDRESS
               value: "0.0.0.0:8080"
             ## Uncomment this to enable debug logs
