@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -612,7 +611,7 @@ func TestReadPasswordFromFile(t *testing.T) {
 	dir := t.TempDir()
 
 	t.Run("returns the content as is, trailing newline included", func(t *testing.T) {
-		// The trailing newline is stripped later, by keeper(); see TestKeeperFlagRules.
+		// The trailing newline is stripped later, by validateUsersConfig; see TestValidateUsersConfig.
 		for _, content := range []string{password, "secret\n", "secret\r\n", "  sp ace\tx \n\n", ""} {
 			path := filepath.Join(dir, "pw")
 			writeFile(t, path, content, ownerRWPermisions)
@@ -652,13 +651,15 @@ func TestReadPasswordFromFile(t *testing.T) {
 		}{
 			{mode: ownerR},
 			{mode: ownerRWPermisions},
+			// only the owner: fine, whatever the owner bits
+			{mode: ownerRWExecPermisions},
+			// any bit for the group or others is too open
 			{mode: 0o640, warn: true},
 			{mode: ownerRWOtherRPermisions, warn: true},
 			{mode: 0o666, warn: true},
-			{mode: ownerRWExecPermisions, warn: true},
-			// Not warned: the check is a numeric compare (mode > 0600), not a check of the group/other bits.
-			{mode: 0o466},
-			{mode: 0o404},
+			{mode: 0o466, warn: true},
+			{mode: 0o404, warn: true},
+			{mode: 0o444, warn: true},
 		}
 		for _, tt := range tests {
 			path := filepath.Join(dir, fmt.Sprintf("pw-%o", tt.mode))
@@ -676,8 +677,7 @@ func TestReadPasswordFromFile(t *testing.T) {
 	})
 
 	t.Run("symlink", func(t *testing.T) {
-		// Kubernetes mounts secrets as symlinks. Lstat looks at the link itself (mode 0777|symlink),
-		// so it always warns, even if the target is 0600. The target is read.
+		// Kubernetes mounts secrets as symlinks: the mode of the target counts, not the one of the link.
 		target := filepath.Join(dir, "target")
 		writeFile(t, target, password, ownerRWPermisions)
 		link := filepath.Join(dir, "link")
@@ -689,44 +689,27 @@ func TestReadPasswordFromFile(t *testing.T) {
 		if err != nil || got != password {
 			t.Errorf("got %q, %v", got, err)
 		}
+		if strings.Contains(buf.String(), tooOpen) {
+			t.Errorf("unexpected warning for a symlink to a 0600 file, log: %s", buf.String())
+		}
+		openTarget := filepath.Join(dir, "open-target")
+		writeFile(t, openTarget, password, ownerRWOtherRPermisions)
+		openLink := filepath.Join(dir, "open-link")
+		if err := os.Symlink(openTarget, openLink); err != nil {
+			t.Fatal(err)
+		}
+		buf.Reset()
+		if _, err := readPasswordFromFile(keeperLogCtx(&buf), openLink); err != nil {
+			t.Fatal(err)
+		}
 		if !strings.Contains(buf.String(), tooOpen) {
-			t.Errorf("expected a warning for the symlink, log: %s", buf.String())
+			t.Errorf("expected a warning for a symlink to a 0644 file, log: %s", buf.String())
 		}
 	})
 }
 
-const (
-	keeperHelperEnv = "ORION_KEEPER_FLAG_HELPER_ARGS"
-	uidErr          = "keeper uid not valid"
-	replUserFlag    = "--pg-repl-username=repl"
-	replPassFlag    = "--pg-repl-password=replpass"
-	suPassFlag      = "--pg-su-password=supass"
-	sameSUFlag      = "--pg-su-username=pg"
-	sameReplFlag    = "--pg-repl-username=pg"
-)
-
-// TestKeeperFlagHelper is not a test: TestKeeperFlagRules runs it in a subprocess to run the
-// keeper command with the given flags, because keeper() exits through logger.Fatal.
-func TestKeeperFlagHelper(t *testing.T) {
-	args := os.Getenv(keeperHelperEnv)
-	if args == "" {
-		t.Skip("only runs as a subprocess of TestKeeperFlagRules")
-	}
-	CmdKeeper.SetArgs(strings.Split(args, "\n"))
-	if err := CmdKeeper.Execute(); err != nil {
-		fmt.Println(err)
-	}
-	os.Exit(0)
-}
-
-// TestKeeperFlagRules checks the user and password flag validation in keeper() (stolon
-// TestInitUsers). keeper() calls logger.Fatal, so every case runs the keeper command in a
-// subprocess. Every case uses an invalid --uid: that is checked right after the
-// user/password rules, so the uid error means the user/password flags were accepted.
-func TestKeeperFlagRules(t *testing.T) {
-	if testing.Short() {
-		t.Skip("runs the test binary in subprocesses")
-	}
+// TestValidateUsersConfig checks the user, auth method and password rules of the keeper (stolon TestInitUsers)
+func TestValidateUsersConfig(t *testing.T) {
 	dir := t.TempDir()
 	pwFile := func(name, content string) string {
 		path := filepath.Join(dir, name)
@@ -737,83 +720,112 @@ func TestKeeperFlagRules(t *testing.T) {
 	suNLFile := pwFile("su-nl", "supass\n")
 	replFile := pwFile("repl", "replpass")
 	onlyNLFile := pwFile("only-nl", "\n")
+	// valid returns the settings of the flag defaults, with passwords
+	valid := func() *config {
+		return &config{
+			pgSUUsername: "postgres", pgSUAuthMethod: authMd5, pgSUConnType: connTypeHost, pgSUPassword: "supass",
+			pgReplUsername: "repl", pgReplAuthMethod: authMd5, pgReplConnType: connTypeHost, pgReplPassword: "replpass",
+		}
+	}
+	sameUser := func(c *config) { c.pgSUUsername, c.pgReplUsername = "pg", "pg" }
 
 	tests := []struct {
-		name string
-		args []string
-		want string
+		name   string
+		change func(c *config)
+		want   string // the error, or "" when the settings are valid
 	}{
-		{name: "valid with passwords", want: uidErr, args: []string{suPassFlag, replUserFlag, replPassFlag}},
-		{name: "valid with password files", want: uidErr, args: []string{
-			"--pg-su-passwordfile=" + suFile, replUserFlag, "--pg-repl-passwordfile=" + replFile}},
+		{name: "valid with passwords", change: func(*config) {}},
+		{name: "valid with password files", change: func(c *config) {
+			c.pgSUPassword, c.pgSUPasswordFile, c.pgReplPassword, c.pgReplPasswordFile = "", suFile, "", replFile
+		}},
 		{name: "repl username required", want: "--pg-repl-username is required",
-			args: []string{suPassFlag, replPassFlag}},
+			change: func(c *config) { c.pgReplUsername = "" }},
 		{name: "repl password required", want: "one of --pg-repl-password or --pg-repl-passwordfile is required",
-			args: []string{suPassFlag, replUserFlag}},
+			change: func(c *config) { c.pgReplPassword = "" }},
 		{name: "only one repl password",
-			want: "only one of --pg-repl-password or --pg-repl-passwordfile must be provided",
-			args: []string{suPassFlag, replUserFlag, replPassFlag, "--pg-repl-passwordfile=" + replFile}},
+			want:   "only one of --pg-repl-password or --pg-repl-passwordfile must be provided",
+			change: func(c *config) { c.pgReplPasswordFile = replFile }},
 		{name: "su password required", want: "one of --pg-su-password or --pg-su-passwordfile is required",
-			args: []string{replUserFlag, replPassFlag}},
+			change: func(c *config) { c.pgSUPassword = "" }},
 		{name: "only one su password",
-			want: "only one of --pg-su-password or --pg-su-passwordfile must be provided",
-			args: []string{suPassFlag, "--pg-su-passwordfile=" + suFile, replUserFlag, replPassFlag}},
-		{name: "missing password file", want: "cannot read pg superuser password",
-			args: []string{"--pg-su-passwordfile=" + filepath.Join(dir, "nope"), replUserFlag, replPassFlag}},
-		{name: "same user, same password", want: uidErr,
-			args: []string{sameSUFlag, "--pg-su-password=pass", sameReplFlag, "--pg-repl-password=pass"}},
+			want:   "only one of --pg-su-password or --pg-su-passwordfile must be provided",
+			change: func(c *config) { c.pgSUPasswordFile = suFile }},
+		{name: "missing password file", want: "cannot read pg superuser password", change: func(c *config) {
+			c.pgSUPassword, c.pgSUPasswordFile = "", filepath.Join(dir, "nope")
+		}},
+		{name: "same user, same password", change: func(c *config) {
+			sameUser(c)
+			c.pgSUPassword, c.pgReplPassword = "pass", "pass"
+		}},
 		{name: "same user, different password",
 			want: "provided superuser name and replication user name are the same but provided passwords are different",
-			args: []string{sameSUFlag, "--pg-su-password=pass1", sameReplFlag, "--pg-repl-password=pass2"}},
-		{name: "same user, password file has a trailing newline", want: uidErr,
-			args: []string{sameSUFlag, "--pg-su-passwordfile=" + suNLFile, sameReplFlag, "--pg-repl-password=supass"}},
+			change: func(c *config) {
+				sameUser(c)
+				c.pgSUPassword, c.pgReplPassword = "pass1", "pass2"
+			}},
+		{name: "same user, password file has a trailing newline", change: func(c *config) {
+			sameUser(c)
+			c.pgSUPassword, c.pgSUPasswordFile, c.pgReplPassword = "", suNLFile, "supass"
+		}},
 		{name: "same user, different auth methods",
 			want: "do not support different auth methods when utilizing superuser for replication",
-			args: []string{sameSUFlag, "--pg-su-auth-method=cert", sameReplFlag, "--pg-repl-password=pass"}},
-		{name: "password file with only a newline",
-			want: "superuser password is empty after removing trailing new line",
-			args: []string{"--pg-su-passwordfile=" + onlyNLFile, replUserFlag, replPassFlag}},
+			change: func(c *config) {
+				sameUser(c)
+				c.pgSUAuthMethod, c.pgSUPassword = authCert, ""
+			}},
+		{name: "password file with only a newline", want: "superuser password is empty after removing trailing new line",
+			change: func(c *config) { c.pgSUPassword, c.pgSUPasswordFile = "", onlyNLFile }},
 		{name: "repl trust with password",
-			want: "can not utilize --pg-repl-auth-method trust together with --pg-repl-password",
-			args: []string{suPassFlag, replUserFlag, "--pg-repl-auth-method=trust", replPassFlag}},
+			want:   "can not utilize --pg-repl-auth-method trust together with --pg-repl-password",
+			change: func(c *config) { c.pgReplAuthMethod = authTrust }},
 		{name: "su trust with password", want: "can not utilize --pg-su-auth-method trust",
-			args: []string{suPassFlag, "--pg-su-auth-method=trust", replUserFlag, replPassFlag}},
+			change: func(c *config) { c.pgSUAuthMethod = authTrust }},
 		{name: "su local trust with password", want: "can not utilize --pg-su-auth-method trust",
-			args: []string{suPassFlag, "--pg-su-local-auth-method=trust", replUserFlag, replPassFlag}},
-		{name: "trust without passwords", want: uidErr,
-			args: []string{"--pg-su-auth-method=trust", replUserFlag, "--pg-repl-auth-method=trust"}},
-		{name: "cert without passwords", want: uidErr,
-			args: []string{"--pg-su-auth-method=cert", replUserFlag, "--pg-repl-auth-method=cert"}},
-		{name: "invalid repl auth method", want: "--pg-repl-auth-method must be one of",
-			args: []string{suPassFlag, replUserFlag, "--pg-repl-auth-method=bogus"}},
-		{name: "invalid su auth method", want: "--pg-su-auth-method must be one of",
-			args: []string{"--pg-su-auth-method=bogus", replUserFlag, replPassFlag}},
+			change: func(c *config) { c.pgSULocalAuthMethod = authTrust }},
+		{name: "trust without passwords", change: func(c *config) {
+			c.pgSUAuthMethod, c.pgSUPassword, c.pgReplAuthMethod, c.pgReplPassword = authTrust, "", authTrust, ""
+		}},
+		{name: "cert without passwords", change: func(c *config) {
+			c.pgSUAuthMethod, c.pgSUPassword, c.pgReplAuthMethod, c.pgReplPassword = authCert, "", authCert, ""
+		}},
+		{name: "peer is a valid auth method", change: func(c *config) { c.pgSULocalAuthMethod = authPeer }},
+		{name: "invalid repl auth method", want: "--pg-repl-auth-method must be one of: md5, trust, cert, ident or peer",
+			change: func(c *config) { c.pgReplAuthMethod = "bogus" }},
+		{name: "invalid su auth method", want: "--pg-su-auth-method must be one of: md5, trust, cert, ident or peer",
+			change: func(c *config) { c.pgSUAuthMethod = "bogus" }},
 		{name: "invalid su connection type", want: "--pg-su-connection-type must be one of",
-			args: []string{"--pg-su-connection-type=tcp", suPassFlag, replUserFlag, replPassFlag}},
+			change: func(c *config) { c.pgSUConnType = "tcp" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := append([]string{
-				"--data-dir=" + filepath.Join(dir, "data"),
-				"--cluster-name=test",
-				"--store-backend=etcdv3",
-				"--pg-listen-address=127.0.0.1",
-				"--uid=Not-A-Valid-UID",
-			}, tt.args...)
-			c := exec.Command(os.Args[0], "-test.run=^TestKeeperFlagHelper$")
-			c.Env = append(os.Environ(), keeperHelperEnv+"="+strings.Join(args, "\n"))
-			out, err := c.CombinedOutput()
-			if err == nil {
-				t.Errorf("keeper should have exited with an error, output:\n%s", out)
+			c := valid()
+			tt.change(c)
+			err := validateUsersConfig(context.Background(), c)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
 			}
-			if !strings.Contains(string(out), tt.want) {
-				t.Errorf("output should contain %q, got:\n%s", tt.want, out)
-			}
-			if tt.want != uidErr && strings.Contains(string(out), uidErr) {
-				t.Errorf("flags should have been refused before the uid check, got:\n%s", out)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("got %v, want an error containing %q", err, tt.want)
 			}
 		})
 	}
+
+	t.Run("fills the local auth methods and trims the passwords", func(t *testing.T) {
+		c := valid()
+		c.pgSUPassword, c.pgSUPasswordFile = "", suNLFile
+		if err := validateUsersConfig(context.Background(), c); err != nil {
+			t.Fatal(err)
+		}
+		if c.pgSULocalAuthMethod != authMd5 || c.pgReplLocalAuthMethod != authMd5 {
+			t.Errorf("local auth methods: got %q and %q, want md5", c.pgSULocalAuthMethod, c.pgReplLocalAuthMethod)
+		}
+		if c.pgSUPassword != "supass" {
+			t.Errorf("su password: got %q, want %q", c.pgSUPassword, "supass")
+		}
+	})
 }
 
 func TestDBLocalStateDeepCopy(t *testing.T) {
