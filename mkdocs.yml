@@ -86,3 +86,5 @@ nav:
   - API:
       - Certificates: api/certificates.md
       - Bootstrap design: api/bootstrap-design.md
+  - Deploy:
+      - Kubernetes: deploy/k8s.md
