@@ -367,101 +367,84 @@ func (s *KVBackedStore) GetClusterData(ctx context.Context) (*cluster.Data, *KVP
 	return cd, pair, nil
 }
 
-// SetKeeperInfo stores keeper info to a kv store
-func (s *KVBackedStore) SetKeeperInfo(ctx context.Context, id string, ms *cluster.KeeperInfo, ttl time.Duration) error {
-	msj, err := json.Marshal(ms)
+// putInfo stores the info of a member (keeper, sentinel or proxy) in dir, under its uid, with ttl (at least minTTL)
+func (s *KVBackedStore) putInfo(ctx context.Context, dir, uid string, info any, ttl time.Duration) error {
+	data, err := json.Marshal(info)
 	if err != nil {
 		return err
 	}
 	if ttl < minTTL {
 		ttl = minTTL
 	}
-	return s.store.Put(ctx, filepath.Join(s.clusterPath, keepersInfoDir, id), msj, &WriteOptions{TTL: ttl})
+	return s.store.Put(ctx, filepath.Join(s.clusterPath, dir, uid), data, &WriteOptions{TTL: ttl})
 }
 
-// GetKeepersInfo retrieves all keeper info from a kv store
-func (s *KVBackedStore) GetKeepersInfo(ctx context.Context) (cluster.KeepersInfo, error) {
-	keepers := cluster.KeepersInfo{}
-	pairs, err := s.store.List(ctx, filepath.Join(s.clusterPath, keepersInfoDir))
+// listInfos returns the infos of the members (keepers, sentinels or proxies) in dir; none when dir doesn't exist
+func listInfos[T any](ctx context.Context, s *KVBackedStore, dir string) ([]*T, error) {
+	pairs, err := s.store.List(ctx, filepath.Join(s.clusterPath, dir))
 	if err != nil {
 		if err != ErrKeyNotFound {
 			return nil, err
 		}
-		return keepers, nil
+		return nil, nil
 	}
+	infos := make([]*T, 0, len(pairs))
 	for _, pair := range pairs {
-		var ki cluster.KeeperInfo
-		err = json.Unmarshal(pair.Value, &ki)
-		if err != nil {
+		var info T
+		if err = json.Unmarshal(pair.Value, &info); err != nil {
 			return nil, err
 		}
-		keepers[ki.UID] = &ki
+		infos = append(infos, &info)
+	}
+	return infos, nil
+}
+
+// SetKeeperInfo stores info on a keeper to the kv store
+func (s *KVBackedStore) SetKeeperInfo(ctx context.Context, id string, ms *cluster.KeeperInfo, ttl time.Duration) error {
+	return s.putInfo(ctx, keepersInfoDir, id, ms, ttl)
+}
+
+// GetKeepersInfo retrieves all keeper info from a kv store
+func (s *KVBackedStore) GetKeepersInfo(ctx context.Context) (cluster.KeepersInfo, error) {
+	infos, err := listInfos[cluster.KeeperInfo](ctx, s, keepersInfoDir)
+	if err != nil {
+		return nil, err
+	}
+	keepers := cluster.KeepersInfo{}
+	for _, ki := range infos {
+		keepers[ki.UID] = ki
 	}
 	return keepers, nil
 }
 
 // SetSentinelInfo stores info on a sentinel to the kv store
 func (s *KVBackedStore) SetSentinelInfo(ctx context.Context, si *cluster.SentinelInfo, ttl time.Duration) error {
-	sij, err := json.Marshal(si)
-	if err != nil {
-		return err
-	}
-	if ttl < minTTL {
-		ttl = minTTL
-	}
-	return s.store.Put(ctx, filepath.Join(s.clusterPath, sentinelsInfoDir, si.UID), sij, &WriteOptions{TTL: ttl})
+	return s.putInfo(ctx, sentinelsInfoDir, si.UID, si, ttl)
 }
 
 // GetSentinelsInfo retrieves all sentinel info from a kv store
 func (s *KVBackedStore) GetSentinelsInfo(ctx context.Context) (cluster.SentinelsInfo, error) {
-	ssi := cluster.SentinelsInfo{}
-	pairs, err := s.store.List(ctx, filepath.Join(s.clusterPath, sentinelsInfoDir))
+	infos, err := listInfos[cluster.SentinelInfo](ctx, s, sentinelsInfoDir)
 	if err != nil {
-		if err != ErrKeyNotFound {
-			return nil, err
-		}
-		return ssi, nil
+		return nil, err
 	}
-	for _, pair := range pairs {
-		var si cluster.SentinelInfo
-		err = json.Unmarshal(pair.Value, &si)
-		if err != nil {
-			return nil, err
-		}
-		ssi = append(ssi, &si)
-	}
-	return ssi, nil
+	return append(cluster.SentinelsInfo{}, infos...), nil
 }
 
 // SetProxyInfo stores info on a proxy to the kv store
 func (s *KVBackedStore) SetProxyInfo(ctx context.Context, pi *cluster.ProxyInfo, ttl time.Duration) error {
-	pij, err := json.Marshal(pi)
-	if err != nil {
-		return err
-	}
-	if ttl < minTTL {
-		ttl = minTTL
-	}
-	return s.store.Put(ctx, filepath.Join(s.clusterPath, proxiesInfoDir, pi.UID), pij, &WriteOptions{TTL: ttl})
+	return s.putInfo(ctx, proxiesInfoDir, pi.UID, pi, ttl)
 }
 
 // GetProxiesInfo retrieves all proxy info from a kv store
 func (s *KVBackedStore) GetProxiesInfo(ctx context.Context) (cluster.ProxiesInfo, error) {
-	psi := cluster.ProxiesInfo{}
-	pairs, err := s.store.List(ctx, filepath.Join(s.clusterPath, proxiesInfoDir))
+	infos, err := listInfos[cluster.ProxyInfo](ctx, s, proxiesInfoDir)
 	if err != nil {
-		if err != ErrKeyNotFound {
-			return nil, err
-		}
-		return psi, nil
+		return nil, err
 	}
-	for _, pair := range pairs {
-		var pi cluster.ProxyInfo
-		err = json.Unmarshal(pair.Value, &pi)
-		if err != nil {
-			return nil, err
-		}
-		psi[pi.UID] = &pi
+	psi := cluster.ProxiesInfo{}
+	for _, pi := range infos {
+		psi[pi.UID] = pi
 	}
 	return psi, nil
 }

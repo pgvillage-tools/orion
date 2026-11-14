@@ -274,115 +274,85 @@ func (s *KubeStore) GetClusterData(ctx context.Context) (*cluster.Data, *KVPair,
 	return cd, &KVPair{Value: []byte(cdj)}, nil
 }
 
-// SetKeeperInfo updates info to annotations on a Keeper pod
-func (s *KubeStore) SetKeeperInfo(_ context.Context, _ string, ms *cluster.KeeperInfo, _ time.Duration) error {
-	msj, err := json.Marshal(ms)
+// setInfo publishes the info of this member (keeper, sentinel or proxy) in the status annotation of its own pod
+func (s *KubeStore) setInfo(info any) error {
+	data, err := json.Marshal(info)
 	if err != nil {
 		return err
 	}
-	return s.patchKubeStatusAnnotation(msj)
+	return s.patchKubeStatusAnnotation(data)
+}
+
+// podInfos returns the infos in the status annotations of the pods of a component; a pod whose member didn't publish
+// its info yet is skipped
+func podInfos[T any](ctx context.Context, s *KubeStore, component ComponentLabelValue) ([]*T, error) {
+	result, err := s.client.CoreV1().Pods(s.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: s.labelSelector(component).String(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest version of pod: %v", err)
+	}
+	infos := make([]*T, 0, len(result.Items))
+	for _, pod := range result.Items {
+		data, ok := pod.Annotations[util.KubeStatusAnnnotation]
+		if !ok {
+			continue
+		}
+		var info T
+		if err = json.Unmarshal([]byte(data), &info); err != nil {
+			return nil, err
+		}
+		infos = append(infos, &info)
+	}
+	return infos, nil
+}
+
+// SetKeeperInfo updates info to annotations on a Keeper pod
+func (s *KubeStore) SetKeeperInfo(_ context.Context, _ string, ms *cluster.KeeperInfo, _ time.Duration) error {
+	return s.setInfo(ms)
 }
 
 // GetKeepersInfo reads info from annotations on all Keeper pods
 func (s *KubeStore) GetKeepersInfo(ctx context.Context) (cluster.KeepersInfo, error) {
-	keepers := cluster.KeepersInfo{}
-
-	podsClient := s.client.CoreV1().Pods(s.namespace)
-
-	listOpts := metav1.ListOptions{
-		LabelSelector: s.labelSelector(KeeperLabelValue).String(),
-	}
-	result, err := podsClient.List(ctx, listOpts)
+	infos, err := podInfos[cluster.KeeperInfo](ctx, s, KeeperLabelValue)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get latest version of pod: %v", err)
+		return nil, err
 	}
-
-	pods := result.Items
-	for _, pod := range pods {
-		var ki cluster.KeeperInfo
-		if kij, ok := pod.Annotations[util.KubeStatusAnnnotation]; ok {
-			err = json.Unmarshal([]byte(kij), &ki)
-			if err != nil {
-				return nil, err
-			}
-			keepers[ki.UID] = &ki
-		}
+	keepers := cluster.KeepersInfo{}
+	for _, ki := range infos {
+		keepers[ki.UID] = ki
 	}
 	return keepers, nil
 }
 
 // SetSentinelInfo updates info on a Sentinel pod
 func (s *KubeStore) SetSentinelInfo(_ context.Context, si *cluster.SentinelInfo, _ time.Duration) error {
-	sij, err := json.Marshal(si)
-	if err != nil {
-		return err
-	}
-	return s.patchKubeStatusAnnotation(sij)
+	return s.setInfo(si)
 }
 
 // GetSentinelsInfo reads info on all Sentinel pods
 func (s *KubeStore) GetSentinelsInfo(ctx context.Context) (cluster.SentinelsInfo, error) {
-	ssi := cluster.SentinelsInfo{}
-
-	podsClient := s.client.CoreV1().Pods(s.namespace)
-
-	listOpts := metav1.ListOptions{
-		LabelSelector: s.labelSelector(SentinelLabelValue).String(),
-	}
-	result, err := podsClient.List(ctx, listOpts)
+	infos, err := podInfos[cluster.SentinelInfo](ctx, s, SentinelLabelValue)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get latest version of pod: %v", err)
+		return nil, err
 	}
-
-	pods := result.Items
-	for _, pod := range pods {
-		var si cluster.SentinelInfo
-		sij, ok := pod.Annotations[util.KubeStatusAnnnotation]
-		if !ok {
-			// a sentinel that didn't publish its info yet (like GetKeepersInfo and GetProxiesInfo skip it)
-			continue
-		}
-		if err = json.Unmarshal([]byte(sij), &si); err != nil {
-			return nil, err
-		}
-		ssi = append(ssi, &si)
-	}
-	return ssi, nil
+	return append(cluster.SentinelsInfo{}, infos...), nil
 }
 
 // SetProxyInfo updates info to annotations on a Proxy pod
 func (s *KubeStore) SetProxyInfo(_ context.Context, pi *cluster.ProxyInfo, _ time.Duration) error {
-	pij, err := json.Marshal(pi)
-	if err != nil {
-		return err
-	}
-	return s.patchKubeStatusAnnotation(pij)
+	return s.setInfo(pi)
 }
 
 // GetProxiesInfo reads info from annotations on all Proxy pods
 func (s *KubeStore) GetProxiesInfo(ctx context.Context) (cluster.ProxiesInfo, error) {
-	psi := cluster.ProxiesInfo{}
-
-	podsClient := s.client.CoreV1().Pods(s.namespace)
-
-	listOpts := metav1.ListOptions{
-		LabelSelector: s.labelSelector(ProxyLabelValue).String(),
-	}
-	result, err := podsClient.List(ctx, listOpts)
+	infos, err := podInfos[cluster.ProxyInfo](ctx, s, ProxyLabelValue)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get latest version of pod: %v", err)
+		return nil, err
 	}
-
-	pods := result.Items
-	for _, pod := range pods {
-		var pi cluster.ProxyInfo
-		if pij, ok := pod.Annotations[util.KubeStatusAnnnotation]; ok {
-			err = json.Unmarshal([]byte(pij), &pi)
-			if err != nil {
-				return nil, err
-			}
-			psi[pi.UID] = &pi
-		}
+	psi := cluster.ProxiesInfo{}
+	for _, pi := range infos {
+		psi[pi.UID] = pi
 	}
 	return psi, nil
 }

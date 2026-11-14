@@ -367,12 +367,12 @@ func handledFileRemove(fh *os.File) {
 	handledFileClose(fh)
 }
 
-func dbExec(ctx context.Context, db *sql.DB, query string, args ...any) (sql.Result, error) {
-	return db.ExecContext(ctx, query, args...)
+func dbExec(ctx context.Context, db *sql.DB, query string) (sql.Result, error) {
+	return db.ExecContext(ctx, query)
 }
 
-func query(ctx context.Context, db *sql.DB, query string, args ...any) (*sql.Rows, error) {
-	return db.QueryContext(ctx, query, args...)
+func query(ctx context.Context, db *sql.DB, query string) (*sql.Rows, error) {
+	return db.QueryContext(ctx, query)
 }
 
 func ping(ctx context.Context, connParams ConnParams) error {
@@ -389,118 +389,69 @@ func ping(ctx context.Context, connParams ConnParams) error {
 	return nil
 }
 
+// execWithoutLogging runs stmt in a transaction with log_statement off, so the password in it doesn't end up in the
+// postgres log
+func execWithoutLogging(ctx context.Context, connParams ConnParams, stmt string) error {
+	db, err := sql.Open(globalDB, connParams.ConnString())
+	if err != nil {
+		return err
+	}
+	defer handledDbClose(db)
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf("set local log_statement = %s", pq.QuoteLiteral("none"))); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, stmt); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// execStmt runs stmt
+func execStmt(ctx context.Context, connParams ConnParams, stmt string) error {
+	db, err := sql.Open(globalDB, connParams.ConnString())
+	if err != nil {
+		return err
+	}
+	defer handledDbClose(db)
+
+	_, err = dbExec(ctx, db, stmt)
+	return err
+}
+
+// setPassword sets the password of role username
 func setPassword(ctx context.Context, connParams ConnParams, username, password string) error {
-	db, err := sql.Open(globalDB, connParams.ConnString())
-	if err != nil {
-		return err
-	}
-	defer handledDbClose(db)
-
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf("set local log_statement = %s", pq.QuoteLiteral("none"))
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	query = fmt.Sprintf(
-		"alter role %s with encrypted password %s",
-		pq.QuoteIdentifier(username),
-		pq.QuoteLiteral(password),
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
+	return execWithoutLogging(ctx, connParams, fmt.Sprintf("alter role %s with encrypted password %s",
+		pq.QuoteIdentifier(username), pq.QuoteLiteral(password)))
 }
 
-// TODO: remove _ parameters
-
-func createRole(ctx context.Context, connParams ConnParams, _ []string, username, password string) error {
-	db, err := sql.Open(globalDB, connParams.ConnString())
-	if err != nil {
-		return err
-	}
-	defer handledDbClose(db)
-
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf("set local log_statement = %s", pq.QuoteLiteral("none"))
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	query = fmt.Sprintf(
+// createRole creates role username for replication, with password
+func createRole(ctx context.Context, connParams ConnParams, username, password string) error {
+	return execWithoutLogging(ctx, connParams, fmt.Sprintf(
 		"create role %s with login replication encrypted password %s",
-		pq.QuoteIdentifier(username),
-		pq.QuoteLiteral(password),
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
+		pq.QuoteIdentifier(username), pq.QuoteLiteral(password)))
 }
 
-func createPasswordlessRole(ctx context.Context, connParams ConnParams, _ []string, username string) error {
-	db, err := sql.Open(globalDB, connParams.ConnString())
-	if err != nil {
-		return err
-	}
-	defer handledDbClose(db)
-
-	_, err = dbExec(ctx, db, fmt.Sprintf(`create role "%s" with login replication;`, username))
-	return err
+// alterRole gives role username login and replication, with password
+func alterRole(ctx context.Context, connParams ConnParams, username, password string) error {
+	return execWithoutLogging(ctx, connParams, fmt.Sprintf("alter role %s with login replication encrypted password %s",
+		pq.QuoteIdentifier(username), pq.QuoteLiteral(password)))
 }
 
-func alterRole(ctx context.Context, connParams ConnParams, _ []string, username, password string) error {
-	db, err := sql.Open(globalDB, connParams.ConnString())
-	if err != nil {
-		return err
-	}
-	defer handledDbClose(db)
-
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-
-	query := fmt.Sprintf("set local log_statement = %s", pq.QuoteLiteral("none"))
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-
-	query = fmt.Sprintf(
-		"alter role %s with login replication encrypted password %s",
-		pq.QuoteIdentifier(username),
-		pq.QuoteLiteral(password),
-	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
+// createPasswordlessRole creates role username for replication, without a password
+func createPasswordlessRole(ctx context.Context, connParams ConnParams, username string) error {
+	return execStmt(ctx, connParams, fmt.Sprintf("create role %s with login replication", pq.QuoteIdentifier(username)))
 }
 
-func alterPasswordlessRole(ctx context.Context, connParams ConnParams, _ []string, username string) error {
-	db, err := sql.Open(globalDB, connParams.ConnString())
-	if err != nil {
-		return err
-	}
-	defer handledDbClose(db)
-
-	_, err = dbExec(ctx, db, fmt.Sprintf(`alter role "%s" with login replication;`, username))
-	return err
+// alterPasswordlessRole gives role username login and replication
+func alterPasswordlessRole(ctx context.Context, connParams ConnParams, username string) error {
+	return execStmt(ctx, connParams, fmt.Sprintf("alter role %s with login replication", pq.QuoteIdentifier(username)))
 }
 
 // getReplicatinSlots return existing replication slots. On PostgreSQL > 10 we
