@@ -29,8 +29,10 @@ const (
 	deployTimeout = 5 * time.Minute
 	// convergedFor is how long the keepers must stay converged before a failover (two sentinel checks)
 	convergedFor = 15 * time.Second
-	apiPort      = 8443
-	proxyPort    = 5432
+	// fencingTimeout is the time for a proxy to stop serving without its store (proxyTimeout is 15s)
+	fencingTimeout = time.Minute
+	apiPort        = 8443
+	proxyPort      = 5432
 )
 
 // The path of docs/deploy/k8s.md, front to back, on kind: deploy the manifests, create a cluster through the api, see
@@ -296,5 +298,47 @@ var _ = Describe("orion on Kubernetes", Ordered, func() {
 		Eventually(func() error { return pgExec(ctx, "INSERT INTO pods VALUES (103)") }).
 			WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
 		Ω(count(ctx, "pods")).To(Equal(103))
+	})
+
+	It("stops serving through the proxy while orion can't use the Kubernetes api, and recovers", func(ctx context.Context) {
+		Eventually(func(g Gomega) { converged(g) }).
+			WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+		Ω(pgExec(ctx, "INSERT INTO pods VALUES (104)")).To(Succeed())
+
+		// Without the RoleBinding every call of orion to the Kubernetes api (its store) is refused: the store is gone
+		// for orion, while kubectl and the port-forwards keep working
+		mustKubectl(ctx, "delete", "rolebinding", "orion")
+		restored := false
+		restore := func(ctx context.Context) {
+			if !restored {
+				mustKubectl(ctx, "apply", "--kustomize", "manifests")
+				restored = true
+			}
+		}
+		DeferCleanup(restore)
+
+		// the proxies fence: without the store they close their connections, and refuse new ones
+		Eventually(func() error {
+			return onProxy(ctx, func(conn helpers.PgConnParams) error { return helpers.PgPing(ctx, conn) })
+		}).WithContext(ctx).WithTimeout(fencingTimeout).WithPolling(helpers.PollInterval).ShouldNot(Succeed())
+		Consistently(func() error {
+			return onProxy(ctx, func(conn helpers.PgConnParams) error { return helpers.PgPing(ctx, conn) })
+		}).WithContext(ctx).WithTimeout(10 * time.Second).WithPolling(helpers.PollInterval).ShouldNot(Succeed())
+		// and the api can't read the status
+		Eventually(func(g Gomega) {
+			_, code, _ := apiClient.GetStatus()
+			g.Ω(code).To(Equal(http.StatusInternalServerError))
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+
+		restore(ctx)
+
+		// everything comes back by itself: a converged cluster, every row, writable through the proxy
+		Eventually(func(g Gomega) {
+			converged(g)
+			g.Ω(status(g).Sentinels).To(ContainElement(HaveField("Leader", true)))
+		}).WithContext(ctx).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
+		Eventually(func() error { return pgExec(ctx, "INSERT INTO pods VALUES (105)") }).
+			WithContext(ctx).WithTimeout(time.Minute).WithPolling(helpers.PollInterval).Should(Succeed())
+		Ω(count(ctx, "pods")).To(Equal(105))
 	})
 })
