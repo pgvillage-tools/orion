@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	cluster "github.com/pgvillage-tools/orion/api/v1"
@@ -50,6 +51,8 @@ const (
 	leaseDuration = 15 * time.Second
 	// renewDeadline is the duration the leader retries refreshing leadership before giving up
 	renewDeadline = 10 * time.Second
+	// retryPeriod is the duration between tries to acquire or renew leadership
+	retryPeriod = 2 * time.Second
 
 	// DefaultComponentLabel is the defaultlabel to set when no label is defined
 	DefaultComponentLabel = "component"
@@ -334,11 +337,13 @@ func (s *KubeStore) GetSentinelsInfo(ctx context.Context) (cluster.SentinelsInfo
 	pods := result.Items
 	for _, pod := range pods {
 		var si cluster.SentinelInfo
-		if sij, ok := pod.Annotations[util.KubeStatusAnnnotation]; ok {
-			err = json.Unmarshal([]byte(sij), &si)
-			if err != nil {
-				return nil, err
-			}
+		sij, ok := pod.Annotations[util.KubeStatusAnnnotation]
+		if !ok {
+			// a sentinel that didn't publish its info yet (like GetKeepersInfo and GetProxiesInfo skip it)
+			continue
+		}
+		if err = json.Unmarshal([]byte(sij), &si); err != nil {
+			return nil, err
 		}
 		ssi = append(ssi, &si)
 	}
@@ -390,12 +395,7 @@ type KubeElection struct {
 	resourceName string
 
 	running bool
-
-	electedCh chan bool
-	errCh     chan error
-
-	ctx    context.Context
-	cancel context.CancelFunc
+	cancel  context.CancelFunc
 
 	rl resourcelock.Interface
 }
@@ -406,16 +406,17 @@ func NewKubeElection(
 	podName, namespace, clusterName, candidateUID string,
 ) (*KubeElection, error) {
 	resourceName := fmt.Sprintf("%s-%s", util.KubeResourcePrefix, clusterName)
-	rl, err := resourcelock.New("configmaps",
+	// client-go only supports Lease locks (coordination.k8s.io/v1): it removed the configmaps lock that stolon used.
+	// So the sentinels (and the api, for Leader) need get, create and update on leases.
+	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		namespace,
 		resourceName,
 		kubecli.CoreV1(),
-		nil,
+		kubecli.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
 			Identity:      candidateUID,
 			EventRecorder: createRecorder(kubecli, "orion-sentinel", namespace),
 		})
-	// https://github.com/kubernetes/client-go/blob/master/tools/leaderelection/resourcelock/interface.go
 	if err != nil {
 		return nil, fmt.Errorf("error creating lock: %v", err)
 	}
@@ -435,14 +436,15 @@ func (e *KubeElection) RunForElection(ctx context.Context) (<-chan bool, <-chan 
 		panic("already running")
 	}
 
-	e.electedCh = make(chan bool)
-	e.errCh = make(chan error)
-	e.ctx, e.cancel = context.WithCancel(ctx)
+	electedCh := make(chan bool)
+	errCh := make(chan error)
+	ctx, e.cancel = context.WithCancel(ctx)
 
 	e.running = true
-	go e.campaign()
+	// The campaign gets its own context and channels: a next RunForElection doesn't touch those of a stopped one.
+	go e.campaign(ctx, electedCh, errCh)
 
-	return e.electedCh, e.errCh
+	return electedCh, errCh
 }
 
 // Stop cancels campaign
@@ -454,40 +456,70 @@ func (e *KubeElection) Stop() {
 	e.running = false
 }
 
-// Leader returns the current leader
+// Leader returns the current leader, or ErrElectionNoLeader when there is none (like the etcd election): no sentinel
+// created the lease yet, or it has no holder.
 func (e *KubeElection) Leader(ctx context.Context) (string, error) {
 	ler, _, err := e.rl.Get(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get leader election record: %v", err)
+	if apierrors.IsNotFound(err) {
+		return "", ErrElectionNoLeader
+	} else if err != nil {
+		return "", fmt.Errorf("failed to get leader election record: %w", err)
 	}
-	if ler == nil {
-		return "", nil
+	if ler == nil || ler.HolderIdentity == "" {
+		return "", ErrElectionNoLeader
 	}
 
 	return ler.HolderIdentity, nil
 }
 
-func (e *KubeElection) campaign() {
-	defer close(e.electedCh)
-	defer close(e.errCh)
+// campaign runs for leadership until ctx is canceled (by Stop), and reports on electedCh whether this candidate leads.
+// It closes both channels when it stops.
+func (e *KubeElection) campaign(ctx context.Context, electedCh chan<- bool, errCh chan<- error) {
+	// OnStartedLeading runs in a goroutine of its own, so it can still be sending when the campaign returns: mu makes
+	// the close wait for that send (which ends, since the campaign only returns once ctx is done), and later sends skip
+	// the closed channel.
+	var (
+		mu     sync.Mutex
+		closed bool
+	)
+	defer func() {
+		mu.Lock()
+		defer mu.Unlock()
+		closed = true
+		close(electedCh)
+		close(errCh)
+	}()
 
-	for {
-		e.electedCh <- false
-
-		leaderelection.RunOrDie(e.ctx, leaderelection.LeaderElectionConfig{
+	// send reports elected, unless the campaign is stopped: then nobody may read electedCh anymore.
+	send := func(elected bool) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		// checked first: with a reader waiting, select would pick either case once ctx is done
+		if closed || ctx.Err() != nil {
+			return false
+		}
+		select {
+		case electedCh <- elected:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	for send(false) {
+		// RunOrDie returns when leadership is lost, or right away when ctx is canceled.
+		leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 			Lock:          e.rl,
 			LeaseDuration: leaseDuration,
 			RenewDeadline: renewDeadline,
-			RetryPeriod:   2 * time.Second,
+			RetryPeriod:   retryPeriod,
 			Callbacks: leaderelection.LeaderCallbacks{
-				OnStartedLeading: func(context.Context) {
-					e.electedCh <- true
-				},
-				OnStoppedLeading: func() {
-					e.electedCh <- false
-				},
+				OnStartedLeading: func(context.Context) { send(true) },
+				OnStoppedLeading: func() { send(false) },
 			},
 		})
+		if ctx.Err() != nil {
+			return
+		}
 	}
 }
 
