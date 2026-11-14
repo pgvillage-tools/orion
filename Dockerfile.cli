@@ -34,7 +34,4 @@ RUN apt-get update && \
 WORKDIR /
 COPY --from=builder /workspace/orion-cli ./
 
-ENV ORIONCLI_CLUSTER_NAME=orion \
-    ORIONCLI_STORE_BACKEND=etcdv3
-
 ENTRYPOINT ["/orion-cli"]

@@ -65,27 +65,6 @@ func runEtcd(
 	return etcdContainer, fmt.Sprintf("http://%s:2379", ips[0]), nil
 }
 
-func runOrionCli(
-	ctx context.Context,
-	etcdEndpoints string,
-	nw *testcontainers.DockerNetwork,
-	command ...string,
-) (testcontainers.Container, error) {
-	return testcontainers.GenericContainer(
-		ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: testcontainers.ContainerRequest{
-				Cmd: command,
-				Env: map[string]string{
-					"ORIONCLI_STORE_ENDPOINTS": etcdEndpoints,
-					"ORIONCLI_LOG_LEVEL":       "debug",
-				},
-				Networks: []string{nw.Name},
-				Image:    "cli",
-			},
-			Started: true,
-		})
-}
-
 func runKeeper(
 	ctx context.Context,
 	etcdEndpoints string,

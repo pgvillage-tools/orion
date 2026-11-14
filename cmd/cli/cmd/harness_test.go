@@ -44,8 +44,7 @@ import (
 )
 
 const (
-	testClusterName = "test-cluster"
-	testPollWait    = 5 * time.Millisecond
+	testPollWait = 5 * time.Millisecond
 )
 
 var (
@@ -227,7 +226,7 @@ func (f *fakeAPI) url(path string) string {
 	return "https://127.0.0.1:" + f.port() + path
 }
 
-// run runs the cli against the fake api: args, followed by the flags for the api and the store
+// run runs the cli against the fake api: args, followed by the flags for the api
 func (f *fakeAPI) run(args ...string) (string, string, error) {
 	f.t.Helper()
 	return f.runWith(context.Background(), "", args...)
@@ -236,8 +235,7 @@ func (f *fakeAPI) run(args ...string) (string, string, error) {
 // runWith runs the cli against the fake api with a context and stdin
 func (f *fakeAPI) runWith(ctx context.Context, stdin string, args ...string) (string, string, error) {
 	f.t.Helper()
-	args = append(args, "--host", "127.0.0.1", "--port", f.port(), "--timeout", "5s",
-		"--cluster-name", testClusterName, "--store-backend", "etcdv3")
+	args = append(args, "--host", "127.0.0.1", "--port", f.port(), "--timeout", "5s")
 	return execute(ctx, stdin, args...)
 }
 
