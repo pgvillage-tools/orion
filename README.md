@@ -71,7 +71,7 @@ make
 
 Orion tries to be resilient to any partitioning problem. The cluster view is computed by the leader sentinel and is useful to avoid data loss (one example over all avoid that old dead masters coming back are elected as the new master).
 
-There can be tons of different partitioning cases. The primary ones are covered (and in future more will be added) by various [integration tests](tests/integration)
+There can be tons of different partitioning cases. The primary ones are covered by the [end-to-end tests](tests/README.md): crashed, frozen and wiped primaries, a store that is away, synchronous replication, and on Kubernetes deleted and hanging pods.
 
 ## FAQ
 

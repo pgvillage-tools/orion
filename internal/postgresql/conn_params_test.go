@@ -37,32 +37,10 @@ var _ = Describe("ConnParams", func() {
 			Ω(cp1.Equals(cp2)).To(BeTrue())
 		})
 	})
-	When("Parsing", func() {
-		It("should work as expected", func() {
-			cn, err := ParseConnString(`host=myhost port=5433 f=v`)
-			Ω(err).NotTo(HaveOccurred())
-			Ω(cn).To(HaveKeyWithValue(ConnParamKeyHost, "myhost"))
-			Ω(cn).To(HaveKeyWithValue(ConnParamKey("f"), "v"))
-		})
-	})
-	When("Parsing url", func() {
-		It("should work as expected", func() {
-			for _, url := range []string{
-				`postgres://myself:password@myhost:5434/mydb1`,
-				`postgresql://myself:password@myhost:5434/mydb1`,
-			} {
-				cn, err := URLToConnParams(url)
-				Ω(err).NotTo(HaveOccurred())
-				Ω(cn).To(HaveKeyWithValue(ConnParamKeyHost, "myhost"))
-				Ω(cn).To(HaveKeyWithValue(ConnParamKeyPort, "5434"))
-				Ω(cn).To(HaveKeyWithValue(ConnParamKeyUser, "myself"))
-			}
-		})
-	})
 	When("Getting as connstring", func() {
 		It("should work as expected", func() {
-			cn, err := URLToConnParams(`postgresql://myself:password@myhost:5434/mydb1`)
-			Ω(err).NotTo(HaveOccurred())
+			cn := ConnParams{ConnParamKeyHost: "myhost", ConnParamKeyPort: "5434", ConnParamKeyUser: "myself",
+				ConnParamKeyPassword: "password", ConnParamKeyDbName: "mydb1"}
 			Ω(cn.ConnString()).To(Equal("dbname=mydb1 host=myhost password=password port=5434 user=myself"))
 		})
 	})

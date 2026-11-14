@@ -36,9 +36,3 @@ make kind-e2e-setup k8s-e2e-test         # the k8s suite on a kind cluster
 ```
 
 With podman, set `CONTAINER_TOOL=podman` and point `DOCKER_HOST` at the podman socket.
-
-## tests/integration
-
-The integration tests from stolon. They need the binaries (`ORIONKEEPER_BIN` and
-the like) and don't run in CI; they are kept as a source for scenarios to port to
-`system`.

@@ -23,58 +23,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("ParseConnString", func() {
-	DescribeTable("parses valid connection strings",
-		func(in string, expected ConnParams) {
-			cp, err := ParseConnString(in)
-			Ω(err).NotTo(HaveOccurred())
-			Ω(cp).To(Equal(expected))
-		},
-		Entry("empty", "", ConnParams{}),
-		Entry("only spaces", "   \t ", ConnParams{}),
-		Entry("spaces around =", "host = myhost  port =5432", ConnParams{"host": "myhost", "port": "5432"}),
-		Entry("empty value at the end", "host=myhost user=", ConnParams{"host": "myhost", "user": ""}),
-		Entry("empty value with trailing spaces", "user=   ", ConnParams{"user": ""}),
-		Entry("escaped space", `password=a\ b`, ConnParams{"password": "a b"}),
-		Entry("quoted value", `password='a b' user=me`, ConnParams{"password": "a b", "user": "me"}),
-		Entry("quoted value with escapes", `password='it\'s \\ ok'`, ConnParams{"password": `it's \ ok`}),
-		Entry("empty quoted value", `password=''`, ConnParams{"password": ""}),
-	)
-	DescribeTable("rejects invalid connection strings",
-		func(in string, expectedErr string) {
-			cp, err := ParseConnString(in)
-			Ω(err).To(MatchError(ContainSubstring(expectedErr)))
-			Ω(cp).To(BeNil())
-		},
-		Entry("key without =", "host", `missing "=" after "host"`),
-		Entry("key followed by spaces only", "host   ", `missing "=" after "host"`),
-		Entry("key followed by another key", "host port=1", `missing "=" after "host"`),
-		Entry("trailing backslash", `password=abc\`, "missing character after backslash"),
-		Entry("unterminated quote", `password='abc`, "unterminated quoted string literal"),
-	)
-})
-
-var _ = Describe("URLToConnParams", func() {
-	It("parses query parameters and urls without user, port or path", func() {
-		cp, err := URLToConnParams("postgres://myhost?sslmode=disable&application_name=app")
-		Ω(err).NotTo(HaveOccurred())
-		Ω(cp).To(Equal(ConnParams{
-			ConnParamKeyHost:    "myhost",
-			ConnParamKeySSLMode: "disable",
-			ConnParamKeyAppName: "app",
-		}))
-	})
-	DescribeTable("rejects invalid urls",
-		func(in string, expectedErr string) {
-			cp, err := URLToConnParams(in)
-			Ω(err).To(MatchError(ContainSubstring(expectedErr)))
-			Ω(cp).To(BeNil())
-		},
-		Entry("unparsable url", "postgres://my host:x/", "invalid"),
-		Entry("other protocol", "mysql://myhost/db", "invalid connection protocol: mysql"),
-	)
-})
-
 var _ = Describe("PGLsnToInt", func() {
 	DescribeTable("converts valid lsns",
 		func(in string, expected uint64) {
