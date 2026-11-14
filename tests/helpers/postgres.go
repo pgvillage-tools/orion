@@ -61,3 +61,26 @@ func IsReady(ctx context.Context, connParams PgConnParams, interval time.Duratio
 		}
 	}
 }
+
+// PgExec connects to postgres and runs sql (e.g. a create table or an insert)
+func PgExec(ctx context.Context, connParams PgConnParams, sql string, args ...any) error {
+	conn, err := pgx.Connect(ctx, connParams.ConnString())
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx, sql, args...)
+	return err
+}
+
+// PgQueryInt connects to postgres and returns the integer that query returns (e.g. a count)
+func PgQueryInt(ctx context.Context, connParams PgConnParams, query string, args ...any) (int, error) {
+	conn, err := pgx.Connect(ctx, connParams.ConnString())
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close(ctx)
+	var n int
+	err = conn.QueryRow(ctx, query, args...).Scan(&n)
+	return n, err
+}
