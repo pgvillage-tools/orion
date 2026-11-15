@@ -55,6 +55,8 @@ exclude:
     - ^cmd/api/[^/]+\.go$
     # moved from cmd/common.go, which was excluded too; its tests follow in a later PR
     - ^internal/store/
+    # moved from cmd/proxy/cmd, which was excluded too
+    - ^internal/proxy/
     - e2e
     - internal/mock
 
