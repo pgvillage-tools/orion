@@ -71,14 +71,6 @@ const (
 	authIdent = "ident"
 	authPeer  = "peer"
 
-	connParamUser     = "user"
-	connParamPassword = "password"
-	connParamHost     = "host"
-	connParamPort     = "port"
-	connParamAppName  = "application_name"
-	connParamDbName   = "dbname"
-	connParamSslMode  = "sslmode"
-
 	connTypeHost         = "host"
 	connTypeHostSsl      = "hostssl"
 	connTypeHostNoSsl    = "hostnossl"

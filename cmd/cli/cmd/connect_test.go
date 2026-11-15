@@ -161,7 +161,7 @@ func TestPKIInitCreatesTheCertificates(t *testing.T) {
 	}
 	expectContains(t, stdout, "Created the CA and the cli client certificate in "+cliDir,
 		"Created the api certificates in "+apiDir, "The private keys of the CA are in "+filepath.Join(cliDir, pki.CLICADir))
-	if !pki.CLIFiles(cliDir).Exist() || !pki.APIFiles(apiDir).Exist() {
+	if pki.CLIFiles(cliDir).Check() != nil || pki.APIFiles(apiDir).Check() != nil {
 		t.Fatal("expected the cli and the api files to exist")
 	}
 	certs, err := pki.APIFiles(apiDir).Certificates()

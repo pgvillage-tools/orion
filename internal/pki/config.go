@@ -149,16 +149,6 @@ func (f TLSFiles) ClientConfig() (*tls.Config, error) {
 	}, nil
 }
 
-// Exist returns true when all files exist
-func (f TLSFiles) Exist() bool {
-	for _, p := range []string{f.CertFile, f.KeyFile, f.CAFile} {
-		if _, err := os.Stat(p); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
 // ErrFilesNotFound is returned by Check when one of the files doesn't exist
 var ErrFilesNotFound = errors.New("certificates not found")
 

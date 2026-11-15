@@ -127,10 +127,3 @@ var _ = Describe("TLS", func() {
 })
 
 // copyFile is a helper function to copy a file from src to dst.
-func copyFile(dst, src string) {
-	input, err := os.ReadFile(src)
-	Expect(err).ToNot(HaveOccurred())
-
-	err = os.WriteFile(dst, input, 0644)
-	Expect(err).ToNot(HaveOccurred())
-}

@@ -21,30 +21,6 @@ import (
 )
 
 var _ = Describe("Slice", func() {
-	Describe("CompareStringSlice", func() {
-		It("should correctly compare string slices", func() {
-			tests := []struct {
-				a  []string
-				b  []string
-				ok bool
-			}{
-				{[]string{}, []string{}, true},
-				{[]string{"", ""}, []string{""}, false},
-				{[]string{"", ""}, []string{"", ""}, true},
-				{[]string{"a", "b"}, []string{"a", "b"}, true},
-				{[]string{"a", "b"}, []string{"b", "a"}, false},
-				{[]string{"a", "b", "c"}, []string{"a", "b"}, false},
-				{[]string{"a", "b", "c"}, []string{"a", "b", "c"}, true},
-				{[]string{"a", "b", "c"}, []string{"b", "c", "a"}, false},
-				{[]string{"a", "b", "c", "a"}, []string{"a", "c", "b", "b"}, false},
-			}
-
-			for _, tt := range tests {
-				Expect(CompareStringSlice(tt.a, tt.b)).To(Equal(tt.ok))
-			}
-		})
-	})
-
 	Describe("CompareStringSliceNoOrder", func() {
 		It("should correctly compare string slices ignoring order", func() {
 			tests := []struct {

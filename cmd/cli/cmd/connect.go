@@ -29,13 +29,6 @@ var cmdConnect = &cobra.Command{
 	Short: "connect to an API",
 }
 
-// InitOptions is a struct which can contain initiation options
-type connectOptions struct {
-	file string
-}
-
-var connOpts connectOptions
-
 func init() {
 	CmdCLI.AddCommand(cmdConnect)
 }

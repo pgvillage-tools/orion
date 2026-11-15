@@ -220,7 +220,7 @@ var _ = Describe("Helpers", func() {
 		Expect(files.CAFile).To(Equal(filepath.Join(home, "cli", pki.CLICAFile)))
 	})
 	It("reports missing files", func() {
-		Expect(pki.APIFiles("/nonexistent").Exist()).To(BeFalse())
+		Expect(pki.APIFiles("/nonexistent").Check()).To(MatchError(pki.ErrFilesNotFound))
 		_, err := pki.APIFiles("/nonexistent").ServerConfig()
 		Expect(err).To(HaveOccurred())
 	})

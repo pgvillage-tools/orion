@@ -27,20 +27,6 @@ func StringInSlice(s []string, e string) bool {
 	return false
 }
 
-// CompareStringSlice compares two slices of strings, a nil slice is considered an empty one
-func CompareStringSlice(a []string, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // CompareStringSliceNoOrder compares two slices of strings regardless of their order, a nil slice is considered an
 // empty one
 func CompareStringSliceNoOrder(a []string, b []string) bool {
