@@ -39,6 +39,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/postgresql"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
+	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/timer"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -78,7 +79,7 @@ var CmdSentinel = &cobra.Command{
 }
 
 type config struct {
-	cmd.CommonConfig
+	store.CommonConfig
 	initialClusterSpecFile string
 	debug                  bool
 }
@@ -87,7 +88,7 @@ var cfg config
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
-	cmd.AddCommonFlags(CmdSentinel, &cfg.CommonConfig)
+	store.AddCommonFlags(CmdSentinel, &cfg.CommonConfig)
 
 	CmdSentinel.PersistentFlags().StringVar(
 		&cfg.initialClusterSpecFile,
@@ -2084,12 +2085,12 @@ func NewSentinel(ctx context.Context, uid string, cfg *config, end chan bool) (*
 		}
 	}
 
-	e, err := cmd.NewStore(ctx, &cfg.CommonConfig)
+	e, err := store.NewStore(ctx, &cfg.CommonConfig)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create store: %v", err)
 	}
 
-	election, err := cmd.NewElection(ctx, &cfg.CommonConfig, uid)
+	election, err := store.NewElection(ctx, &cfg.CommonConfig, uid)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create election: %v", err)
 	}
@@ -2294,15 +2295,15 @@ func sentinel(c *cobra.Command, _ []string) {
 	if cfg.debug {
 		logging.SetStaticLevel("debug")
 	}
-	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 
-	if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
+	if err := store.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
-	cmd.SetMetrics(&cfg.CommonConfig, "sentinel")
+	store.SetMetrics(&cfg.CommonConfig, "sentinel")
 
 	uid := common.UID()
 	logger.Info().Str("uid", uid).Msg("sentinel uid")

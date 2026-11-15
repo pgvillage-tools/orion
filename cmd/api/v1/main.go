@@ -33,6 +33,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/pki"
+	"github.com/pgvillage-tools/orion/internal/store"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,7 +57,7 @@ const (
 )
 
 type config struct {
-	cmdcommon.CommonConfig
+	store.CommonConfig
 
 	baseURL     string
 	port        uint
@@ -73,7 +74,7 @@ type config struct {
 var cfg config
 
 func init() {
-	cmdcommon.AddCommonFlags(CmdWebApi, &cfg.CommonConfig)
+	store.AddCommonFlags(CmdWebApi, &cfg.CommonConfig)
 	// revive:disable
 	CmdWebApi.PersistentFlags().StringVar(&cfg.baseURL, "baseurl", "0.0.0.0",
 		"address for the api and probe ports to listen on")
@@ -158,11 +159,11 @@ func api(c *cobra.Command, _ []string) {
 	if cfg.debug {
 		logging.SetStaticLevel("debug")
 	}
-	if cmdcommon.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 
-	if err := cmdcommon.CheckCommonConfig(&cfg.CommonConfig); err != nil {
+	if err := store.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
 
@@ -190,7 +191,7 @@ func api(c *cobra.Command, _ []string) {
 	}
 	metrics := newAPIMetrics(prometheus.NewRegistry())
 	metrics.setCertificates(certs)
-	cmdcommon.SetMetrics(&cfg.CommonConfig, "api")
+	store.SetMetrics(&cfg.CommonConfig, "api")
 	warnExpiring(ctx, certs)
 	go func() {
 		for range time.Tick(expiryCheckPeriod) {
@@ -199,7 +200,7 @@ func api(c *cobra.Command, _ []string) {
 	}()
 
 	// one store connection for the whole api, shared by the store and the election client
-	cl, election, err := cmdcommon.NewStoreAndElection(ctx, &cfg.CommonConfig, "")
+	cl, election, err := store.NewStoreAndElection(ctx, &cfg.CommonConfig, "")
 	if err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("")
 	}

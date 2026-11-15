@@ -43,6 +43,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
+	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/rs/zerolog"
 
@@ -127,7 +128,7 @@ func (s *DBLocalState) DeepCopy() (dc *DBLocalState) {
 }
 
 type config struct {
-	cmd.CommonConfig
+	store.CommonConfig
 
 	uid                   string
 	dataDir               string
@@ -161,7 +162,7 @@ var cfg config
 
 func init() {
 	ctx := context.Background()
-	cmd.AddCommonFlags(CmdKeeper, &cfg.CommonConfig)
+	store.AddCommonFlags(CmdKeeper, &cfg.CommonConfig)
 	// revive:disable
 	CmdKeeper.PersistentFlags().StringVar(&cfg.uid, "id", "", "keeper uid (must be unique in the cluster and can contain only lower-case letters, numbers and the underscore character). If not provided a random uid will be generated.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.uid, "uid", "", "keeper uid (must be unique in the cluster and can contain only lower-case letters, numbers and the underscore character). If not provided a random uid will be generated.")
@@ -579,7 +580,7 @@ func NewPostgresKeeper(ctx context.Context, cfg *config, end chan error) (*Postg
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	ctx, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
-	e, err := cmd.NewStore(ctx, &cfg.CommonConfig)
+	e, err := store.NewStore(ctx, &cfg.CommonConfig)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create store: %v", err)
 	}
@@ -2273,7 +2274,7 @@ func keeper(c *cobra.Command, _ []string) {
 	if cfg.debug {
 		logging.SetStaticLevel("debug")
 	}
-	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 
@@ -2281,11 +2282,11 @@ func keeper(c *cobra.Command, _ []string) {
 		logger.Fatal().Msg("data dir required")
 	}
 
-	if err = cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
+	if err = store.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 		logger.Fatal().Msg(err.Error())
 	}
 
-	cmd.SetMetrics(&cfg.CommonConfig, "keeper")
+	store.SetMetrics(&cfg.CommonConfig, "keeper")
 
 	if err = os.MkdirAll(cfg.dataDir, ownerRWExecPermisions); err != nil {
 		logger.Fatal().AnErr(logging.KeyErr, err).Msg("cannot create data dir")

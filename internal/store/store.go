@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package cmd is a package which provides utilities that underlie the specific command
-package cmd
+// Package store builds the store and the election of an orion component from its common configuration
+package store
 
 import (
 	"context"
