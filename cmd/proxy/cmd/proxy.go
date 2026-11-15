@@ -30,6 +30,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -46,7 +47,7 @@ var CmdProxy = &cobra.Command{
 }
 
 type config struct {
-	cmd.CommonConfig
+	store.CommonConfig
 
 	listenAddress string
 	port          string
@@ -61,7 +62,7 @@ type config struct {
 var cfg config
 
 func init() {
-	cmd.AddCommonFlags(CmdProxy, &cfg.CommonConfig)
+	store.AddCommonFlags(CmdProxy, &cfg.CommonConfig)
 
 	CmdProxy.PersistentFlags().StringVar(
 		&cfg.listenAddress,
@@ -127,7 +128,7 @@ type ClusterChecker struct {
 
 // NewClusterChecker is a function which creates a new clusterchecker
 func NewClusterChecker(ctx context.Context, uid string, cfg config) (*ClusterChecker, error) {
-	e, err := cmd.NewStore(ctx, &cfg.CommonConfig)
+	e, err := store.NewStore(ctx, &cfg.CommonConfig)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create store: %v", err)
 	}
@@ -422,15 +423,15 @@ func proxy(c *cobra.Command, _ []string) {
 	if cfg.debug {
 		logging.SetStaticLevel("debug")
 	}
-	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 
-	if err := cmd.CheckCommonConfig(&cfg.CommonConfig); err != nil {
+	if err := store.CheckCommonConfig(&cfg.CommonConfig); err != nil {
 		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
-	cmd.SetMetrics(&cfg.CommonConfig, "proxy")
+	store.SetMetrics(&cfg.CommonConfig, "proxy")
 
 	if cfg.keepAliveIdle < 0 {
 		logger.Fatal().Msgf("tcp keepalive idle value must be greater or equal to 0")
