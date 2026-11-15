@@ -503,7 +503,7 @@ func (s *Spec) Validate() error {
 			return errors.New("standbyConfig undefined. Required when cluster role is \"standby\"")
 		}
 	default:
-		return fmt.Errorf("unknown role: %q", *s.InitMode)
+		return fmt.Errorf("unknown role: %q", *s.Role)
 	}
 	return nil
 }
