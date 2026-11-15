@@ -15,8 +15,6 @@
 
 package consensus
 
-// TODO: implement context
-
 import (
 	"context"
 	"errors"
@@ -99,29 +97,4 @@ func (s *libKVStore) Delete(ctx context.Context, key string) error {
 func (s *libKVStore) Close() error {
 	// TODO: implement zerolog
 	return s.store.Close()
-}
-
-type libkvElection struct {
-	store     *libKVStore
-	path      string
-	candidate *Candidate
-}
-
-func (e *libkvElection) RunForElection(ctx context.Context) (<-chan bool, <-chan error) {
-	return e.candidate.RunForElection(ctx)
-}
-
-func (e *libkvElection) Stop() {
-	e.candidate.Stop()
-}
-
-func (e *libkvElection) Leader(ctx context.Context) (string, error) {
-	pair, err := e.store.Get(ctx, e.path)
-	if err != nil {
-		if err != ErrKeyNotFound {
-			return "", err
-		}
-		return "", nil
-	}
-	return string(pair.Value), nil
 }
