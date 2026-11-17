@@ -14,7 +14,7 @@
 // limitations under the License.
 
 // Package cmd holds all CLI code for the keeper
-package cmd
+package sentinel
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
