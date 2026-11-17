@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func (h *Handlers) ClusterRoutes() []Route {
 
 // GetClusterHandler endpoint
 func (h *Handlers) GetClusterHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	if cd, pair, err := h.client.GetClusterData(ctx); err != nil {
@@ -59,7 +59,7 @@ func (h *Handlers) GetClusterHandler(w http.ResponseWriter, r *http.Request) {
 // PutClusterHandler endpoint
 func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, logger := logging.GetLogComponent(r.Context(), logging.WebApiComponent)
-	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(ctx, time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	reader := http.MaxBytesReader(w, r.Body, readMaxBytes)
@@ -118,7 +118,7 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 // PostClusterHandler creates the cluster, from the spec in the body (an empty body creates a new cluster with the
 // default spec), and answers 201 with the cluster data. It refuses (409) when there already is a cluster with a spec.
 func (h *Handlers) PostClusterHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	cd, pair, err := h.client.GetClusterData(ctx)

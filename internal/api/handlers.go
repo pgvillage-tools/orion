@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"bytes"
@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync/atomic"
+	"time"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
@@ -37,6 +39,8 @@ type Handlers struct {
 	election consensus.Election
 	Ready    *atomic.Bool
 	nextID   int
+	// storeTimeout is the deadline of the store calls of a request
+	storeTimeout time.Duration
 }
 
 // NewHandlers returns a new Handlers object. election is only used to read the sentinel leader; the api never runs for
@@ -47,6 +51,8 @@ func NewHandlers(client consensus.Store, election consensus.Election, ready *ato
 		election: election,
 		Ready:    ready,
 		nextID:   1,
+
+		storeTimeout: cluster.DefaultStoreTimeout,
 	}
 }
 

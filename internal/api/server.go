@@ -13,42 +13,44 @@
 // limitations under the License.
 
 // Package cmd holds all CLI code for the keeper
-package v1
+package api
 
 import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
-	"sync/atomic"
 	"syscall"
 	"time"
 
-	cmdcommon "github.com/pgvillage-tools/orion/cmd"
+	"sync/atomic"
+
 	"github.com/pgvillage-tools/orion/internal/auth"
-	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/pgvillage-tools/orion/internal/store"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/spf13/cobra"
 )
 
 const (
 	readMaxBytes int64 = 1 << 20
 
-	defaultPort       = uint(8443)
-	defaultProbePort  = uint(8080)
-	defaultPKIDir     = "~/.orion/api"
+	// DefaultPort is the default api port
+	DefaultPort = uint(8443)
+	// DefaultProbePort is the default probe port
+	DefaultProbePort = uint(8080)
+	// DefaultPKIDir is the default directory with the certificates of the api
+	DefaultPKIDir     = "~/.orion/api"
 	readHeaderTimeout = 10 * time.Second
-	// defaultShutdownDelay is the default time /readyz returns 503 before the api stops, on SIGTERM
-	defaultShutdownDelay = 5 * time.Second
+	// DefaultShutdownDelay is the default time /readyz returns 503 before the api stops, on SIGTERM
+	DefaultShutdownDelay = 5 * time.Second
 	// shutdownTimeout is the time the servers get to finish their requests when the api stops
 	shutdownTimeout   = 10 * time.Second
 	expiryCheckPeriod = 24 * time.Hour
@@ -56,66 +58,36 @@ const (
 	decimal           = 10
 )
 
-type config struct {
+// Config is the configuration of the api
+type Config struct {
 	store.CommonConfig
 
-	baseURL     string
-	port        uint
-	probePort   uint
-	debug       bool
-	pkiDir      string
-	tlsCertFile string
-	tlsKeyFile  string
-	tlsCAFile   string
-	// shutdownDelay is the time between not being ready anymore and stopping the servers, on SIGTERM
-	shutdownDelay time.Duration
-}
-
-var cfg config
-
-func init() {
-	store.AddCommonFlags(CmdWebApi, &cfg.CommonConfig)
-	// revive:disable
-	CmdWebApi.PersistentFlags().StringVar(&cfg.baseURL, "baseurl", "0.0.0.0",
-		"address for the api and probe ports to listen on")
-	CmdWebApi.PersistentFlags().UintVar(&cfg.port, "port", defaultPort,
-		"port for the api (TLS, a client certificate is required)")
-	CmdWebApi.PersistentFlags().UintVar(&cfg.probePort, "probe-port", defaultProbePort,
-		"port for /livez, /readyz, /status and /metrics (plain HTTP, no authentication)")
-	CmdWebApi.PersistentFlags().DurationVar(&cfg.shutdownDelay, "shutdown-delay", defaultShutdownDelay,
-		"on SIGTERM, the time /readyz returns 503 before the api stops, so load balancers stop sending requests")
-	CmdWebApi.PersistentFlags().BoolVar(&cfg.debug, "debug", false,
-		"enable debug logging")
-	CmdWebApi.PersistentFlags().StringVar(&cfg.pkiDir, "pki-dir", defaultPKIDir,
-		"directory with the certificates of the api, as created by orion-cli pki init")
-	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCertFile, "tls-cert-file", "",
-		"server certificate of the api, followed by its chain (default <pki-dir>/"+pki.APIServerCertFile+")")
-	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsKeyFile, "tls-key-file", "",
-		"private key of the server certificate (default <pki-dir>/"+pki.APIServerKeyFile+")")
-	CmdWebApi.PersistentFlags().StringVar(&cfg.tlsCAFile, "tls-ca-file", "",
-		"CA that signs the client certificates the api accepts (default <pki-dir>/"+pki.APIClientCAFile+")")
-	// revive:enable
-}
-
-var ready atomic.Bool
-
-// CmdWebApi exports the main webapi process
-var CmdWebApi = &cobra.Command{
-	Use:     "api",
-	Run:     api,
-	Version: cmdcommon.Version,
+	// BaseURL is the address the api and probe ports listen on
+	BaseURL string
+	// Port is the api port (TLS, a client certificate is required)
+	Port uint
+	// ProbePort serves /livez, /readyz, /status and /metrics (plain HTTP, no authentication)
+	ProbePort uint
+	// PKIDir holds the certificates of the api, as created by orion-cli pki init
+	PKIDir string
+	// TLSCertFile, TLSKeyFile and TLSCAFile override the files in PKIDir
+	TLSCertFile string
+	TLSKeyFile  string
+	TLSCAFile   string
+	// ShutdownDelay is the time between not being ready anymore and stopping the servers, on SIGTERM
+	ShutdownDelay time.Duration
 }
 
 // tlsFiles returns the files of the api: the files in the pki directory, unless a file is set explicitly
-func (c config) tlsFiles() (pki.TLSFiles, error) {
-	files := pki.APIFiles(c.pkiDir)
+func (c Config) tlsFiles() (pki.TLSFiles, error) {
+	files := pki.APIFiles(c.PKIDir)
 	for _, override := range []struct {
 		value  string
 		target *string
 	}{
-		{c.tlsCertFile, &files.CertFile},
-		{c.tlsKeyFile, &files.KeyFile},
-		{c.tlsCAFile, &files.CAFile},
+		{c.TLSCertFile, &files.CertFile},
+		{c.TLSKeyFile, &files.KeyFile},
+		{c.TLSCAFile, &files.CAFile},
 	} {
 		if override.value != "" {
 			*override.target = override.value
@@ -143,51 +115,39 @@ func newMux(ctx context.Context, routes []Route) *http.ServeMux {
 	return mux
 }
 
-func listen(ctx context.Context, port uint) net.Listener {
-	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-	addr := net.JoinHostPort(cfg.baseURL, strconv.FormatUint(uint64(port), decimal))
+// listen listens on host:port
+func listen(host string, port uint) (net.Listener, error) {
+	addr := net.JoinHostPort(host, strconv.FormatUint(uint64(port), decimal))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		logger.Fatal().AnErr(keyError, err).Str("address", addr).Msg("binding failed")
+		return nil, fmt.Errorf("binding %s failed: %w", addr, err)
 	}
-	return ln
+	return ln, nil
 }
 
-func api(c *cobra.Command, _ []string) {
-	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-
-	if cfg.debug {
-		logging.SetStaticLevel("debug")
-	}
-	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
-		logging.EnableColor()
-	}
-
-	if err := store.CheckCommonConfig(&cfg.CommonConfig); err != nil {
-		logger.Fatal().AnErr(keyError, err).Msg("")
-	}
+// Run runs the api with cfg until it gets SIGTERM or an interrupt (then it shuts down gracefully), or a server fails
+func Run(ctx context.Context, cfg Config) error {
+	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 
 	files, err := cfg.tlsFiles()
 	if err != nil {
-		logger.Fatal().AnErr(keyError, err).Msg("")
+		return err
 	}
 	if err = files.Check(); err != nil {
 		if errors.Is(err, pki.ErrFilesNotFound) {
-			logger.Fatal().AnErr(keyError, err).
-				Msg("create the certificates with `orion-cli pki init`, and copy the api files to --pki-dir " +
-					"(starting without certificates is not supported yet)")
+			return fmt.Errorf("%w: create the certificates with `orion-cli pki init`, and copy the api files to "+
+				"--pki-dir (starting without certificates is not supported yet)", err)
 		}
-		logger.Fatal().AnErr(keyError, err).
-			Msg("the api must be able to read its certificates and its key: make them readable for the user it " +
-				"runs as (uid 1000 in the container image)")
+		return fmt.Errorf("%w: the api must be able to read its certificates and its key: make them readable for "+
+			"the user it runs as (uid 1000 in the container image)", err)
 	}
 	tlsConfig, err := files.ServerConfig()
 	if err != nil {
-		logger.Fatal().AnErr(keyError, err).Msg("failed to load the certificates")
+		return fmt.Errorf("failed to load the certificates: %w", err)
 	}
 	certs, err := files.Certificates()
 	if err != nil {
-		logger.Fatal().AnErr(keyError, err).Msg("failed to load the certificates")
+		return fmt.Errorf("failed to load the certificates: %w", err)
 	}
 	metrics := newAPIMetrics(prometheus.NewRegistry())
 	metrics.setCertificates(certs)
@@ -202,10 +162,12 @@ func api(c *cobra.Command, _ []string) {
 	// one store connection for the whole api, shared by the store and the election client
 	cl, election, err := store.NewStoreAndElection(ctx, &cfg.CommonConfig, "")
 	if err != nil {
-		logger.Fatal().AnErr(keyError, err).Msg("")
+		return err
 	}
 
+	var ready atomic.Bool
 	h := NewHandlers(cl, election, &ready)
+	h.storeTimeout = cfg.StoreTimeout
 	logger.Debug().Msg("registering routes")
 	routes := h.Routes()
 	for i := range routes {
@@ -221,10 +183,16 @@ func api(c *cobra.Command, _ []string) {
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
-	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Uint("probe-port", cfg.probePort).
+	logger.Info().Str("host", cfg.BaseURL).Uint("port", cfg.Port).Uint("probe-port", cfg.ProbePort).
 		Msg("starting server")
-	ln := listen(ctx, cfg.port)
-	probeLn := listen(ctx, cfg.probePort)
+	ln, err := listen(cfg.BaseURL, cfg.Port)
+	if err != nil {
+		return err
+	}
+	probeLn, err := listen(cfg.BaseURL, cfg.ProbePort)
+	if err != nil {
+		return err
+	}
 
 	stopCtx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
 	defer stop()
@@ -233,24 +201,25 @@ func api(c *cobra.Command, _ []string) {
 	go func() { errs <- srv.ServeTLS(ln, "", "") }()
 
 	ready.Store(true)
-	logger.Info().Str("host", cfg.baseURL).Uint("port", cfg.port).Uint("probe-port", cfg.probePort).
+	logger.Info().Str("host", cfg.BaseURL).Uint("port", cfg.Port).Uint("probe-port", cfg.ProbePort).
 		Str("mode", endpoints.ModeNormal).Msg("server ready")
 
 	select {
 	case err = <-errs:
-		logger.Fatal().AnErr(keyError, err).Msg("server failing")
+		return fmt.Errorf("server failing: %w", err)
 	case <-stopCtx.Done():
-		shutdown(ctx, srv, probe)
+		shutdown(ctx, &ready, cfg.ShutdownDelay, srv, probe)
 	}
+	return nil
 }
 
-// shutdown stops the api gracefully: /readyz returns 503 first, and after cfg.shutdownDelay (so load balancers and
-// Kubernetes stop sending requests) the servers finish their requests and stop.
-func shutdown(ctx context.Context, srv, probe *http.Server) {
+// shutdown stops the api gracefully: /readyz returns 503 first (ready is false), and after delay (so load balancers
+// and Kubernetes stop sending requests) the servers finish their requests and stop.
+func shutdown(ctx context.Context, ready *atomic.Bool, delay time.Duration, srv, probe *http.Server) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	ready.Store(false)
-	logger.Info().Dur("delay", cfg.shutdownDelay).Msg("shutting down: not ready anymore")
-	time.Sleep(cfg.shutdownDelay)
+	logger.Info().Dur("delay", delay).Msg("shutting down: not ready anymore")
+	time.Sleep(delay)
 
 	shutdownCtx, cancelFunc := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancelFunc()
@@ -260,18 +229,6 @@ func shutdown(ctx context.Context, srv, probe *http.Server) {
 		}
 	}
 	logger.Info().Msg("stopped")
-}
-
-// Execute can be used to start and run the API
-func Execute() {
-	_, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-	if err := flagutil.SetFlagsFromEnv(CmdWebApi.PersistentFlags(), "ORIONAPI"); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
-	}
-
-	if err := CmdWebApi.Execute(); err != nil {
-		logger.Fatal().AnErr("err", err).Msg("")
-	}
 }
 
 // handleError logs err with msg, and (when w is set) responds with a 500 problem with msg as the detail

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"context"
@@ -76,7 +76,7 @@ func TestSentinelHandlers(t *testing.T) {
 			if tc.readsLeader {
 				// the election client is shared: every request reads the leader through it, nothing else
 				election.EXPECT().Leader(gomock.Any()).Times(2).DoAndReturn(func(ctx context.Context) (string, error) {
-					// the leader is read within the deadline of the request (cfg.StoreTimeout)
+					// the leader is read within the deadline of the request (the store timeout of the handlers)
 					if _, ok := ctx.Deadline(); !ok {
 						t.Error("expected the leader to be read with the request deadline")
 					}

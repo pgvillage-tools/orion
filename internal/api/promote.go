@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func (h *Handlers) PromoteReplicaSetRoutes() []Route {
 // PromoteClusterHandler promotes a standby cluster to a primary cluster (POST /v1/cluster/actions/promote); a primary
 // cluster stays as it is (200)
 func (h *Handlers) PromoteClusterHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	cd, pair, err := h.client.GetClusterData(ctx)

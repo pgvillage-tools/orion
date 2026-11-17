@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func (h *Handlers) FailKeeperRoutes() []Route {
 // FailKeeperHandler marks a keeper as failed (POST .../keepers/{uid}/actions/fail), so the sentinel fails over when it
 // runs the primary
 func (h *Handlers) FailKeeperHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	keeperID := r.PathValue("uid")
