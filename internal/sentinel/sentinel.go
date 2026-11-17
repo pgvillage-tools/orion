@@ -2267,7 +2267,8 @@ func Run(ctx context.Context, cfg Config) error {
 	go s.Start(ctx)
 
 	// Ensure we collect Sentinel metrics prior to providing Prometheus with an update
-	mustRegisterSentinelCollector(s)
+	// and unregister it when Run ends, so a next Run (e.g. in a test) can register its own
+	defer mustRegisterSentinelCollector(s)()
 
 	<-end
 	return nil
