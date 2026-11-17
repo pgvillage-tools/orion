@@ -1,4 +1,4 @@
-package v1_test
+package api_test
 
 import (
 	"testing"
@@ -9,5 +9,5 @@ import (
 
 func TestCmd(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Cmd Suite")
+	RunSpecs(t, "API Suite")
 }

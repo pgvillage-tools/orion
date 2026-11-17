@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"errors"
@@ -66,11 +66,9 @@ func TestReadyz(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	delay := cfg.shutdownDelay
-	cfg.shutdownDelay = 200 * time.Millisecond
-	defer func() { cfg.shutdownDelay = delay }()
+	const delay = 200 * time.Millisecond
+	var ready atomic.Bool
 	ready.Store(true)
-	defer ready.Store(false)
 
 	store := mockconsensus.NewMockStore(gomock.NewController(t))
 	store.EXPECT().Healthy(gomock.Any()).Return(nil).AnyTimes()
@@ -90,7 +88,7 @@ func TestShutdown(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() {
-		shutdown(t.Context(), srv.Config, probe.Config)
+		shutdown(t.Context(), &ready, delay, srv.Config, probe.Config)
 		close(done)
 	}()
 	// during the delay, readyz returns 503 and the servers still run

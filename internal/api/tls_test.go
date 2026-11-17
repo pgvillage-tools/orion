@@ -1,4 +1,4 @@
-package v1
+package api
 
 import (
 	"bytes"
@@ -29,7 +29,7 @@ func TestTLSFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := config{pkiDir: "~/.orion/api"}
+	c := Config{PKIDir: "~/.orion/api"}
 	files, err := c.tlsFiles()
 	if err != nil {
 		t.Fatal(err)
@@ -37,8 +37,8 @@ func TestTLSFiles(t *testing.T) {
 	if files.CertFile != filepath.Join(home, ".orion/api", pki.APIServerCertFile) {
 		t.Errorf("unexpected cert file %s", files.CertFile)
 	}
-	c.tlsKeyFile = "/etc/orion/key.pem"
-	c.tlsCAFile = "~/ca.pem"
+	c.TLSKeyFile = "/etc/orion/key.pem"
+	c.TLSCAFile = "~/ca.pem"
 	files, err = c.tlsFiles()
 	if err != nil {
 		t.Fatal(err)

@@ -14,9 +14,9 @@
 package main
 
 import (
-	cmdv1 "github.com/pgvillage-tools/orion/cmd/api/v1"
+	"github.com/pgvillage-tools/orion/cmd/api/cmd"
 )
 
 func main() {
-	cmdv1.Execute()
+	cmd.Execute()
 }

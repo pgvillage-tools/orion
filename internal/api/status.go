@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
+package api
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func (h *Handlers) StatusRoutes() []Route {
 
 // ProxiesHandler returns the proxies, sorted on uid (the same list as in the cluster status)
 func (h *Handlers) ProxiesHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	proxies, err := h.proxyInfo(ctx)
@@ -53,7 +53,7 @@ func (h *Handlers) ProxiesHandler(w http.ResponseWriter, r *http.Request) {
 
 // SentinelsHandler returns the sentinels, sorted on uid, with the leader (the same list as in the cluster status)
 func (h *Handlers) SentinelsHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	sentinels, err := h.sentinelInfo(ctx)
@@ -210,7 +210,7 @@ func clusterStatus(cd *apiv1.Data) apiv1.InfoGenericStatus {
 
 // StatusHandler handles a status request
 func (h *Handlers) StatusHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(cfg.StoreTimeout))
+	ctx, cancelFunc := context.WithDeadline(r.Context(), time.Now().Add(h.storeTimeout))
 	defer cancelFunc()
 
 	ic, err := h.clusterInfo(ctx)

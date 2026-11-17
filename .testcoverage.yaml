@@ -32,9 +32,6 @@ override:
   # (default is 80, as configured above in this example).
   #- path: ^pkg/lib/foo$
   #  threshold: 100
-  # process startup (flags, listeners, the server loop): covered by the e2e tests, not by unit tests
-  - path: ^cmd/api/v1/main.go
-    threshold: 35
   - path: ^internal/postgresql/recovery_options.go
     threshold: 66
   - path: scripts/gen_commands_doc.go
@@ -48,8 +45,9 @@ override:
 exclude:
   # Exclude files or packages matching their paths
   paths:
-    # the commands, except the api handlers (cmd/api/v1) and the cli commands (cmd/cli/cmd), which have unit tests
+    # the commands, except the cli commands (cmd/cli/cmd), which have unit tests
     - ^cmd/(keeper|proxy|sentinel)/
+    - ^cmd/api/cmd/
     - ^cmd/cli/[^/]+\.go$
     - ^cmd/[^/]+\.go$
     - ^cmd/api/[^/]+\.go$
