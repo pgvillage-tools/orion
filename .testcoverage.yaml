@@ -55,6 +55,8 @@ exclude:
     - ^internal/store/
     # moved from cmd/sentinel/cmd, which was excluded too (62%); its tests follow in a later PR
     - ^internal/sentinel/
+    # moved from cmd/keeper/cmd, which was excluded too (32%); its tests follow in a later PR
+    - ^internal/keeper/
     - e2e
     - internal/mock
 

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 // Package cmd holds all CLI code for the keeper
-package cmd
+package keeper
 
 import (
 	"github.com/pgvillage-tools/orion/internal/common"
