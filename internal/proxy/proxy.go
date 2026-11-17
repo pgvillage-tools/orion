@@ -27,16 +27,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Run runs a proxy with cfg until ctx is done or the proxy fails
+// Run runs a proxy with cfg until ctx is done (it returns nil then) or the proxy fails
 func Run(ctx context.Context, cfg Config) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
 	uid := common.UID()
 	logger.Info().Str("uid", uid).Msg("proxy uid")
 
 	if cfg.MetricsListenAddress != "" {
-		http.Handle("/metrics", promhttp.Handler())
+		// a mux of its own, not http.DefaultServeMux: a second Run would register /metrics twice
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
 		go func() {
-			err := http.ListenAndServe(cfg.MetricsListenAddress, nil)
+			err := http.ListenAndServe(cfg.MetricsListenAddress, mux)
 			if err != nil {
 				logger.Fatal().AnErr(logging.KeyErr, err).Msg("metrics http server error")
 			}

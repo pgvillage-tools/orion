@@ -294,7 +294,7 @@ func (c *ClusterChecker) TimeoutChecker(ctx context.Context, checkOkCh chan stru
 	}
 }
 
-// Start is function that starts the procy
+// Start runs the checks of the proxy until ctx is done or the proxy fails
 func (c *ClusterChecker) Start(ctx context.Context) error {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
 	checkOkCh := make(chan struct{})
@@ -329,6 +329,8 @@ func (c *ClusterChecker) Start(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("proxy error: %v", err)
 			}
+		case <-ctx.Done():
+			return nil
 		}
 	}
 }
