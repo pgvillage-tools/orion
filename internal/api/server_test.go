@@ -15,12 +15,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
 )
@@ -73,5 +75,27 @@ func TestListen(t *testing.T) {
 	// the port is taken now
 	if _, err := listen("127.0.0.1", uint(port)); err == nil {
 		t.Error("expected an error binding a port that is in use")
+	}
+}
+
+func TestRunUntilTheContextIsDone(t *testing.T) {
+	dir := t.TempDir()
+	opts := pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api")}
+	if _, err := pki.Init(opts); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{PKIDir: opts.APIDir, BaseURL: "127.0.0.1", ShutdownDelay: time.Millisecond}
+	cfg.ClusterName = "cluster1"
+	cfg.StoreBackend = "etcdv3"
+	// nothing listens there: the store client connects on its first call
+	cfg.StoreEndpoints = "http://127.0.0.1:1"
+	cfg.StorePrefix = "orion/cluster"
+	cfg.StoreTimeout = time.Second
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	// port 0: free ports for the api and the probe port; Run serves until ctx is done, then shuts down
+	if err := Run(ctx, cfg); err != nil {
+		t.Fatal(err)
 	}
 }
