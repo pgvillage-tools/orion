@@ -41,3 +41,7 @@ A cluster is removed after its specs, also when one of them failed (its containe
 first). To look at a cluster afterwards, set `ORION_TEST_KEEP=failed` (keep the clusters of failed specs) or
 `ORION_TEST_KEEP=true` (keep all of them), and remove them yourself when done: clusters that keep running starve the
 next ones on a local machine.
+
+CI runs the system suite in three jobs: `E2E_SHARD=2/3` runs the second of three parts of each suite in
+`E2E_SUITES`. `scripts/e2e-shard.sh` divides the test files (every file is in one part), weighing each file by the
+clusters it starts of its own. A new file needs nothing: it is divided like the others.

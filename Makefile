@@ -88,11 +88,19 @@ clean-e2e-images: ## Clean containers for previous e2e runs
 
 # E2E_SUITES are the e2e suites (directories in tests) that e2e-test runs; CI runs each suite in a job of its own
 E2E_SUITES ?= system cli
+# E2E_SHARD runs one part of each suite, e.g. 2/3 for the second of three: CI runs the system suite over several jobs
+# (see scripts/e2e-shard.sh)
+E2E_SHARD ?=
 
 .PHONY: fast-e2e-test
 fast-e2e-test:
 	for suite in $(E2E_SUITES); do \
-		(cd ./tests/$$suite && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./...) || exit 1; \
+		focus=; \
+		if [ -n "$(E2E_SHARD)" ]; then \
+			focus="-ginkgo.focus-file=$$(./scripts/e2e-shard.sh tests/$$suite $(subst /, ,$(E2E_SHARD)))" || exit 1; \
+			echo "shard $(E2E_SHARD) of $$suite: $$focus"; \
+		fi; \
+		(cd ./tests/$$suite && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./... $$focus) || exit 1; \
 	done
 
 .PHONY: full-e2e-test
