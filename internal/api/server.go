@@ -40,61 +40,14 @@ import (
 )
 
 const (
-	readMaxBytes int64 = 1 << 20
-
-	// DefaultPort is the default api port
-	DefaultPort = uint(8443)
-	// DefaultProbePort is the default probe port
-	DefaultProbePort = uint(8080)
-	// DefaultPKIDir is the default directory with the certificates of the api
-	DefaultPKIDir     = "~/.orion/api"
-	readHeaderTimeout = 10 * time.Second
-	// DefaultShutdownDelay is the default time /readyz returns 503 before the api stops, on SIGTERM
-	DefaultShutdownDelay = 5 * time.Second
+	readMaxBytes      int64 = 1 << 20
+	readHeaderTimeout       = 10 * time.Second
 	// shutdownTimeout is the time the servers get to finish their requests when the api stops
 	shutdownTimeout   = 10 * time.Second
 	expiryCheckPeriod = 24 * time.Hour
 	keyError          = "error"
 	decimal           = 10
 )
-
-// Config is the configuration of the api
-type Config struct {
-	store.CommonConfig
-
-	// BaseURL is the address the api and probe ports listen on
-	BaseURL string
-	// Port is the api port (TLS, a client certificate is required)
-	Port uint
-	// ProbePort serves /livez, /readyz, /status and /metrics (plain HTTP, no authentication)
-	ProbePort uint
-	// PKIDir holds the certificates of the api, as created by orion-cli pki init
-	PKIDir string
-	// TLSCertFile, TLSKeyFile and TLSCAFile override the files in PKIDir
-	TLSCertFile string
-	TLSKeyFile  string
-	TLSCAFile   string
-	// ShutdownDelay is the time between not being ready anymore and stopping the servers, on SIGTERM
-	ShutdownDelay time.Duration
-}
-
-// tlsFiles returns the files of the api: the files in the pki directory, unless a file is set explicitly
-func (c Config) tlsFiles() (pki.TLSFiles, error) {
-	files := pki.APIFiles(c.PKIDir)
-	for _, override := range []struct {
-		value  string
-		target *string
-	}{
-		{c.TLSCertFile, &files.CertFile},
-		{c.TLSKeyFile, &files.KeyFile},
-		{c.TLSCAFile, &files.CAFile},
-	} {
-		if override.value != "" {
-			*override.target = override.value
-		}
-	}
-	return files.Expand()
-}
 
 // warnExpiring warns about the certificates (as loaded at start) that expire soon. The api reads its certificates
 // at start only, so new files need a restart.
