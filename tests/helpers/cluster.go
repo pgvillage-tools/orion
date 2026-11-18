@@ -216,7 +216,7 @@ func (tc *Cluster) RunAPI(ctx context.Context) {
 func SharedCluster(numKeepers int) *Cluster {
 	tc := &Cluster{}
 	BeforeSuite(func(ctx context.Context) {
-		// until the cluster runs: when it fails to start, keep the containers and show their logs
+		// until the cluster runs: when it fails to start, show the logs of the containers
 		failed = true
 		tc.Start(ctx, numKeepers)
 		failed = false
@@ -414,8 +414,25 @@ func (tc *Cluster) ProxyConn(ctx context.Context) PgConnParams {
 	return tc.pgConn.SetParam("port", port.Port())
 }
 
-// Terminate removes the containers and the network of the cluster. When a test failed, it writes the logs of all
-// containers to the GinkgoWriter, and keeps them. ORION_TEST_KEEP=true keeps them always.
+// keepEnv is the environment variable that keeps the containers of a cluster after its specs: "true" keeps them
+// always, "failed" only when a spec failed. By default they are removed, also after a failure (the logs are dumped
+// first): the clusters of failed specs that keep running starve the next clusters on a local machine.
+const keepEnv = "ORION_TEST_KEEP"
+
+// keepContainers returns whether Terminate keeps the containers, from keepEnv and whether a spec failed
+func keepContainers(failed bool) bool {
+	switch os.Getenv(keepEnv) {
+	case "true":
+		return true
+	case "failed":
+		return failed
+	default:
+		return false
+	}
+}
+
+// Terminate removes the containers and the network of the cluster. When a test failed, it first writes the logs of
+// all containers to stdout. keepEnv keeps them.
 func (tc *Cluster) Terminate(ctx context.Context, failed bool) {
 	if tc == nil {
 		return
@@ -423,7 +440,7 @@ func (tc *Cluster) Terminate(ctx context.Context, failed bool) {
 	if failed {
 		tc.dumpLogs(ctx)
 	}
-	if failed || os.Getenv("ORION_TEST_KEEP") == "true" {
+	if keepContainers(failed) {
 		GinkgoWriter.Printf("keeping the containers of the cluster\n")
 		return
 	}
