@@ -36,3 +36,8 @@ make kind-e2e-setup k8s-e2e-test         # the k8s suite on a kind cluster
 ```
 
 With podman, set `CONTAINER_TOOL=podman` and point `DOCKER_HOST` at the podman socket.
+
+A cluster is removed after its specs, also when one of them failed (its container logs are written to the output
+first). To look at a cluster afterwards, set `ORION_TEST_KEEP=failed` (keep the clusters of failed specs) or
+`ORION_TEST_KEEP=true` (keep all of them), and remove them yourself when done: clusters that keep running starve the
+next ones on a local machine.
