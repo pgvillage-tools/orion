@@ -14,7 +14,7 @@
 // limitations under the License.
 
 // Package cmd holds all CLI code for the keeper
-package cmd
+package sentinel
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,10 +49,11 @@ func init() {
 	prometheus.MustRegister(lastCheckSuccessSeconds)
 }
 
-func mustRegisterSentinelCollector(s *Sentinel) {
-	prometheus.MustRegister(
-		sentinelCollector{s},
-	)
+// mustRegisterSentinelCollector registers the collector of s, and returns a func that unregisters it again
+func mustRegisterSentinelCollector(s *Sentinel) (unregister func()) {
+	c := sentinelCollector{s}
+	prometheus.MustRegister(c)
+	return func() { prometheus.Unregister(c) }
 }
 
 type sentinelCollector struct {
