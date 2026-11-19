@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cmd
+package keeper
 
 import (
 	"bytes"
@@ -721,86 +721,86 @@ func TestValidateUsersConfig(t *testing.T) {
 	replFile := pwFile("repl", "replpass")
 	onlyNLFile := pwFile("only-nl", "\n")
 	// valid returns the settings of the flag defaults, with passwords
-	valid := func() *config {
-		return &config{
-			pgSUUsername: "postgres", pgSUAuthMethod: authMd5, pgSUConnType: connTypeHost, pgSUPassword: "supass",
-			pgReplUsername: "repl", pgReplAuthMethod: authMd5, pgReplConnType: connTypeHost, pgReplPassword: "replpass",
+	valid := func() *Config {
+		return &Config{
+			PGSUUsername: "postgres", PGSUAuthMethod: authMd5, PGSUConnType: connTypeHost, PGSUPassword: "supass",
+			PGReplUsername: "repl", PGReplAuthMethod: authMd5, PGReplConnType: connTypeHost, PGReplPassword: "replpass",
 		}
 	}
-	sameUser := func(c *config) { c.pgSUUsername, c.pgReplUsername = "pg", "pg" }
+	sameUser := func(c *Config) { c.PGSUUsername, c.PGReplUsername = "pg", "pg" }
 
 	tests := []struct {
 		name   string
-		change func(c *config)
+		change func(c *Config)
 		want   string // the error, or "" when the settings are valid
 	}{
-		{name: "valid with passwords", change: func(*config) {}},
-		{name: "valid with password files", change: func(c *config) {
-			c.pgSUPassword, c.pgSUPasswordFile, c.pgReplPassword, c.pgReplPasswordFile = "", suFile, "", replFile
+		{name: "valid with passwords", change: func(*Config) {}},
+		{name: "valid with password files", change: func(c *Config) {
+			c.PGSUPassword, c.PGSUPasswordFile, c.PGReplPassword, c.PGReplPasswordFile = "", suFile, "", replFile
 		}},
 		{name: "repl username required", want: "--pg-repl-username is required",
-			change: func(c *config) { c.pgReplUsername = "" }},
+			change: func(c *Config) { c.PGReplUsername = "" }},
 		{name: "repl password required", want: "one of --pg-repl-password or --pg-repl-passwordfile is required",
-			change: func(c *config) { c.pgReplPassword = "" }},
+			change: func(c *Config) { c.PGReplPassword = "" }},
 		{name: "only one repl password",
 			want:   "only one of --pg-repl-password or --pg-repl-passwordfile must be provided",
-			change: func(c *config) { c.pgReplPasswordFile = replFile }},
+			change: func(c *Config) { c.PGReplPasswordFile = replFile }},
 		{name: "su password required", want: "one of --pg-su-password or --pg-su-passwordfile is required",
-			change: func(c *config) { c.pgSUPassword = "" }},
+			change: func(c *Config) { c.PGSUPassword = "" }},
 		{name: "only one su password",
 			want:   "only one of --pg-su-password or --pg-su-passwordfile must be provided",
-			change: func(c *config) { c.pgSUPasswordFile = suFile }},
-		{name: "missing password file", want: "cannot read pg superuser password", change: func(c *config) {
-			c.pgSUPassword, c.pgSUPasswordFile = "", filepath.Join(dir, "nope")
+			change: func(c *Config) { c.PGSUPasswordFile = suFile }},
+		{name: "missing password file", want: "cannot read pg superuser password", change: func(c *Config) {
+			c.PGSUPassword, c.PGSUPasswordFile = "", filepath.Join(dir, "nope")
 		}},
-		{name: "same user, same password", change: func(c *config) {
+		{name: "same user, same password", change: func(c *Config) {
 			sameUser(c)
-			c.pgSUPassword, c.pgReplPassword = "pass", "pass"
+			c.PGSUPassword, c.PGReplPassword = "pass", "pass"
 		}},
 		{name: "same user, different password",
 			want: "provided superuser name and replication user name are the same but provided passwords are different",
-			change: func(c *config) {
+			change: func(c *Config) {
 				sameUser(c)
-				c.pgSUPassword, c.pgReplPassword = "pass1", "pass2"
+				c.PGSUPassword, c.PGReplPassword = "pass1", "pass2"
 			}},
-		{name: "same user, password file has a trailing newline", change: func(c *config) {
+		{name: "same user, password file has a trailing newline", change: func(c *Config) {
 			sameUser(c)
-			c.pgSUPassword, c.pgSUPasswordFile, c.pgReplPassword = "", suNLFile, "supass"
+			c.PGSUPassword, c.PGSUPasswordFile, c.PGReplPassword = "", suNLFile, "supass"
 		}},
 		{name: "same user, different auth methods",
 			want: "do not support different auth methods when utilizing superuser for replication",
-			change: func(c *config) {
+			change: func(c *Config) {
 				sameUser(c)
-				c.pgSUAuthMethod, c.pgSUPassword = authCert, ""
+				c.PGSUAuthMethod, c.PGSUPassword = authCert, ""
 			}},
 		{name: "password file with only a newline", want: "superuser password is empty after removing trailing new line",
-			change: func(c *config) { c.pgSUPassword, c.pgSUPasswordFile = "", onlyNLFile }},
+			change: func(c *Config) { c.PGSUPassword, c.PGSUPasswordFile = "", onlyNLFile }},
 		{name: "repl trust with password",
 			want:   "can not utilize --pg-repl-auth-method trust together with --pg-repl-password",
-			change: func(c *config) { c.pgReplAuthMethod = authTrust }},
+			change: func(c *Config) { c.PGReplAuthMethod = authTrust }},
 		{name: "su trust with password", want: "can not utilize --pg-su-auth-method trust",
-			change: func(c *config) { c.pgSUAuthMethod = authTrust }},
+			change: func(c *Config) { c.PGSUAuthMethod = authTrust }},
 		{name: "su local trust with password", want: "can not utilize --pg-su-auth-method trust",
-			change: func(c *config) { c.pgSULocalAuthMethod = authTrust }},
-		{name: "trust without passwords", change: func(c *config) {
-			c.pgSUAuthMethod, c.pgSUPassword, c.pgReplAuthMethod, c.pgReplPassword = authTrust, "", authTrust, ""
+			change: func(c *Config) { c.PGSULocalAuthMethod = authTrust }},
+		{name: "trust without passwords", change: func(c *Config) {
+			c.PGSUAuthMethod, c.PGSUPassword, c.PGReplAuthMethod, c.PGReplPassword = authTrust, "", authTrust, ""
 		}},
-		{name: "cert without passwords", change: func(c *config) {
-			c.pgSUAuthMethod, c.pgSUPassword, c.pgReplAuthMethod, c.pgReplPassword = authCert, "", authCert, ""
+		{name: "cert without passwords", change: func(c *Config) {
+			c.PGSUAuthMethod, c.PGSUPassword, c.PGReplAuthMethod, c.PGReplPassword = authCert, "", authCert, ""
 		}},
-		{name: "peer is a valid auth method", change: func(c *config) { c.pgSULocalAuthMethod = authPeer }},
+		{name: "peer is a valid auth method", change: func(c *Config) { c.PGSULocalAuthMethod = authPeer }},
 		{name: "invalid repl auth method", want: "--pg-repl-auth-method must be one of: md5, trust, cert, ident or peer",
-			change: func(c *config) { c.pgReplAuthMethod = "bogus" }},
+			change: func(c *Config) { c.PGReplAuthMethod = "bogus" }},
 		{name: "invalid su auth method", want: "--pg-su-auth-method must be one of: md5, trust, cert, ident or peer",
-			change: func(c *config) { c.pgSUAuthMethod = "bogus" }},
+			change: func(c *Config) { c.PGSUAuthMethod = "bogus" }},
 		{name: "invalid su connection type", want: "--pg-su-connection-type must be one of",
-			change: func(c *config) { c.pgSUConnType = "tcp" }},
+			change: func(c *Config) { c.PGSUConnType = "tcp" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := valid()
 			tt.change(c)
-			err := validateUsersConfig(context.Background(), c)
+			err := ValidateUsersConfig(context.Background(), c)
 			if tt.want == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -815,15 +815,15 @@ func TestValidateUsersConfig(t *testing.T) {
 
 	t.Run("fills the local auth methods and trims the passwords", func(t *testing.T) {
 		c := valid()
-		c.pgSUPassword, c.pgSUPasswordFile = "", suNLFile
-		if err := validateUsersConfig(context.Background(), c); err != nil {
+		c.PGSUPassword, c.PGSUPasswordFile = "", suNLFile
+		if err := ValidateUsersConfig(context.Background(), c); err != nil {
 			t.Fatal(err)
 		}
-		if c.pgSULocalAuthMethod != authMd5 || c.pgReplLocalAuthMethod != authMd5 {
-			t.Errorf("local auth methods: got %q and %q, want md5", c.pgSULocalAuthMethod, c.pgReplLocalAuthMethod)
+		if c.PGSULocalAuthMethod != authMd5 || c.PGReplLocalAuthMethod != authMd5 {
+			t.Errorf("local auth methods: got %q and %q, want md5", c.PGSULocalAuthMethod, c.PGReplLocalAuthMethod)
 		}
-		if c.pgSUPassword != "supass" {
-			t.Errorf("su password: got %q, want %q", c.pgSUPassword, "supass")
+		if c.PGSUPassword != "supass" {
+			t.Errorf("su password: got %q, want %q", c.PGSUPassword, "supass")
 		}
 	})
 }
@@ -855,7 +855,7 @@ func TestDBLocalStateDeepCopy(t *testing.T) {
 
 func TestLocalStateFiles(t *testing.T) {
 	dir := t.TempDir()
-	p := &PostgresKeeper{cfg: &config{dataDir: dir}}
+	p := &PostgresKeeper{cfg: &Config{DataDir: dir}}
 
 	if err := p.loadKeeperLocalState(); !os.IsNotExist(err) {
 		t.Errorf("expected a not exist error, got %v", err)
@@ -864,7 +864,7 @@ func TestLocalStateFiles(t *testing.T) {
 		t.Errorf("expected a not exist error, got %v", err)
 	}
 
-	kls := &KeeperLocalState{UID: "keeper1", ClusterUID: "cluster1"}
+	kls := &LocalState{UID: "keeper1", ClusterUID: "cluster1"}
 	p.keeperLocalState = kls
 	if err := p.saveKeeperLocalState(); err != nil {
 		t.Fatal(err)
