@@ -40,7 +40,7 @@ var (
 )
 
 func init() {
-	store.AddCommonFlags(CmdProxy, &cfg.CommonConfig)
+	cmd.AddCommonFlags(CmdProxy, &cfg.CommonConfig)
 
 	CmdProxy.PersistentFlags().StringVar(
 		&cfg.ListenAddress,
@@ -104,7 +104,7 @@ func runProxy(c *cobra.Command, _ []string) {
 	if debug {
 		logging.SetStaticLevel("debug")
 	}
-	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 

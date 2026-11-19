@@ -44,7 +44,7 @@ var (
 
 func init() {
 	_, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
-	store.AddCommonFlags(CmdSentinel, &cfg.CommonConfig)
+	cmd.AddCommonFlags(CmdSentinel, &cfg.CommonConfig)
 
 	CmdSentinel.PersistentFlags().StringVar(
 		&cfg.InitialClusterSpecFile,
@@ -88,7 +88,7 @@ func runSentinel(c *cobra.Command, _ []string) {
 	if debug {
 		logging.SetStaticLevel("debug")
 	}
-	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 

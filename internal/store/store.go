@@ -20,17 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/mattn/go-isatty"
-	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -54,105 +50,6 @@ type CommonConfig struct {
 	KubeContext          string
 	KubeNamespace        string
 	StoreTimeout         time.Duration
-}
-
-// AddCommonFlags is a function that gives flags to commands
-func AddCommonFlags(cmd *cobra.Command, cfg *CommonConfig) {
-	cmd.PersistentFlags().StringVar(
-		&cfg.ClusterName,
-		"cluster-name",
-		"",
-		"cluster name")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.StoreBackend,
-		"store-backend",
-		"",
-		"store backend type (etcdv2/etcd, etcdv3, consul or kubernetes)")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.StoreEndpoints,
-		"store-endpoints",
-		"",
-		// revive:disable-next-line
-		"a comma-delimited list of store endpoints (use https scheme for tls communication) (defaults: http://127.0.0.1:2379 for etcd, http://127.0.0.1:8500 for consul)")
-
-	cmd.PersistentFlags().DurationVar(
-		&cfg.StoreTimeout,
-		"store-timeout",
-		cluster.DefaultStoreTimeout,
-		"store request timeout")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.StorePrefix,
-		"store-prefix",
-		common.StorePrefix,
-		"the store base prefix")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.StoreCertFile,
-		"store-cert-file",
-		"",
-		"certificate file for client identification to the store")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.StoreKeyFile,
-		"store-key",
-		"",
-		"private key file for client identification to the store")
-
-	cmd.PersistentFlags().BoolVar(
-		&cfg.StoreSkipTLSVerify,
-		"store-skip-tls-verify",
-		false,
-		"skip store certificate verification (insecure!!!)")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.StoreCAFile,
-		"store-ca-file",
-		"",
-		"verify certificates of HTTPS-enabled store servers using this CA bundle")
-
-	cmd.PersistentFlags().StringVar(
-		&cfg.MetricsListenAddress,
-		"metrics-listen-address",
-		"",
-		"metrics listen address i.e \"0.0.0.0:8080\" (disabled by default)")
-
-	if !cfg.IsCLI {
-		cmd.PersistentFlags().BoolVar(
-			&cfg.LogColor,
-			"log-color",
-			false,
-			"enable color in log output (default if attached to a terminal)")
-		cmd.PersistentFlags().StringVar(
-			&cfg.LogLevel,
-			"log-level",
-			"info",
-			"debug, info (default), warn or error")
-	}
-
-	if cfg.IsCLI {
-		cmd.PersistentFlags().StringVar(
-			&cfg.LogLevel,
-			"log-level",
-			"info",
-			"debug, info (default), warn or error")
-		cmd.PersistentFlags().StringVar(
-			&cfg.KubeConfig,
-			"kubeconfig",
-			"",
-			"path to kubeconfig file. Overrides $KUBECONFIG")
-		cmd.PersistentFlags().StringVar(
-			&cfg.KubeContext,
-			"kube-context",
-			"",
-			"name of the kubeconfig context to use")
-		cmd.PersistentFlags().StringVar(
-			&cfg.KubeNamespace,
-			"kube-namespace", "",
-			"name of the kubernetes namespace to use")
-	}
 }
 
 var (
@@ -202,14 +99,6 @@ func CheckCommonConfig(cfg *CommonConfig) error {
 // metric series.
 func SetMetrics(cfg *CommonConfig, component string) {
 	clusterIdentifier.WithLabelValues(cfg.ClusterName, component).Set(1)
-}
-
-// IsColorLoggerEnable is a function which checks if logs should be colorized or not
-func IsColorLoggerEnable(cmd *cobra.Command, cfg *CommonConfig) bool {
-	if cmd.PersistentFlags().Changed("log-color") {
-		return cfg.LogColor
-	}
-	return isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())
 }
 
 // NewKVStore returns a new KVStore function object
