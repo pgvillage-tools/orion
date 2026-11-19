@@ -42,6 +42,11 @@ first). To look at a cluster afterwards, set `ORION_TEST_KEEP=failed` (keep the 
 `ORION_TEST_KEEP=true` (keep all of them), and remove them yourself when done: clusters that keep running starve the
 next ones on a local machine.
 
+The output shows the last 300 lines of the log of each container of a failed cluster. Set `ORION_TEST_LOG_DIR` to a
+directory to also get the full logs there, one file per container (e.g. `03-keeper-1-<name>.log`) in a directory per
+cluster, named after its test file. CI does this and uploads them as the artifact `e2e-logs-<suite>-<pgversion>-<job>`
+of a failed job.
+
 CI runs the system suite in three jobs: `E2E_SHARD=2/3` runs the second of three parts of each suite in
 `E2E_SUITES`. `scripts/e2e-shard.sh` divides the test files (every file is in one part), weighing each file by the
 clusters it starts of its own. A new file needs nothing: it is divided like the others.

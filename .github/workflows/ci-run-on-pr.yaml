@@ -453,6 +453,17 @@ jobs:
           PGVERSION: ${{ matrix.pgversion }}
           E2E_SUITES: ${{ matrix.suite }}
           E2E_SHARD: ${{ matrix.shard }}
+          ORION_TEST_LOG_DIR: ${{ runner.temp }}/e2e-logs
+
+      # the full container logs of the clusters with a failed spec (the output only shows the last lines)
+      - name: Upload the logs of failed clusters
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-logs-${{ matrix.suite }}-${{ matrix.pgversion }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
+          retention-days: 14
 
   # The e2e tests on Kubernetes (tests/k8s): kind (preinstalled on the runner, like kubectl) with the images of this
   # run, the kubernetes store backend and the manifests of docs/deploy/k8s.md. PostgreSQL 18 only: it tests orion on
