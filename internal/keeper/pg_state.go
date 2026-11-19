@@ -42,22 +42,22 @@ func (p *PostgresKeeper) updateKeeperInfo(ctx context.Context) error {
 		return nil
 	}
 
+	var binaryVersion cluster.PostgresBinaryVersion
 	version, err := p.pgm.BinaryVersion()
 	if err != nil {
 		// in case we fail to parse the binary version then log it and just report maj and min as 0
 		logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to get postgres binary version")
+	} else {
+		binaryVersion = cluster.PostgresBinaryVersion{Maj: int(version.Major()), Min: int(version.Minor())}
 	}
 
 	keeperInfo := &cluster.KeeperInfo{
-		InfoUID:    common.UID(),
-		UID:        keeperUID,
-		ClusterUID: clusterUID,
-		BootUUID:   p.bootUUID,
-		PostgresBinaryVersion: cluster.PostgresBinaryVersion{
-			Maj: int(version.Major()),
-			Min: int(version.Minor()),
-		},
-		PostgresState: p.getLastPGState(ctx),
+		InfoUID:               common.UID(),
+		UID:                   keeperUID,
+		ClusterUID:            clusterUID,
+		BootUUID:              p.bootUUID,
+		PostgresBinaryVersion: binaryVersion,
+		PostgresState:         p.getLastPGState(ctx),
 
 		CanBeMaster:             p.canBeMaster,
 		CanBeSynchronousReplica: p.canBeSynchronousReplica,
