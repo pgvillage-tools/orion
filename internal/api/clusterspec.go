@@ -34,15 +34,6 @@ import (
 // errNoSpec is the error when there is no cluster spec (yet)
 var errNoSpec = errors.New("there is no cluster spec yet: create the cluster first")
 
-// statusError is an error with the status code the api answers it with
-type statusError struct {
-	status int
-	err    error
-}
-
-func (e statusError) Error() string { return e.err.Error() }
-func (e statusError) Unwrap() error { return e.err }
-
 // writeSpecError responds with the status of err when it is a statusError, and with 500 (and logs it) otherwise
 func writeSpecError(ctx context.Context, w http.ResponseWriter, err error, msg string) {
 	var se statusError
