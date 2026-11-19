@@ -1,0 +1,131 @@
+// Copyright 2026 PgVillage
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package pki
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// TLSFiles holds the files for a TLS server or client: a certificate (optionally followed by its chain), its
+// private key, and the CA to verify the other side
+type TLSFiles struct {
+	CertFile string
+	KeyFile  string
+	CAFile   string
+}
+
+// APIFiles returns the files of the api in dir
+func APIFiles(dir string) TLSFiles {
+	return TLSFiles{
+		CertFile: filepath.Join(dir, APIServerCertFile),
+		KeyFile:  filepath.Join(dir, APIServerKeyFile),
+		CAFile:   filepath.Join(dir, APIClientCAFile),
+	}
+}
+
+// CLIFiles returns the files of the cli in dir
+func CLIFiles(dir string) TLSFiles {
+	return TLSFiles{
+		CertFile: filepath.Join(dir, CLICertFile),
+		KeyFile:  filepath.Join(dir, CLIKeyFile),
+		CAFile:   filepath.Join(dir, CLICAFile),
+	}
+}
+
+// Expand expands a leading ~ in all files
+func (f TLSFiles) Expand() (TLSFiles, error) {
+	var err error
+	for _, p := range []*string{&f.CertFile, &f.KeyFile, &f.CAFile} {
+		if *p, err = ExpandHome(*p); err != nil {
+			return f, err
+		}
+	}
+	return f, nil
+}
+
+func (f TLSFiles) load() (tls.Certificate, *x509.CertPool, error) {
+	cert, err := tls.LoadX509KeyPair(f.CertFile, f.KeyFile)
+	if err != nil {
+		return tls.Certificate{}, nil, fmt.Errorf("failed to load %s and %s: %w", f.CertFile, f.KeyFile, err)
+	}
+	pool, _, err := LoadCertPool(f.CAFile)
+	if err != nil {
+		return tls.Certificate{}, nil, fmt.Errorf("failed to load CA: %w", err)
+	}
+	return cert, pool, nil
+}
+
+// ServerConfig returns a TLS config for a server that requires a client certificate signed by the CA
+func (f TLSFiles) ServerConfig() (*tls.Config, error) {
+	cert, pool, err := f.load()
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{cert},
+		ClientCAs:    pool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+	}, nil
+}
+
+// ClientConfig returns a TLS config for a client that logs in with its certificate, and verifies the server with
+// the CA
+func (f TLSFiles) ClientConfig() (*tls.Config, error) {
+	cert, pool, err := f.load()
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      pool,
+	}, nil
+}
+
+// Check returns nil when the certificate, the key and the CA file can be read. When one doesn't exist, it returns an
+// ErrFilesNotFound that names it; otherwise the error of reading it, e.g. permission denied.
+func (f TLSFiles) Check() error {
+	for _, p := range []string{f.CertFile, f.KeyFile, f.CAFile} {
+		file, err := os.Open(p)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("%w: %s doesn't exist", ErrFilesNotFound, p)
+			}
+			return fmt.Errorf("cannot read %s: %w", p, err)
+		}
+		_ = file.Close()
+	}
+	return nil
+}
+
+// Certificates returns all certificates in the files: the certificate, its chain and the CA
+func (f TLSFiles) Certificates() ([]*x509.Certificate, error) {
+	var all []*x509.Certificate
+	for _, p := range []string{f.CertFile, f.CAFile} {
+		_, certs, err := LoadCertPool(p)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, certs...)
+	}
+	return all, nil
+}
