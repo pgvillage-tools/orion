@@ -96,7 +96,7 @@ type PostgresKeeper struct {
 	requestTimeout time.Duration
 
 	e   consensus.Store
-	pgm *pg.Manager
+	pgm pgManager
 	end chan error
 
 	localStateMutex  sync.Mutex
