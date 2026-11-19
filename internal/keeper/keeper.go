@@ -115,8 +115,6 @@ type PostgresKeeper struct {
 
 // NewPostgresKeeper is function which makes a new postgreskeeper
 func NewPostgresKeeper(ctx context.Context, cfg *Config, end chan error) (*PostgresKeeper, error) {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
 	ctx, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
 	e, err := store.NewStore(ctx, &cfg.CommonConfig)
 	if err != nil {
