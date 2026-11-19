@@ -22,7 +22,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"reflect"
 	"strings"
 
 	"github.com/gofrs/uuid"
@@ -89,31 +88,6 @@ func NameFromOrionName(orionName string) string {
 // IsOrionName returns true if the passed value is prefixed
 func IsOrionName(name string) bool {
 	return strings.HasPrefix(name, prefix)
-}
-
-// Parameters is a map with PostgreSQL parameters
-type Parameters map[string]string
-
-// Equals verifies 2 parameter objects to be the same
-func (s Parameters) Equals(is Parameters) bool {
-	return reflect.DeepEqual(s, is)
-}
-
-// Diff returns the list of pgParameters changed(newly added, existing deleted and value changed)
-func (s Parameters) Diff(newParams Parameters) []string {
-	var changedParams []string
-	for k, v := range newParams {
-		if val, ok := s[k]; !ok || v != val {
-			changedParams = append(changedParams, k)
-		}
-	}
-
-	for k := range s {
-		if _, ok := newParams[k]; !ok {
-			changedParams = append(changedParams, k)
-		}
-	}
-	return changedParams
 }
 
 // WriteFileAtomicFunc atomically writes a file, it achieves this by creating a
