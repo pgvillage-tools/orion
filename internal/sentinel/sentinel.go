@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/mitchellh/copystructure"
 )
 
 const (
@@ -65,14 +64,6 @@ const (
 	logRequiredWal    = "requiredWAL"
 	logOldMasterWal   = "olderWAL"
 )
-
-// Config is the configuration of a sentinel
-type Config struct {
-	store.CommonConfig
-	// InitialClusterSpecFile holds a cluster spec (JSON) the sentinel creates the cluster with when there is no
-	// cluster data yet
-	InitialClusterSpecFile string
-}
 
 func (s *Sentinel) electionLoop(ctx context.Context) {
 	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
@@ -1940,62 +1931,10 @@ func (s *Sentinel) dbConvergenceState(db *cluster.DB, timeout time.Duration) Con
 	return Converging
 }
 
-// KeeperInfoHistory tracks the states of a keeper
-type KeeperInfoHistory struct {
-	KeeperInfo *cluster.KeeperInfo
-	Seen       bool
-	Timer      int64
-}
-
-// KeeperInfoHistories tracks info of all keepers of this cluster
-type KeeperInfoHistories map[string]*KeeperInfoHistory
-
-// DeepCopy returns a copy of all KeeperInfoHistories, where every KeeperInfoHistory is also copied
-func (k KeeperInfoHistories) DeepCopy() (nk KeeperInfoHistories) {
-	if k == nil {
-		return nil
-	}
-	var ok bool
-	if kihCopy, err := copystructure.Copy(k); err != nil {
-		panic(err)
-	} else if !reflect.DeepEqual(k, kihCopy) {
-		panic("not equal")
-	} else if nk, ok = kihCopy.(KeeperInfoHistories); !ok {
-		panic("unexpectdly, copy is not same type")
-	}
-	return nk
-}
-
 // DBConvergenceInfo stores convergence info of a cluster for a sentinel
 type DBConvergenceInfo struct {
 	Generation int64
 	Timer      int64
-}
-
-// ProxyInfoHistory is one record in ProxyInfoHistories, whichh holds a record of ProxyInfo's
-type ProxyInfoHistory struct {
-	ProxyInfo *cluster.ProxyInfo
-	Timer     int64
-}
-
-// ProxyInfoHistories is a map of ProxyInfoHistory items
-type ProxyInfoHistories map[string]*ProxyInfoHistory
-
-// DeepCopy returns a deep copy of ProxyInfoHistories which is a new ProxyInfoHistories with a copy of all
-// ProxyInfoHistory items
-func (p ProxyInfoHistories) DeepCopy() (cp ProxyInfoHistories) {
-	if p == nil {
-		return nil
-	}
-	var ok bool
-	if np, err := copystructure.Copy(p); err != nil {
-		panic(err)
-	} else if !reflect.DeepEqual(p, np) {
-		panic("not equal")
-	} else if cp, ok = np.(ProxyInfoHistories); !ok {
-		panic("unexpectedly copy is not same type")
-	}
-	return cp
 }
 
 // Sentinel is a sttruct to keep all Sentinel info
