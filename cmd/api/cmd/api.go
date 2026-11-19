@@ -42,7 +42,7 @@ var (
 )
 
 func init() {
-	store.AddCommonFlags(CmdWebApi, &cfg.CommonConfig)
+	cmdcommon.AddCommonFlags(CmdWebApi, &cfg.CommonConfig)
 	// revive:disable
 	CmdWebApi.PersistentFlags().StringVar(&cfg.BaseURL, "baseurl", "0.0.0.0",
 		"address for the api and probe ports to listen on")
@@ -83,7 +83,7 @@ func runAPI(c *cobra.Command, _ []string) {
 	if debug {
 		logging.SetStaticLevel("debug")
 	}
-	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if cmdcommon.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 

@@ -16,8 +16,6 @@ package store
 
 import (
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 func TestCheckCommonConfig(t *testing.T) {
@@ -49,13 +47,5 @@ func TestCheckCommonConfig(t *testing.T) {
 				t.Errorf("store backend: got %q, want %q", tc.cfg.StoreBackend, tc.backend)
 			}
 		})
-	}
-}
-
-func TestTheKubeResourceKindFlagIsGone(t *testing.T) {
-	c := &cobra.Command{Use: "test"}
-	AddCommonFlags(c, &CommonConfig{})
-	if c.PersistentFlags().Lookup("kube-resource-kind") != nil {
-		t.Error("--kube-resource-kind is still there")
 	}
 }

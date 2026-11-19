@@ -46,7 +46,7 @@ var (
 
 func init() {
 	ctx := context.Background()
-	store.AddCommonFlags(CmdKeeper, &cfg.CommonConfig)
+	cmd.AddCommonFlags(CmdKeeper, &cfg.CommonConfig)
 	// revive:disable
 	CmdKeeper.PersistentFlags().StringVar(&cfg.UID, "id", "", "keeper uid (must be unique in the cluster and can contain only lower-case letters, numbers and the underscore character). If not provided a random uid will be generated.")
 	CmdKeeper.PersistentFlags().StringVar(&cfg.UID, "uid", "", "keeper uid (must be unique in the cluster and can contain only lower-case letters, numbers and the underscore character). If not provided a random uid will be generated.")
@@ -128,7 +128,7 @@ func runKeeper(c *cobra.Command, _ []string) {
 	if debug {
 		logging.SetStaticLevel("debug")
 	}
-	if store.IsColorLoggerEnable(c, &cfg.CommonConfig) {
+	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
 		logging.EnableColor()
 	}
 
