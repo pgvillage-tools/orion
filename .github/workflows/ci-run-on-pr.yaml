@@ -391,6 +391,8 @@ jobs:
 
   # One job per e2e suite (a directory in tests) and PostgreSQL version. The system suite runs on every PostgreSQL
   # version that is tested; the cli suite tests orion-cli, not PostgreSQL, so it runs on the newest version only.
+  # The system suite takes over 30 minutes in one job, so it runs in three shards (scripts/e2e-shard.sh divides its
+  # files); the cli suite runs whole (an empty shard).
   e2e-test:
     name: Run e2e tests
     runs-on: ubuntu-24.04
@@ -405,9 +407,14 @@ jobs:
         suite:
           - system
         pgversion: ${{ fromJSON(needs.codechanges.outputs.pgversions) }}
+        shard:
+          - 1/3
+          - 2/3
+          - 3/3
         include:
           - suite: cli
             pgversion: '18'
+            shard: ''
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -445,6 +452,7 @@ jobs:
         env:
           PGVERSION: ${{ matrix.pgversion }}
           E2E_SUITES: ${{ matrix.suite }}
+          E2E_SHARD: ${{ matrix.shard }}
 
   # The e2e tests on Kubernetes (tests/k8s): kind (preinstalled on the runner, like kubectl) with the images of this
   # run, the kubernetes store backend and the manifests of docs/deploy/k8s.md. PostgreSQL 18 only: it tests orion on
