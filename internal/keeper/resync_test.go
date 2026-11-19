@@ -87,3 +87,27 @@ func TestResync(t *testing.T) {
 		})
 	}
 }
+
+// without a binary version the keeper resyncs without a replication slot, and reports version 0.0
+func TestUnknownBinaryVersion(t *testing.T) {
+	ctx := quietCtx()
+	cd := smClusterData(smDB("db1", common.RoleReplica, cluster.ResyncDB))
+	db, master := cd.DBs["db1"], cd.DBs["primary"]
+
+	p, f, s := smKeeper(t)
+	f.errs["BinaryVersion"] = errFake
+	if err := p.resync(ctx, db, master, master, false); err != nil {
+		t.Fatal(err)
+	}
+	if !f.called("SyncFromFollowed") || f.replSlot != "" {
+		t.Errorf("calls = %v, replication slot %q", f.calls, f.replSlot)
+	}
+
+	p.keeperLocalState.ClusterUID = "cluster1"
+	if err := p.updateKeeperInfo(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.keeperInfo.PostgresBinaryVersion != (cluster.PostgresBinaryVersion{}) {
+		t.Errorf("binary version = %+v", s.keeperInfo.PostgresBinaryVersion)
+	}
+}

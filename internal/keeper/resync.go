@@ -63,13 +63,12 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 		logger.Error().AnErr(logging.KeyErr, err).Msg("error syncing with pg_rewind")
 	}
 
+	replSlot := ""
 	version, err := p.pgm.BinaryVersion()
 	if err != nil {
 		// in case we fail to parse the binary version then log it and just don't use replSlot
 		logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to get postgres binary version")
-	}
-	replSlot := ""
-	if version.GreaterThanEqual(pg.V96) {
+	} else if version.GreaterThanEqual(pg.V96) {
 		replSlot = common.OrionName(db.UID)
 	}
 
