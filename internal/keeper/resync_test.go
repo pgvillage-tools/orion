@@ -15,99 +15,83 @@
 package keeper
 
 import (
-	"strings"
-	"testing"
+	"context"
 
 	"github.com/Masterminds/semver/v3"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
 )
 
-func TestResync(t *testing.T) {
-	ctx := quietCtx()
-	cd := smClusterData(smDB("db1", common.RoleReplica, cluster.ResyncDB))
-	db, master := cd.DBs["db1"], cd.DBs["primary"]
-	db.Spec.UsePgrewind = true
+var _ = Describe("resync", func() {
+	var (
+		ctx        context.Context
+		db, master *cluster.DB
+	)
 
-	t.Run("pg_rewind", func(t *testing.T) {
-		p, f, _ := smKeeper(t)
-		if err := p.resync(ctx, db, master, master, true); err != nil {
-			t.Fatal(err)
-		}
-		if f.sequence("SyncFromFollowedPGRewind", "SyncFromFollowed", "RemoveAllIfInitialized") !=
-			"SyncFromFollowedPGRewind" {
-			t.Errorf("calls = %v", f.calls)
-		}
-		conninfo := f.recovery.RecoveryParameters["primary_conninfo"]
-		if f.recovery.RecoveryMode != pg.RecoveryModeStandby || !strings.Contains(conninfo, "host=10.0.0.2") ||
-			f.recovery.RecoveryParameters["primary_slot_name"] != common.OrionName("db1") {
-			t.Errorf("recovery options = %+v", f.recovery)
-		}
+	BeforeEach(func() {
+		ctx = quietCtx()
+		cd := smClusterData(smDB("db1", common.RoleReplica, cluster.ResyncDB))
+		db, master = cd.DBs["db1"], cd.DBs["primary"]
 	})
-	t.Run("pg_rewind needs a superuser password", func(t *testing.T) {
-		p, f, _ := smKeeper(t)
-		p.pgSUPassword = ""
-		if err := p.resync(ctx, db, master, master, true); err != nil {
-			t.Fatal(err)
-		}
-		if f.called("SyncFromFollowedPGRewind") || !f.called("SyncFromFollowed") {
-			t.Errorf("calls = %v", f.calls)
-		}
-	})
-	t.Run("pg_basebackup with a replication slot", func(t *testing.T) {
-		p, f, _ := smKeeper(t)
-		if err := p.resync(ctx, db, master, master, false); err != nil {
-			t.Fatal(err)
-		}
-		if f.sequence("RemoveAllIfInitialized", "SyncFromFollowed") != "RemoveAllIfInitialized,SyncFromFollowed" {
-			t.Errorf("calls = %v", f.calls)
-		}
-		if f.replSlot != common.OrionName("db1") {
-			t.Errorf("replication slot = %q", f.replSlot)
-		}
-	})
-	t.Run("no replication slot before 9.6", func(t *testing.T) {
-		p, f, _ := smKeeper(t)
-		f.version = semver.MustParse("9.5.0")
-		if err := p.resync(ctx, db, master, master, false); err != nil {
-			t.Fatal(err)
-		}
-		if f.replSlot != "" {
-			t.Errorf("replication slot = %q", f.replSlot)
-		}
-	})
-	for _, method := range []string{"RemoveAllIfInitialized", "SyncFromFollowed"} {
-		t.Run(method+" fails", func(t *testing.T) {
-			p, f, _ := smKeeper(t)
-			f.errs[method] = errFake
-			if err := p.resync(ctx, db, master, master, false); err == nil {
-				t.Error("no error")
-			}
+
+	Context("with pg_rewind", func() {
+		BeforeEach(func() {
+			db.Spec.UsePgrewind = true
 		})
-	}
-}
 
-// without a binary version the keeper resyncs without a replication slot, and reports version 0.0
-func TestUnknownBinaryVersion(t *testing.T) {
-	ctx := quietCtx()
-	cd := smClusterData(smDB("db1", common.RoleReplica, cluster.ResyncDB))
-	db, master := cd.DBs["db1"], cd.DBs["primary"]
+		It("uses pg_rewind", func() {
+			p, f, _ := smKeeper(GinkgoTB())
+			Expect(p.resync(ctx, db, master, master, true)).To(Succeed())
+			Expect(f.sequence("SyncFromFollowedPGRewind", "SyncFromFollowed", "RemoveAllIfInitialized")).
+				To(Equal("SyncFromFollowedPGRewind"))
+			Expect(f.recovery.RecoveryMode).To(Equal(pg.RecoveryModeStandby), "recovery options = %+v", f.recovery)
+			Expect(f.recovery.RecoveryParameters["primary_conninfo"]).To(ContainSubstring("host=10.0.0.2"))
+			Expect(f.recovery.RecoveryParameters).To(HaveKeyWithValue("primary_slot_name", common.OrionName("db1")))
+		})
+		It("needs a superuser password for pg_rewind", func() {
+			p, f, _ := smKeeper(GinkgoTB())
+			p.pgSUPassword = ""
+			Expect(p.resync(ctx, db, master, master, true)).To(Succeed())
+			Expect(f.called("SyncFromFollowedPGRewind")).To(BeFalse(), "calls = %v", f.calls)
+			Expect(f.called("SyncFromFollowed")).To(BeTrue(), "calls = %v", f.calls)
+		})
+		It("uses pg_basebackup with a replication slot", func() {
+			p, f, _ := smKeeper(GinkgoTB())
+			Expect(p.resync(ctx, db, master, master, false)).To(Succeed())
+			Expect(f.sequence("RemoveAllIfInitialized", "SyncFromFollowed")).
+				To(Equal("RemoveAllIfInitialized,SyncFromFollowed"))
+			Expect(f.replSlot).To(Equal(common.OrionName("db1")))
+		})
+		It("uses no replication slot before 9.6", func() {
+			p, f, _ := smKeeper(GinkgoTB())
+			f.version = semver.MustParse("9.5.0")
+			Expect(p.resync(ctx, db, master, master, false)).To(Succeed())
+			Expect(f.replSlot).To(BeEmpty())
+		})
+		DescribeTable("fails when a method fails",
+			func(method string) {
+				p, f, _ := smKeeper(GinkgoTB())
+				f.errs[method] = errFake
+				Expect(p.resync(ctx, db, master, master, false)).NotTo(Succeed())
+			},
+			Entry(nil, "RemoveAllIfInitialized"),
+			Entry(nil, "SyncFromFollowed"),
+		)
+	})
 
-	p, f, s := smKeeper(t)
-	f.errs["BinaryVersion"] = errFake
-	if err := p.resync(ctx, db, master, master, false); err != nil {
-		t.Fatal(err)
-	}
-	if !f.called("SyncFromFollowed") || f.replSlot != "" {
-		t.Errorf("calls = %v, replication slot %q", f.calls, f.replSlot)
-	}
+	// without a binary version the keeper resyncs without a replication slot, and reports version 0.0
+	It("works with an unknown binary version", func() {
+		p, f, s := smKeeper(GinkgoTB())
+		f.errs["BinaryVersion"] = errFake
+		Expect(p.resync(ctx, db, master, master, false)).To(Succeed())
+		Expect(f.called("SyncFromFollowed")).To(BeTrue(), "calls = %v", f.calls)
+		Expect(f.replSlot).To(BeEmpty())
 
-	p.keeperLocalState.ClusterUID = "cluster1"
-	if err := p.updateKeeperInfo(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if s.keeperInfo.PostgresBinaryVersion != (cluster.PostgresBinaryVersion{}) {
-		t.Errorf("binary version = %+v", s.keeperInfo.PostgresBinaryVersion)
-	}
-}
+		p.keeperLocalState.ClusterUID = "cluster1"
+		Expect(p.updateKeeperInfo(ctx)).To(Succeed())
+		Expect(s.keeperInfo.PostgresBinaryVersion).To(Equal(cluster.PostgresBinaryVersion{}))
+	})
+})

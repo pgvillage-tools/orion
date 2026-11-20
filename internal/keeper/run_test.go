@@ -19,9 +19,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 // etcdConfig returns a Config with a data dir in dir and an etcd endpoint where nothing listens: the store client
@@ -38,117 +39,93 @@ func etcdConfig(dir string) Config {
 	return cfg
 }
 
-func TestNewPostgresKeeper(t *testing.T) {
-	for name, tc := range map[string]struct {
-		cfgUID   string
-		savedUID string
-		wantUID  string // "" for a generated one
-	}{
-		"a generated uid":        {},
-		"the configured uid":     {cfgUID: "keeper1", wantUID: "keeper1"},
-		"the saved uid":          {savedUID: "keeper2", wantUID: "keeper2"},
-		"the same uid as before": {cfgUID: "keeper3", savedUID: "keeper3", wantUID: "keeper3"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			cfg := etcdConfig(t.TempDir())
-			cfg.UID = tc.cfgUID
-			if err := os.MkdirAll(cfg.DataDir, ownerRWExecPermisions); err != nil {
-				t.Fatal(err)
+var _ = Describe("NewPostgresKeeper", func() {
+	DescribeTable("uses",
+		// wantUID is "" for a generated one
+		func(ctx SpecContext, cfgUID, savedUID, wantUID string) {
+			cfg := etcdConfig(GinkgoT().TempDir())
+			cfg.UID = cfgUID
+			Expect(os.MkdirAll(cfg.DataDir, ownerRWExecPermisions)).To(Succeed())
+			if savedUID != "" {
+				saved := &PostgresKeeper{cfg: &cfg, keeperLocalState: &LocalState{UID: savedUID}}
+				Expect(saved.saveKeeperLocalState()).To(Succeed())
 			}
-			if tc.savedUID != "" {
-				saved := &PostgresKeeper{cfg: &cfg, keeperLocalState: &LocalState{UID: tc.savedUID}}
-				if err := saved.saveKeeperLocalState(); err != nil {
-					t.Fatal(err)
-				}
-			}
-			p, err := NewPostgresKeeper(t.Context(), &cfg, make(chan error))
-			if err != nil {
-				t.Fatal(err)
-			}
+			p, err := NewPostgresKeeper(ctx, &cfg, make(chan error))
+			Expect(err).NotTo(HaveOccurred())
 			uid := p.keeperLocalState.UID
-			if uid == "" || (tc.wantUID != "" && uid != tc.wantUID) {
-				t.Errorf("uid %q, want %q", uid, tc.wantUID)
+			Expect(uid).NotTo(BeEmpty())
+			if wantUID != "" {
+				Expect(uid).To(Equal(wantUID))
 			}
 			// the uid is saved, so a restart keeps it
 			restarted := &PostgresKeeper{cfg: &cfg}
-			if err := restarted.loadKeeperLocalState(); err != nil || restarted.keeperLocalState.UID != uid {
-				t.Errorf("saved uid %v (%v), want %q", restarted.keeperLocalState, err, uid)
-			}
-			if !filepath.IsAbs(p.dataDir) {
-				t.Errorf("data dir %q is not absolute", p.dataDir)
-			}
+			Expect(restarted.loadKeeperLocalState()).To(Succeed())
+			Expect(restarted.keeperLocalState.UID).To(Equal(uid))
+			Expect(filepath.IsAbs(p.dataDir)).To(BeTrue(), "data dir %q is not absolute", p.dataDir)
+		},
+		Entry("a generated uid", "", "", ""),
+		Entry("the configured uid", "keeper1", "", "keeper1"),
+		Entry("the saved uid", "", "keeper2", "keeper2"),
+		Entry("the same uid as before", "keeper3", "keeper3", "keeper3"),
+	)
+
+	DescribeTable("fails with a corrupt local state",
+		func(ctx SpecContext, file func(p *PostgresKeeper) string) {
+			cfg := etcdConfig(GinkgoT().TempDir())
+			Expect(os.MkdirAll(cfg.DataDir, ownerRWExecPermisions)).To(Succeed())
+			writeFile(GinkgoTB(), file(&PostgresKeeper{cfg: &cfg}), "{not json", ownerRWPermisions)
+			_, err := NewPostgresKeeper(ctx, &cfg, make(chan error))
+			Expect(err).To(MatchError(ContainSubstring("failed to load")))
+		},
+		Entry("keeper state", (*PostgresKeeper).keeperLocalStateFilePath),
+		Entry("db state", (*PostgresKeeper).dbLocalStateFilePath),
+	)
+})
+
+var _ = Describe("Run", func() {
+	Describe("fails", func() {
+		var dir, file string
+
+		BeforeEach(func() {
+			dir = GinkgoT().TempDir()
+			file = filepath.Join(dir, "file")
+			writeFile(GinkgoTB(), file, "", ownerRWPermisions)
 		})
-	}
-}
 
-func TestNewPostgresKeeperCorruptLocalState(t *testing.T) {
-	for name, file := range map[string]func(p *PostgresKeeper) string{
-		"keeper state": (*PostgresKeeper).keeperLocalStateFilePath,
-		"db state":     (*PostgresKeeper).dbLocalStateFilePath,
-	} {
-		t.Run(name, func(t *testing.T) {
-			cfg := etcdConfig(t.TempDir())
-			if err := os.MkdirAll(cfg.DataDir, ownerRWExecPermisions); err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, file(&PostgresKeeper{cfg: &cfg}), "{not json", ownerRWPermisions)
-			if _, err := NewPostgresKeeper(t.Context(), &cfg, make(chan error)); err == nil ||
-				!strings.Contains(err.Error(), "failed to load") {
-				t.Fatalf("got %v, want a load error", err)
-			}
+		It("with a data dir that can't be created", func(ctx SpecContext) {
+			cfg := etcdConfig(dir)
+			cfg.DataDir = filepath.Join(file, "data")
+			Expect(Run(ctx, cfg)).To(MatchError(ContainSubstring("cannot create data dir")))
 		})
-	}
-}
-
-func TestRunErrors(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "file")
-	writeFile(t, file, "", ownerRWPermisions)
-
-	t.Run("a data dir that can't be created", func(t *testing.T) {
-		cfg := etcdConfig(dir)
-		cfg.DataDir = filepath.Join(file, "data")
-		if err := Run(t.Context(), cfg); err == nil || !strings.Contains(err.Error(), "cannot create data dir") {
-			t.Fatalf("got %v, want a data dir error", err)
-		}
+		It("with a lock file that can't be opened", func(ctx SpecContext) {
+			cfg := etcdConfig(dir)
+			cfg.DataDir = filepath.Join(dir, "locked")
+			Expect(os.MkdirAll(filepath.Join(cfg.DataDir, "lock"), ownerRWExecPermisions)).To(Succeed())
+			Expect(Run(ctx, cfg)).To(MatchError(ContainSubstring("cannot take exclusive lock")))
+		})
+		It("without a store", func(ctx SpecContext) {
+			// the kubernetes backend needs POD_NAME (and a cluster)
+			GinkgoT().Setenv("POD_NAME", "")
+			cfg := etcdConfig(dir)
+			cfg.StoreBackend = "kubernetes"
+			Expect(Run(ctx, cfg)).To(MatchError(ContainSubstring("cannot create keeper")))
+		})
 	})
-	t.Run("a lock file that can't be opened", func(t *testing.T) {
-		cfg := etcdConfig(dir)
-		cfg.DataDir = filepath.Join(dir, "locked")
-		if err := os.MkdirAll(filepath.Join(cfg.DataDir, "lock"), ownerRWExecPermisions); err != nil {
-			t.Fatal(err)
-		}
-		if err := Run(t.Context(), cfg); err == nil || !strings.Contains(err.Error(), "cannot take exclusive lock") {
-			t.Fatalf("got %v, want a lock error", err)
-		}
-	})
-	t.Run("without a store", func(t *testing.T) {
-		// the kubernetes backend needs POD_NAME (and a cluster)
-		t.Setenv("POD_NAME", "")
-		cfg := etcdConfig(dir)
-		cfg.StoreBackend = "kubernetes"
-		if err := Run(t.Context(), cfg); err == nil || !strings.Contains(err.Error(), "cannot create keeper") {
-			t.Fatalf("got %v, want a store error", err)
-		}
-	})
-}
 
-func TestRunUntilTheContextIsDone(t *testing.T) {
-	for name, disableLocking := range map[string]bool{"with a lock": false, "without a lock": true} {
-		t.Run(name, func(t *testing.T) {
-			cfg := etcdConfig(t.TempDir())
+	DescribeTable("runs until the context is done",
+		func(sctx SpecContext, disableLocking bool) {
+			cfg := etcdConfig(GinkgoT().TempDir())
 			cfg.DisableDataDirLocking = disableLocking
 			cfg.MetricsListenAddress = "127.0.0.1:0"
-			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			ctx, cancel := context.WithTimeout(sctx, 500*time.Millisecond)
 			defer cancel()
 			// the store doesn't answer and there is no postgres: the keeper keeps retrying, and Run returns when
 			// ctx is done
-			if err := Run(ctx, cfg); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(filepath.Join(cfg.DataDir, "lock")); os.IsNotExist(err) != disableLocking {
-				t.Errorf("lock file: %v, locking disabled: %v", err, disableLocking)
-			}
-		})
-	}
-}
+			Expect(Run(ctx, cfg)).To(Succeed())
+			_, err := os.Stat(filepath.Join(cfg.DataDir, "lock"))
+			Expect(os.IsNotExist(err)).To(Equal(disableLocking), "lock file: %v", err)
+		},
+		Entry("with a lock", false),
+		Entry("without a lock", true),
+	)
+})
