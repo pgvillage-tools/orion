@@ -15,8 +15,8 @@
 package cmd
 
 // The commands are tested in-process: run executes CmdCLI with the given arguments, and the cli talks over mTLS to a
-// fake api (an httptest server with a mux per test). The certificates are created once, in TestMain, by running
-// `orion-cli pki init` itself. The commands share global state (cobra flags, option structs, viper), so the tests
+// fake api (an httptest server with a mux per spec). The certificates are created once, in BeforeSuite, by running
+// `orion-cli pki init` itself. The commands share global state (cobra flags, option structs, viper), so the specs
 // don't run in parallel, and run resets every flag before it executes a command.
 
 import (
@@ -34,9 +34,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -56,46 +57,35 @@ var (
 	serverTLS *tls.Config
 )
 
-func TestMain(m *testing.M) {
-	os.Exit(runTests(m))
-}
-
-func runTests(m *testing.M) int {
-	var err error
-	if testHome, err = os.MkdirTemp("", "orion-cli-test-"); err != nil {
-		log.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(testHome) }()
+var _ = BeforeSuite(func() {
+	testHome = GinkgoT().TempDir()
 	// initConfig writes ~/.orion/config.yml and the cli finds its certificates in ~/.orion/cli: keep both out of the
 	// home of the user
-	if err = os.Setenv("HOME", testHome); err != nil {
-		log.Fatal(err)
-	}
+	GinkgoT().Setenv("HOME", testHome)
 	for _, env := range os.Environ() {
-		if name, _, _ := strings.Cut(env, "="); strings.HasPrefix(name, "ORION") {
-			_ = os.Unsetenv(name)
+		if name, value, _ := strings.Cut(env, "="); strings.HasPrefix(name, "ORION") {
+			Ω(os.Unsetenv(name)).To(Succeed())
+			DeferCleanup(os.Setenv, name, value)
 		}
 	}
+	originalPollInterval := waitPollInterval
 	waitPollInterval = testPollWait
+	DeferCleanup(func() { waitPollInterval = originalPollInterval })
 
-	// The cli certificates go to the default --pki-dir (~/.orion/cli, in testHome), which every test uses unless it
+	// The cli certificates go to the default --pki-dir (~/.orion/cli, in testHome), which every spec uses unless it
 	// calls usePKIDir.
 	testAPIDir = filepath.Join(testHome, "api")
-	if _, _, err = execute(context.Background(), "", "pki", "init", "--api-dir", testAPIDir); err != nil {
-		log.Fatalf("pki init failed: %v", err)
-	}
-	if serverTLS, err = pki.APIFiles(testAPIDir).ServerConfig(); err != nil {
-		log.Fatal(err)
-	}
-	return m.Run()
-}
+	_, _, err := execute(context.Background(), "", "pki", "init", "--api-dir", testAPIDir)
+	Ω(err).NotTo(HaveOccurred(), "pki init failed")
+	serverTLS, err = pki.APIFiles(testAPIDir).ServerConfig()
+	Ω(err).NotTo(HaveOccurred())
+})
 
-// usePKIDir makes the cli use dir as its --pki-dir for the rest of the test. A viper.Set overrules the flag; the
-// cleanup sets it to nil, which viper treats as not set, so later tests get --pki-dir (or its default) again.
-func usePKIDir(t *testing.T, dir string) {
-	t.Helper()
+// usePKIDir makes the cli use dir as its --pki-dir for the rest of the spec. A viper.Set overrules the flag; the
+// cleanup sets it to nil, which viper treats as not set, so later specs get --pki-dir (or its default) again.
+func usePKIDir(dir string) {
 	viper.Set(flagPKIDir, dir)
-	t.Cleanup(func() { viper.Set(flagPKIDir, nil) })
+	DeferCleanup(func() { viper.Set(flagPKIDir, nil) })
 }
 
 // resetCommands sets every flag of c and its subcommands back to its default, and clears what an earlier Execute
@@ -123,7 +113,8 @@ func resetCommands(c *cobra.Command) {
 func execute(ctx context.Context, stdin string, args ...string) (string, string, error) {
 	resetCommands(CmdCLI)
 	var outBuf, errBuf bytes.Buffer
-	CmdCLI.SetArgs(args)
+	// with nil arguments, cobra parses os.Args: the flags of the test binary (like -ginkgo.v)
+	CmdCLI.SetArgs(append([]string{}, args...))
 	CmdCLI.SetOut(&outBuf)
 	CmdCLI.SetErr(&errBuf)
 	CmdCLI.SetIn(strings.NewReader(stdin))
@@ -138,8 +129,7 @@ func execute(ctx context.Context, stdin string, args ...string) (string, string,
 }
 
 // run runs the cli with args, and returns its output
-func run(t *testing.T, args ...string) (string, string, error) {
-	t.Helper()
+func run(args ...string) (string, string, error) {
 	return execute(context.Background(), "", args...)
 }
 
@@ -152,33 +142,32 @@ type recordedRequest struct {
 	ContentType string
 }
 
-// fakeAPI is an api server with only the routes a test registers, which records the requests it gets
+// fakeAPI is an api server with only the routes a spec registers, which records the requests it gets
 type fakeAPI struct {
-	t      *testing.T
 	mux    *http.ServeMux
 	server *httptest.Server
 	mu     sync.Mutex
 	reqs   []recordedRequest
 }
 
-// newFakeAPI starts a fake api that, like the real one, requires a client certificate signed by the CA of the cli
-func newFakeAPI(t *testing.T) *fakeAPI {
-	t.Helper()
-	f := &fakeAPI{t: t, mux: http.NewServeMux()}
+// newFakeAPI starts a fake api that, like the real one, requires a client certificate signed by the CA of the cli;
+// it stops at the end of the spec
+func newFakeAPI() *fakeAPI {
+	f := &fakeAPI{mux: http.NewServeMux()}
 	f.server = httptest.NewUnstartedServer(http.HandlerFunc(f.serve))
 	f.server.TLS = serverTLS.Clone()
-	// a refused handshake is part of some tests: don't log it
+	// a refused handshake is part of some specs: don't log it
 	f.server.Config.ErrorLog = log.New(io.Discard, "", 0)
 	f.server.StartTLS()
-	t.Cleanup(f.server.Close)
+	DeferCleanup(f.server.Close)
 	return f
 }
 
 func (f *fakeAPI) serve(w http.ResponseWriter, r *http.Request) {
+	// the handler runs in a goroutine of the server: a failed assertion must reach the spec
+	defer GinkgoRecover()
 	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		f.t.Errorf("failed to read the request body: %v", err)
-	}
+	Ω(err).NotTo(HaveOccurred(), "failed to read the request body")
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	f.mu.Lock()
 	f.reqs = append(f.reqs, recordedRequest{
@@ -214,10 +203,9 @@ func (f *fakeAPI) requestsTo(method, path string) []recordedRequest {
 
 // port returns the port the fake api listens on
 func (f *fakeAPI) port() string {
+	GinkgoHelper()
 	_, port, found := strings.Cut(f.server.Listener.Addr().String(), "127.0.0.1:")
-	if !found {
-		f.t.Fatalf("unexpected listen address %s", f.server.Listener.Addr())
-	}
+	Ω(found).To(BeTrue(), "unexpected listen address %s", f.server.Listener.Addr())
 	return port
 }
 
@@ -228,13 +216,11 @@ func (f *fakeAPI) url(path string) string {
 
 // run runs the cli against the fake api: args, followed by the flags for the api
 func (f *fakeAPI) run(args ...string) (string, string, error) {
-	f.t.Helper()
 	return f.runWith(context.Background(), "", args...)
 }
 
 // runWith runs the cli against the fake api with a context and stdin
 func (f *fakeAPI) runWith(ctx context.Context, stdin string, args ...string) (string, string, error) {
-	f.t.Helper()
 	args = append(args, "--host", "127.0.0.1", "--port", f.port(), "--timeout", "5s")
 	return execute(ctx, stdin, args...)
 }
@@ -255,33 +241,32 @@ func accepted(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// expectError fails t unless err is an error that starts with prefix and ends with suffix (when not empty)
-func expectError(t *testing.T, err error, prefix, suffix string) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("expected an error starting with %q, got none", prefix)
-	}
-	if !strings.HasPrefix(err.Error(), prefix) || !strings.HasSuffix(err.Error(), suffix) {
-		t.Fatalf("expected an error like %q...%q, got %q", prefix, suffix, err)
-	}
+// expectError fails the spec unless err is an error that starts with prefix and ends with suffix (when not empty)
+func expectError(err error, prefix, suffix string) {
+	GinkgoHelper()
+	Ω(err).To(HaveOccurred(), "expected an error starting with %q", prefix)
+	Ω(err.Error()).To(And(HavePrefix(prefix), HaveSuffix(suffix)))
 }
 
-// expectNoUsage fails t when the output of the cli has the usage: it's only printed for flag errors
-func expectNoUsage(t *testing.T, stdout, stderr string) {
-	t.Helper()
-	if strings.Contains(stdout+stderr, "Usage:") {
-		t.Errorf("expected no usage for an error after parsing the flags, got:\n%s%s", stdout, stderr)
-	}
+// expectNoUsage fails the spec when the output of the cli has the usage: it's only printed for flag errors
+func expectNoUsage(stdout, stderr string) {
+	GinkgoHelper()
+	Ω(stdout+stderr).NotTo(ContainSubstring("Usage:"),
+		"expected no usage for an error after parsing the flags")
 }
 
-// expectContains fails t unless s has every one of parts
-func expectContains(t *testing.T, s string, parts ...string) {
-	t.Helper()
+// expectContains fails the spec unless s has every one of parts
+func expectContains(s string, parts ...string) {
+	GinkgoHelper()
 	for _, p := range parts {
-		if !strings.Contains(s, p) {
-			t.Errorf("expected the output to contain %q, got:\n%s", p, s)
-		}
+		Ω(s).To(ContainSubstring(p))
 	}
+}
+
+// expectNoRequests fails the spec when api received a request
+func expectNoRequests(api *fakeAPI) {
+	GinkgoHelper()
+	Ω(api.requests()).To(BeEmpty(), "expected no requests")
 }
 
 // httpCodeSuffix is the end of an api error with code

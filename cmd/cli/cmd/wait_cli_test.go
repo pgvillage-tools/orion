@@ -16,11 +16,11 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sync"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
@@ -58,73 +58,57 @@ func handleStatusSequence(api *fakeAPI, statuses ...*apiv1.InfoCluster) {
 	})
 }
 
-func TestWaitPollsThroughFailedStatusRequests(t *testing.T) {
-	api := newFakeAPI(t)
-	api.handle(endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), accepted)
-	handleStatusSequence(api, nil, available("keeper1"))
-	stdout, _, err := api.run("promote", "--wait")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stdout != "the cluster applied the change\n" {
-		t.Errorf("unexpected output %q", stdout)
-	}
-}
+var _ = Describe("--wait", func() {
+	var api *fakeAPI
 
-func TestWaitTimesOutWithTheReason(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		status *apiv1.InfoCluster
-		reason string
-	}{
-		{"unavailable", unavailable(), "the cluster isn't available"},
-		{"not converged", &apiv1.InfoCluster{
+	BeforeEach(func() {
+		api = newFakeAPI()
+	})
+
+	It("polls through failed status requests", func() {
+		api.handle(endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), accepted)
+		handleStatusSequence(api, nil, available("keeper1"))
+		stdout, _, err := api.run("promote", "--wait")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(stdout).To(Equal("the cluster applied the change\n"))
+	})
+
+	DescribeTable("times out with the reason",
+		func(status *apiv1.InfoCluster, reason string) {
+			api.handle(endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), accepted)
+			handleStatusSequence(api, status)
+			stdout, stderr, err := api.run("promote", "--wait", "--wait-timeout", "20ms")
+			expectError(err, "--wait timed out after 20ms, waiting for: "+reason, "")
+			expectNoUsage(stdout, stderr)
+			Ω(len(api.requestsTo(http.MethodGet, statusPath))).To(BeNumerically(">=", 2),
+				"expected it to poll more than once")
+		},
+		Entry("unavailable", unavailable(), "the cluster isn't available"),
+		Entry("not converged", &apiv1.InfoCluster{
 			Keepers: apiv1.InfoKeepers{{UID: "keeper2", Healthy: true, PgWantedGeneration: 3, PgCurrentGeneration: 2}},
 			Status:  apiv1.InfoGenericStatus{"available": true, "primaryKeeper": "keeper1"},
-		}, "keeper keeper2 hasn't applied the change yet"},
-		{"status fails", nil, "GET "},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			api := newFakeAPI(t)
-			api.handle(endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), accepted)
-			handleStatusSequence(api, tc.status)
-			stdout, stderr, err := api.run("promote", "--wait", "--wait-timeout", "20ms")
-			expectError(t, err, "--wait timed out after 20ms, waiting for: "+tc.reason, "")
-			expectNoUsage(t, stdout, stderr)
-			if n := len(api.requestsTo(http.MethodGet, statusPath)); n < 2 {
-				t.Errorf("expected it to poll more than once, got %d status requests", n)
-			}
-		})
-	}
-}
+		}, "keeper keeper2 hasn't applied the change yet"),
+		Entry("status fails", nil, "GET "),
+	)
 
-func TestWaitStopsWhenTheContextEnds(t *testing.T) {
-	api := newFakeAPI(t)
-	api.handle(removeKeeperRoute, accepted)
-	handleStatusSequence(api, unavailable())
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, _, err := api.runWith(ctx, "", "removekeeper", "keeper1", "--wait")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected the wait to stop with the context, got %v", err)
-	}
-	if n := len(api.requestsTo(http.MethodGet, statusPath)); n != 1 {
-		t.Errorf("expected one status request, got %d", n)
-	}
-}
+	It("stops when the context ends", func() {
+		api.handle(removeKeeperRoute, accepted)
+		handleStatusSequence(api, unavailable())
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, _, err := api.runWith(ctx, "", "removekeeper", "keeper1", "--wait")
+		Ω(err).To(MatchError(context.Canceled), "expected the wait to stop with the context")
+		Ω(api.requestsTo(http.MethodGet, statusPath)).To(HaveLen(1), "expected one status request")
+	})
 
-func TestWaitIsOffByDefault(t *testing.T) {
-	api := newFakeAPI(t)
-	api.handle(endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), accepted)
-	// a --wait of an earlier run must not stick
-	handleStatusSequence(api, available("keeper1"))
-	if _, _, err := api.run("promote", "--wait"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := api.run("promote"); err != nil {
-		t.Fatal(err)
-	}
-	if n := len(api.requestsTo(http.MethodGet, statusPath)); n != 1 {
-		t.Errorf("expected only the first promote to wait, got %d status requests", n)
-	}
-}
+	It("is off by default", func() {
+		api.handle(endpoints.PromoteClusterEndPoint.Route(endpoints.MethodPost), accepted)
+		// a --wait of an earlier run must not stick
+		handleStatusSequence(api, available("keeper1"))
+		_, _, err := api.run("promote", "--wait")
+		Ω(err).NotTo(HaveOccurred())
+		_, _, err = api.run("promote")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(api.requestsTo(http.MethodGet, statusPath)).To(HaveLen(1), "expected only the first promote to wait")
+	})
+})
