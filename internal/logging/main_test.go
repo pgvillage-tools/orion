@@ -151,3 +151,17 @@ func TestColoring(t *testing.T) {
 	// Restore original
 	output.NoColor = originalNoColor
 }
+
+func TestStaticLevelWithoutDynamicLevel(t *testing.T) {
+	const comp = TestComponent
+	ctx := context.TODO()
+	SetStaticComponents(nil)
+	for _, level := range []string{"debug", "info", "warn", "error"} {
+		// as in the components: SetDynamicLoggingConfig is never called
+		dynamicLevelSet = false
+		SetStaticLevel(level)
+		_, logger := GetLogComponent(ctx, comp)
+		assert.Equal(t, sToLevel[level], logger.GetLevel(), "--log-level %s", level)
+	}
+	SetStaticLevel(defaultLevelString)
+}
