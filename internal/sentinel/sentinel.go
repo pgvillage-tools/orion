@@ -414,54 +414,24 @@ func (s *Sentinel) setDBSpecFromClusterSpec(cd *cluster.Data) {
 	}
 }
 
+// isDifferentTimelineBranch tells if db is on another timeline branch than followedDB (see
+// cluster.TimelinePosition.OnOtherBranch), and logs why
 func (s *Sentinel) isDifferentTimelineBranch(ctx context.Context, followedDB *cluster.DB, db *cluster.DB) bool {
 	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	if followedDB.Status.TimelineID < db.Status.TimelineID {
-		logger.Info().
-			Uint64("followedTimeline", followedDB.Status.TimelineID).
-			Uint64("timeline", db.Status.TimelineID).
-			Msg("followed instance timeline < than our timeline")
-		return true
+	other, reason := dbTimelinePosition(db).OnOtherBranch(dbTimelinePosition(followedDB))
+	if other {
+		logger.Info().Str("db", db.UID).Str("followedDB", followedDB.UID).Msg(reason)
 	}
+	return other
+}
 
-	// if the timelines are the same check that also the switchpoints are the same.
-	if followedDB.Status.TimelineID == db.Status.TimelineID {
-		if db.Status.TimelineID <= 1 {
-			// if timeline <= 1 then no timeline history file exists.
-			return false
-		}
-		ftlh := followedDB.Status.TimelinesHistory.GetTimelineHistory(db.Status.TimelineID - 1)
-		tlh := db.Status.TimelinesHistory.GetTimelineHistory(db.Status.TimelineID - 1)
-		if ftlh == nil || tlh == nil {
-			// No timeline history to check
-			return false
-		}
-		if ftlh.SwitchPoint == tlh.SwitchPoint {
-			return false
-		}
-		logger.Info().
-			Uint64("followedTimeline", followedDB.Status.TimelineID).
-			Uint64("followedXlogpos", ftlh.SwitchPoint).
-			Uint64("timeline", db.Status.TimelineID).
-			Uint64("xlogpos", tlh.SwitchPoint).
-			Msg("followed instance timeline forked at a different xlog pos than our timeline")
-		return true
+// dbTimelinePosition returns the timeline position of db, from its status
+func dbTimelinePosition(db *cluster.DB) cluster.TimelinePosition {
+	return cluster.TimelinePosition{
+		TimelineID:       db.Status.TimelineID,
+		XLogPos:          db.Status.XLogPos,
+		TimelinesHistory: db.Status.TimelinesHistory,
 	}
-
-	// followedDB.Status.TimelineID > db.Status.TimelineID
-	ftlh := followedDB.Status.TimelinesHistory.GetTimelineHistory(db.Status.TimelineID)
-	if ftlh != nil {
-		if ftlh.SwitchPoint < db.Status.XLogPos {
-			logger.Info().
-				Uint64("followedTimeline", followedDB.Status.TimelineID).
-				Uint64("followedXlogpos", ftlh.SwitchPoint).
-				Uint64("timeline", db.Status.TimelineID).
-				Uint64("xlogpos", db.Status.XLogPos).
-				Msg("followed instance timeline forked before our current state")
-			return true
-		}
-	}
-	return false
 }
 
 // isLagBelowMax checks if the db reported lag is below MaxStandbyLag from the
