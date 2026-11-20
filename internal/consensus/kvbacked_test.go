@@ -402,18 +402,6 @@ func TestConfigEndpoints(t *testing.T) {
 			wantScheme: "http",
 		},
 		{
-			name:       "etcdv2 default",
-			cfg:        Config{Backend: ETCDV2},
-			wantAddrs:  []string{"127.0.0.1:2379"},
-			wantScheme: "http",
-		},
-		{
-			name:       "consul default",
-			cfg:        Config{Backend: CONSUL},
-			wantAddrs:  []string{"127.0.0.1:8500"},
-			wantScheme: "http",
-		},
-		{
 			name:       "schemeless",
 			cfg:        Config{Backend: ETCDV3, Endpoints: "a:1,b:2"},
 			wantAddrs:  []string{"a:1", "b:2"},
@@ -426,6 +414,8 @@ func TestConfigEndpoints(t *testing.T) {
 			wantScheme: "https",
 		},
 		{name: "unknown backend", cfg: Config{Backend: "zookeeper"}, wantErr: true},
+		{name: "consul", cfg: Config{Backend: "consul"}, wantErr: true},
+		{name: "etcdv2", cfg: Config{Backend: "etcdv2"}, wantErr: true},
 		{name: "mixed schemes", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1,http://b:2"}, wantErr: true},
 		{name: "schemeless and https", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1,b:2"}, wantErr: true},
 		{name: "unparsable", cfg: Config{Backend: ETCDV3, Endpoints: "http://a b:%zz"}, wantErr: true},
@@ -479,24 +469,21 @@ func TestConfigTLSConfig(t *testing.T) {
 }
 
 func TestNewKVStore(t *testing.T) {
-	// the clients connect lazily, so no server is needed
-	for _, cfg := range []Config{
-		{Backend: CONSUL, Endpoints: "http://127.0.0.1:1", Timeout: time.Second},
-		{Backend: ETCDV2, Endpoints: "http://127.0.0.1:1", Timeout: time.Second},
-		{Backend: ETCDV3, Endpoints: "https://127.0.0.1:1", Timeout: time.Second},
-	} {
-		t.Run(cfg.Backend.string(), func(t *testing.T) {
-			s, err := NewKVStore(context.Background(), cfg)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if _, ok := s.(*libKVStore); !ok {
-				t.Errorf("expected a libkv store, got %T", s)
-			}
-			if err = s.Close(); err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
+	// the client connects lazily, so no server is needed
+	cfg := Config{Backend: ETCDV3, Endpoints: "https://127.0.0.1:1", Timeout: time.Second}
+	s, err := NewKVStore(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	es, ok := s.(*etcdV3Store)
+	if !ok {
+		t.Fatalf("expected orion's etcd v3 store, got %T", s)
+	}
+	if eps := es.c.Endpoints(); len(eps) != 1 || eps[0] != "https://127.0.0.1:1" || es.requestTimeout != time.Second {
+		t.Errorf("endpoints %v, request timeout %v", eps, es.requestTimeout)
+	}
+	if err = s.Close(); err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -508,6 +495,8 @@ func TestNewKVStoreErrors(t *testing.T) {
 		{name: "invalid endpoints", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1,http://b:2"}},
 		{name: "invalid tls", cfg: Config{Backend: ETCDV3, Endpoints: "unix://a"}},
 		{name: "unknown backend", cfg: Config{Backend: "zookeeper", Endpoints: "http://a:1"}},
+		{name: "consul", cfg: Config{Backend: "consul", Endpoints: "http://a:1"}},
+		{name: "etcdv2", cfg: Config{Backend: "etcdv2", Endpoints: "http://a:1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := NewKVStore(context.Background(), tc.cfg); err == nil {
@@ -518,12 +507,6 @@ func TestNewKVStoreErrors(t *testing.T) {
 }
 
 func TestNewKVBackedElection(t *testing.T) {
-	lkv := &libKVStore{store: newFakeLibKV()}
-	if e, ok := NewKVBackedElection(lkv, "/c/leader", "uid", time.Second).(*libkvElection); !ok ||
-		e.path != "/c/leader" || e.candidate.node != "uid" {
-		t.Errorf("unexpected libkv election %v", e)
-	}
-
 	ekv := &etcdV3Store{}
 	if e, ok := NewKVBackedElection(ekv, "/c/leader", "uid", time.Second).(*etcdv3Election); !ok ||
 		e.path != "/c/leader" || e.candidateUID != "uid" || e.requestTimeout != time.Second || e.ttl != minTTL {

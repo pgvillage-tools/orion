@@ -22,12 +22,12 @@ If you're providing the keeper's uid in the command line don't start a new keepe
 
 #### Sentinel and proxies
 
-Sentinels and proxies don't need a local data directory but only use the store (etcd or consul). The sentinels and proxies uids are randomly generated at every process start to avoid possible collisions.
+Sentinels and proxies don't need a local data directory but only use the store (etcd or kubernetes). The sentinels and proxies uids are randomly generated at every process start to avoid possible collisions.
 
 
 #### Store
 
-Currently the store can be etcd (using v2 or v3 api), consul or kubernetes, we leverage their features to achieve consistent and persistent cluster data.
+Currently the store can be etcd (using the v3 api) or kubernetes, we leverage their features to achieve consistent and persistent cluster data.
 
 The store should be highly available (at least three nodes).
 
@@ -35,11 +35,11 @@ When a orion component is not able to read (quorum consistent read) or write to 
 
 In addition, the orion-proxy, to avoid sending client connections to a partioned master, will drop all the connections since it cannot know if the cluster data has changed (for example if the proxy has problems reading from the store but the sentinel can write to it).
 
-### etcd and consul store backends
+### etcd store backend
 
-If etcd or consul becomes partitioned (network partition or store nodes dead/with problems), thanks to the raft protocol, only the quorate partition can accept writes.
+If etcd becomes partitioned (network partition or store nodes dead/with problems), thanks to the raft protocol, only the quorate partition can accept writes.
 
-Every orion executable has a `--store-prefix` option (defaulting to `orion/cluster`) to set the store path prefix. For etcdv2 and consul, if not provided, a starting `/` will be automatically added since they have a directory based layout. Instead, for etcdv3, the prefix will be kept as provided (etcdv3 has a flat namespace and for this reason two prefixes with and without a starting `/` are different and both valid).
+Every orion executable has a `--store-prefix` option (defaulting to `orion/cluster`) to set the store path prefix. A starting `/` is removed (as libkv did, which orion used before), so `/orion/cluster` and `orion/cluster` are the same prefix.
 
 #### etcdv3 compaction
 

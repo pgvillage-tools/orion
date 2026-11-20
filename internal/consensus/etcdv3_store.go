@@ -18,7 +18,9 @@ package consensus
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"strings"
 	"time"
 
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
@@ -41,6 +43,34 @@ type etcdV3Store struct {
 	requestTimeout time.Duration
 }
 
+// newEtcdV3Store connects to etcd on addrs (host:port), with https when tlsConfig is set. timeout is the dial timeout,
+// the timeout of every request, and the endpoint auto sync interval, as libkv used them.
+func newEtcdV3Store(addrs []string, tlsConfig *tls.Config, timeout time.Duration) (*etcdV3Store, error) {
+	scheme := "http"
+	if tlsConfig != nil {
+		scheme = "https"
+	}
+	endpoints := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		endpoints = append(endpoints, scheme+"://"+addr)
+	}
+	c, err := etcdclientv3.New(etcdclientv3.Config{
+		Endpoints:        endpoints,
+		TLS:              tlsConfig,
+		DialTimeout:      timeout,
+		AutoSyncInterval: timeout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &etcdV3Store{c: c, requestTimeout: timeout}, nil
+}
+
+// normalizeKey removes a leading / from key, as libkv did: the keys stay where libkv stored them
+func normalizeKey(key string) string {
+	return strings.TrimPrefix(key, "/")
+}
+
 func (s *etcdV3Store) Put(pctx context.Context, key string, value []byte, options *WriteOptions) error {
 	etcdv3Options := []etcdclientv3.OpOption{}
 	if options != nil {
@@ -55,14 +85,14 @@ func (s *etcdV3Store) Put(pctx context.Context, key string, value []byte, option
 		}
 	}
 	ctx, cancel := context.WithTimeout(pctx, s.requestTimeout)
-	_, err := s.c.Put(ctx, key, string(value), etcdv3Options...)
+	_, err := s.c.Put(ctx, normalizeKey(key), string(value), etcdv3Options...)
 	cancel()
-	return fromLibKVStoreErr(err)
+	return fromEtcV3Error(err)
 }
 
 func (s *etcdV3Store) Get(pctx context.Context, key string) (*KVPair, error) {
 	ctx, cancel := context.WithTimeout(pctx, s.requestTimeout)
-	resp, err := s.c.Get(ctx, key)
+	resp, err := s.c.Get(ctx, normalizeKey(key))
 	cancel()
 	if err != nil {
 		return nil, fromEtcV3Error(err)
@@ -76,7 +106,7 @@ func (s *etcdV3Store) Get(pctx context.Context, key string) (*KVPair, error) {
 
 func (s *etcdV3Store) List(pctx context.Context, directory string) ([]*KVPair, error) {
 	ctx, cancel := context.WithTimeout(pctx, s.requestTimeout)
-	resp, err := s.c.Get(ctx, directory, etcdclientv3.WithPrefix())
+	resp, err := s.c.Get(ctx, normalizeKey(directory), etcdclientv3.WithPrefix())
 	cancel()
 	if err != nil {
 		return nil, fromEtcV3Error(err)
@@ -107,6 +137,7 @@ func (s *etcdV3Store) AtomicPut(
 			etcdv3Options = append(etcdv3Options, etcdclientv3.WithLease(lease.ID))
 		}
 	}
+	key = normalizeKey(key)
 	var cmp etcdclientv3.Cmp
 	if previous != nil {
 		cmp = etcdclientv3.Compare(etcdclientv3.ModRevision(key), "=", int64(previous.LastIndex))
@@ -131,7 +162,7 @@ func (s *etcdV3Store) AtomicPut(
 
 func (s *etcdV3Store) Delete(pctx context.Context, key string) error {
 	ctx, cancel := context.WithTimeout(pctx, s.requestTimeout)
-	_, err := s.c.Delete(ctx, key)
+	_, err := s.c.Delete(ctx, normalizeKey(key))
 	cancel()
 	return fromEtcV3Error(err)
 }

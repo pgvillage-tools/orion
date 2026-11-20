@@ -20,15 +20,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kvtools/consul"
-	"github.com/kvtools/etcdv2"
-	"github.com/kvtools/etcdv3"
-	"github.com/kvtools/valkeyrie"
 	"github.com/pgvillage-tools/orion/internal/logging"
 )
 
-// TODO(sgotti) fix this in libkv?
-// consul min ttl is 10s and libkv divides this by 2
+// minTTL is the minimum ttl of the keys with a ttl, and the ttl of the session of the sentinel election (as stolon
+// had it for consul, whose minimum ttl is 10s, halved by libkv)
 const minTTL = 20 * time.Second
 
 // KVPair represents {Key, Value, Lastindex} tuple
@@ -43,7 +39,7 @@ type WriteOptions struct {
 	TTL time.Duration
 }
 
-// KVStore is an interface representing a backend (e.a. etcd, k8s en Consul)
+// KVStore is an interface representing a backend (etcd v3)
 type KVStore interface {
 	// Put a value at the specified key
 	Put(ctx context.Context, key string, value []byte, options *WriteOptions) error
@@ -78,33 +74,8 @@ func NewKVStore(ctx context.Context, cfg Config) (KVStore, error) {
 	}
 	logger.Debug().Bool("tls enabled", tlsConfig != nil).Msg("")
 
-	var config valkeyrie.Config
-	switch cfg.Backend {
-	case CONSUL:
-		config = &consul.Config{
-			TLS:               tlsConfig,
-			ConnectionTimeout: cfg.Timeout,
-		}
-	case ETCDV2:
-		config = &etcdv2.Config{
-			TLS:               tlsConfig,
-			ConnectionTimeout: cfg.Timeout,
-		}
-
-	case ETCDV3:
-		config = &etcdv3.Config{
-			TLS:               tlsConfig,
-			ConnectionTimeout: cfg.Timeout,
-			SyncPeriod:        cfg.Timeout,
-		}
-	default:
+	if cfg.Backend != ETCDV3 {
 		return nil, fmt.Errorf("Unknown store backend: %q", cfg.Backend)
 	}
-	logger.Debug().Any("store config", config).Msg("")
-
-	store, err := valkeyrie.NewStore(ctx, cfg.Backend.string(), addrs, config)
-	if err != nil {
-		return nil, err
-	}
-	return &libKVStore{store: store}, nil
+	return newEtcdV3Store(addrs, tlsConfig, cfg.Timeout)
 }

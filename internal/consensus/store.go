@@ -34,7 +34,7 @@ var (
 	ErrElectionNoLeader = errors.New("election: no leader")
 )
 
-// Store is an interface for a kv store which could be consul, or etcd (v2 or v3)
+// Store is the interface of the cluster store: etcd (v3, KVBackedStore) or kubernetes (KubeStore)
 type Store interface {
 	AtomicPutClusterData(ctx context.Context, cd *cluster.Data, previous *KVPair) (*KVPair, error)
 	PutClusterData(ctx context.Context, cd *cluster.Data) error

@@ -24,9 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kvtools/consul"
-	"github.com/kvtools/etcdv2"
-	"github.com/kvtools/etcdv3"
 	"github.com/pgvillage-tools/orion/internal/common"
 )
 
@@ -34,29 +31,13 @@ import (
 type BackendType string
 
 const (
-	// CONSUL means that consul is used as backend
-	CONSUL BackendType = consul.StoreName
-	// ETCDV2 means that etcd is used as backend and that the v2 api is used
-	ETCDV2 BackendType = etcdv2.StoreName
-	// ETCDV3 means that etcd is used as backend and that the v3 api is used
-	ETCDV3 BackendType = etcdv3.StoreName
+	// ETCDV3 means that etcd is used as backend, with its v3 api
+	ETCDV3 BackendType = "etcdv3"
 )
-
-var storeTypes = []string{
-	consul.StoreName,
-	etcdv2.StoreName,
-	etcdv3.StoreName,
-}
-
-func (bt BackendType) string() string {
-	return string(bt)
-}
 
 const (
 	// DefaultEtcdEndpoints defines the default endpoints when using etcd
 	DefaultEtcdEndpoints = "http://127.0.0.1:2379"
-	// DefaultConsulEndpoints defines the default endpoints when using consul
-	DefaultConsulEndpoints = "http://127.0.0.1:8500"
 )
 
 var urlSchemeRegexp = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+-.]*)://`)
@@ -160,18 +141,10 @@ func (c Config) EndpointAddrs() ([]string, error) {
 func (c Config) EndPoints() ([]string, error) {
 	endpointsStr := c.Endpoints
 	if endpointsStr == "" {
-		switch c.Backend {
-		case CONSUL:
-			endpointsStr = DefaultConsulEndpoints
-		case ETCDV2, ETCDV3:
-			endpointsStr = DefaultEtcdEndpoints
-		default:
-			return nil, fmt.Errorf(
-				"unexpected store '%s', should be any of %v",
-				c.Backend,
-				strings.Join(storeTypes, ","),
-			)
+		if c.Backend != ETCDV3 {
+			return nil, fmt.Errorf("unexpected store '%s', should be %s", c.Backend, ETCDV3)
 		}
+		endpointsStr = DefaultEtcdEndpoints
 	}
 	return strings.Split(endpointsStr, ","), nil
 }
