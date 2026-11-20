@@ -21,9 +21,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
-	"testing"
 
 	"github.com/golang/mock/gomock"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
@@ -69,28 +70,18 @@ func typicalProxies() apiv1.ProxiesInfo {
 }
 
 // checkResponse checks the status of w, and its body: the JSON body when status is 200, and a problem otherwise
-func checkResponse(t *testing.T, w *httptest.ResponseRecorder, status int, body string) {
-	t.Helper()
-	if w.Code != status {
-		t.Errorf("expected status %d, got %d: %s", status, w.Code, w.Body)
-		return
-	}
+func checkResponse(w *httptest.ResponseRecorder, status int, body string) {
+	GinkgoHelper()
+	Expect(w.Code).To(Equal(status), "body: %s", w.Body)
 	if status == http.StatusOK {
-		if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-			t.Errorf("expected Content-Type application/json, got %q", ct)
-		}
-		if got := strings.TrimSpace(w.Body.String()); got != body {
-			t.Errorf("expected body %s, got %s", body, got)
-		}
+		Expect(w.Header().Get("Content-Type")).To(Equal("application/json"))
+		Expect(strings.TrimSpace(w.Body.String())).To(Equal(body))
 		return
 	}
-	if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
-		t.Errorf("expected Content-Type %s, got %q", endpoints.ContentTypeProblem, ct)
-	}
+	Expect(w.Header().Get("Content-Type")).To(Equal(endpoints.ContentTypeProblem))
 	var problem endpoints.Problem
-	if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil || problem.Status != status {
-		t.Errorf("expected a problem with status %d, got %s (%v)", status, w.Body, err)
-	}
+	Expect(json.Unmarshal(w.Body.Bytes(), &problem)).To(Succeed(), "expected a problem, got %s", w.Body)
+	Expect(problem.Status).To(Equal(status), "expected a problem with status %d", status)
 }
 
 // memberStatus returns the status of a request for one member: 404 when the list was fine but has no such member
@@ -101,102 +92,79 @@ func memberStatus(status int, body string) int {
 	return status
 }
 
-func TestKeeperHandlers(t *testing.T) {
+var _ = Describe("keepers", func() {
 	errBoom := errors.New("boom")
 
-	for name, tc := range map[string]struct {
-		cd       *apiv1.Data
-		storeErr error
-		uid      string
-		status   int
-		list     string // body of GET /v1/cluster/keepers
-		one      string // body of GET /v1/cluster/keepers/{uid}; empty when that is 404
-	}{
-		"a typical cluster, sorted on uid": {
-			cd: typicalClusterData(), uid: "keeper1", status: http.StatusOK, list: typicalKeepersJSON, one: keeper1JSON,
-		},
-		"a keeper without a db": {
-			cd: typicalClusterData(), uid: "keeper3", status: http.StatusOK, list: typicalKeepersJSON, one: keeper3JSON,
-		},
-		"an unknown keeper": {
-			cd: typicalClusterData(), uid: "keeper4", status: http.StatusOK, list: typicalKeepersJSON,
-		},
-		"no cluster data": {
-			uid: "keeper1", status: http.StatusOK, list: `[]`,
-		},
-		"cluster data without keepers": {
-			cd: &apiv1.Data{Cluster: &apiv1.Cluster{}}, uid: "keeper1", status: http.StatusOK, list: `[]`,
-		},
-		"the cluster data cannot be read": {
-			cd: typicalClusterData(), storeErr: errBoom, uid: "keeper1", status: http.StatusInternalServerError,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
+	// list is the body of GET /v1/cluster/keepers, one the body of GET /v1/cluster/keepers/{uid} (empty when that is
+	// 404)
+	DescribeTable("KeepersHandler and KeeperHandler",
+		func(cd *apiv1.Data, storeErr error, uid string, status int, list, one string) {
+			ctrl := gomock.NewController(GinkgoT())
 			store := mockconsensus.NewMockStore(ctrl)
-			store.EXPECT().GetClusterData(gomock.Any()).Return(tc.cd, &consensus.KVPair{}, tc.storeErr).Times(2)
+			store.EXPECT().GetClusterData(gomock.Any()).Return(cd, &consensus.KVPair{}, storeErr).Times(2)
 			var ready atomic.Bool
 			h := NewHandlers(store, mockconsensus.NewMockElection(ctrl), &ready)
 
 			w := httptest.NewRecorder()
 			h.KeepersHandler(w, httptest.NewRequest(http.MethodGet, "/v1/cluster/keepers", nil))
-			checkResponse(t, w, tc.status, tc.list)
+			checkResponse(w, status, list)
 
-			r := httptest.NewRequest(http.MethodGet, "/v1/cluster/keepers/"+tc.uid, nil)
-			r.SetPathValue("uid", tc.uid)
+			r := httptest.NewRequest(http.MethodGet, "/v1/cluster/keepers/"+uid, nil)
+			r.SetPathValue("uid", uid)
 			w = httptest.NewRecorder()
 			h.KeeperHandler(w, r)
-			checkResponse(t, w, memberStatus(tc.status, tc.one), tc.one)
-		})
-	}
-}
+			checkResponse(w, memberStatus(status, one), one)
+		},
+		Entry("a typical cluster, sorted on uid",
+			typicalClusterData(), nil, "keeper1", http.StatusOK, typicalKeepersJSON, keeper1JSON),
+		Entry("a keeper without a db",
+			typicalClusterData(), nil, "keeper3", http.StatusOK, typicalKeepersJSON, keeper3JSON),
+		Entry("an unknown keeper",
+			typicalClusterData(), nil, "keeper4", http.StatusOK, typicalKeepersJSON, ""),
+		Entry("no cluster data",
+			nil, nil, "keeper1", http.StatusOK, `[]`, ""),
+		Entry("cluster data without keepers",
+			&apiv1.Data{Cluster: &apiv1.Cluster{}}, nil, "keeper1", http.StatusOK, `[]`, ""),
+		Entry("the cluster data cannot be read",
+			typicalClusterData(), errBoom, "keeper1", http.StatusInternalServerError, "", ""),
+	)
+})
 
-func TestProxyHandlers(t *testing.T) {
+var _ = Describe("proxies", func() {
 	errBoom := errors.New("boom")
 
-	for name, tc := range map[string]struct {
-		proxies  apiv1.ProxiesInfo
-		storeErr error
-		uid      string
-		status   int
-		list     string // body of GET /v1/cluster/proxies
-		one      string // body of GET /v1/cluster/proxies/{uid}; empty when that is 404
-	}{
-		"proxies, sorted on uid": {
-			proxies: typicalProxies(), uid: "proxy2", status: http.StatusOK, list: typicalProxiesJSON,
-			one: `{"uid":"proxy2","generation":7}`,
-		},
-		"an unknown proxy": {
-			proxies: typicalProxies(), uid: "proxy3", status: http.StatusOK, list: typicalProxiesJSON,
-		},
-		"no proxies": {
-			uid: "proxy1", status: http.StatusOK, list: `[]`,
-		},
-		"the proxies cannot be read": {
-			storeErr: errBoom, uid: "proxy1", status: http.StatusInternalServerError,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
+	// list is the body of GET /v1/cluster/proxies, one the body of GET /v1/cluster/proxies/{uid} (empty when that is
+	// 404)
+	DescribeTable("ProxiesHandler and ProxyHandler",
+		func(proxies apiv1.ProxiesInfo, storeErr error, uid string, status int, list, one string) {
+			ctrl := gomock.NewController(GinkgoT())
 			store := mockconsensus.NewMockStore(ctrl)
-			store.EXPECT().GetProxiesInfo(gomock.Any()).Return(tc.proxies, tc.storeErr).Times(2)
+			store.EXPECT().GetProxiesInfo(gomock.Any()).Return(proxies, storeErr).Times(2)
 			var ready atomic.Bool
 			h := NewHandlers(store, mockconsensus.NewMockElection(ctrl), &ready)
 
 			w := httptest.NewRecorder()
 			h.ProxiesHandler(w, httptest.NewRequest(http.MethodGet, "/v1/cluster/proxies", nil))
-			checkResponse(t, w, tc.status, tc.list)
+			checkResponse(w, status, list)
 
-			r := httptest.NewRequest(http.MethodGet, "/v1/cluster/proxies/"+tc.uid, nil)
-			r.SetPathValue("uid", tc.uid)
+			r := httptest.NewRequest(http.MethodGet, "/v1/cluster/proxies/"+uid, nil)
+			r.SetPathValue("uid", uid)
 			w = httptest.NewRecorder()
 			h.ProxyHandler(w, r)
-			checkResponse(t, w, memberStatus(tc.status, tc.one), tc.one)
-		})
-	}
-}
+			checkResponse(w, memberStatus(status, one), one)
+		},
+		Entry("proxies, sorted on uid",
+			typicalProxies(), nil, "proxy2", http.StatusOK, typicalProxiesJSON, `{"uid":"proxy2","generation":7}`),
+		Entry("an unknown proxy",
+			typicalProxies(), nil, "proxy3", http.StatusOK, typicalProxiesJSON, ""),
+		Entry("no proxies",
+			nil, nil, "proxy1", http.StatusOK, `[]`, ""),
+		Entry("the proxies cannot be read",
+			nil, errBoom, "proxy1", http.StatusInternalServerError, "", ""),
+	)
+})
 
-func TestStatusHandler(t *testing.T) {
+var _ = Describe("GET /v1/cluster/status", func() {
 	errBoom := errors.New("boom")
 	typicalStatusJSON := func(sentinels string) string {
 		return `{"proxies":` + typicalProxiesJSON + `,"keepers":` + typicalKeepersJSON + `,"sentinels":` + sentinels +
@@ -210,7 +178,7 @@ func TestStatusHandler(t *testing.T) {
 		readsSentinels
 		readsLeader
 	)
-	for name, tc := range map[string]struct {
+	type statusCase struct {
 		cd                                    *apiv1.Data
 		proxies                               apiv1.ProxiesInfo
 		sentinels                             apiv1.SentinelsInfo
@@ -218,39 +186,11 @@ func TestStatusHandler(t *testing.T) {
 		reads                                 int
 		status                                int
 		body                                  string
-	}{
-		"a typical cluster": {
-			cd: typicalClusterData(), proxies: typicalProxies(),
-			sentinels: apiv1.SentinelsInfo{{UID: "sentinel2"}, {UID: "sentinel1"}},
-			reads:     readsLeader, status: http.StatusOK,
-			body: typicalStatusJSON(`[{"uid":"sentinel1","leader":true},{"uid":"sentinel2","leader":false}]`),
-		},
-		"no leader": {
-			cd: typicalClusterData(), proxies: typicalProxies(),
-			sentinels: apiv1.SentinelsInfo{{UID: "sentinel2"}, {UID: "sentinel1"}},
-			lErr:      consensus.ErrElectionNoLeader, reads: readsLeader, status: http.StatusOK,
-			body: typicalStatusJSON(`[{"uid":"sentinel1","leader":false},{"uid":"sentinel2","leader":false}]`),
-		},
-		"no cluster data and no members": {
-			reads: readsLeader, status: http.StatusOK,
-			body: `{"proxies":[],"keepers":[],"sentinels":[],"status":{"available":false}}`,
-		},
-		"the cluster data cannot be read": {
-			cdErr: errBoom, reads: readsClusterData, status: http.StatusInternalServerError,
-		},
-		"the proxies cannot be read": {
-			cd: typicalClusterData(), proxiesErr: errBoom, reads: readsProxies, status: http.StatusInternalServerError,
-		},
-		"the sentinels cannot be read": {
-			cd: typicalClusterData(), sentinelsErr: errBoom, reads: readsSentinels,
-			status: http.StatusInternalServerError,
-		},
-		"the leader cannot be read": {
-			cd: typicalClusterData(), lErr: errBoom, reads: readsLeader, status: http.StatusInternalServerError,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
+	}
+
+	DescribeTable("StatusHandler",
+		func(tc statusCase) {
+			ctrl := gomock.NewController(GinkgoT())
 			store := mockconsensus.NewMockStore(ctrl)
 			election := mockconsensus.NewMockElection(ctrl)
 			store.EXPECT().GetClusterData(gomock.Any()).Return(tc.cd, &consensus.KVPair{}, tc.cdErr)
@@ -272,13 +212,43 @@ func TestStatusHandler(t *testing.T) {
 
 			w := httptest.NewRecorder()
 			h.StatusHandler(w, httptest.NewRequest(http.MethodGet, "/v1/cluster/status", nil))
-			checkResponse(t, w, tc.status, tc.body)
+			checkResponse(w, tc.status, tc.body)
 			// the store error is logged, not returned: it can name store internals (endpoints, keys)
-			if tc.status == http.StatusInternalServerError &&
-				(!strings.Contains(w.Body.String(), "failed to get the cluster status") ||
-					strings.Contains(w.Body.String(), errBoom.Error())) {
-				t.Errorf("expected a fixed problem detail without the store error, got %s", w.Body)
+			if tc.status == http.StatusInternalServerError {
+				Expect(w.Body.String()).To(ContainSubstring("failed to get the cluster status"),
+					"expected a fixed problem detail")
+				Expect(w.Body.String()).NotTo(ContainSubstring(errBoom.Error()),
+					"expected a problem detail without the store error")
 			}
-		})
-	}
-}
+		},
+		Entry("a typical cluster", statusCase{
+			cd: typicalClusterData(), proxies: typicalProxies(),
+			sentinels: apiv1.SentinelsInfo{{UID: "sentinel2"}, {UID: "sentinel1"}},
+			reads:     readsLeader, status: http.StatusOK,
+			body: typicalStatusJSON(`[{"uid":"sentinel1","leader":true},{"uid":"sentinel2","leader":false}]`),
+		}),
+		Entry("no leader", statusCase{
+			cd: typicalClusterData(), proxies: typicalProxies(),
+			sentinels: apiv1.SentinelsInfo{{UID: "sentinel2"}, {UID: "sentinel1"}},
+			lErr:      consensus.ErrElectionNoLeader, reads: readsLeader, status: http.StatusOK,
+			body: typicalStatusJSON(`[{"uid":"sentinel1","leader":false},{"uid":"sentinel2","leader":false}]`),
+		}),
+		Entry("no cluster data and no members", statusCase{
+			reads: readsLeader, status: http.StatusOK,
+			body: `{"proxies":[],"keepers":[],"sentinels":[],"status":{"available":false}}`,
+		}),
+		Entry("the cluster data cannot be read", statusCase{
+			cdErr: errBoom, reads: readsClusterData, status: http.StatusInternalServerError,
+		}),
+		Entry("the proxies cannot be read", statusCase{
+			cd: typicalClusterData(), proxiesErr: errBoom, reads: readsProxies, status: http.StatusInternalServerError,
+		}),
+		Entry("the sentinels cannot be read", statusCase{
+			cd: typicalClusterData(), sentinelsErr: errBoom, reads: readsSentinels,
+			status: http.StatusInternalServerError,
+		}),
+		Entry("the leader cannot be read", statusCase{
+			cd: typicalClusterData(), lErr: errBoom, reads: readsLeader, status: http.StatusInternalServerError,
+		}),
+	)
+})

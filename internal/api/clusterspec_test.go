@@ -24,9 +24,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
-	"testing"
 
 	"github.com/golang/mock/gomock"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
@@ -66,13 +67,13 @@ type specCase struct {
 	puts   []error
 	status int
 	// stored checks the spec that is written to the store
-	stored func(t *testing.T, spec *apiv1.Spec)
+	stored func(spec *apiv1.Spec)
 }
 
 // runSpecCase calls handler for tc, and checks its status, its ETag and what it writes to the store
-func runSpecCase(t *testing.T, method string, tc specCase, handler func(h *Handlers) http.HandlerFunc) {
-	t.Helper()
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
+func runSpecCase(method string, tc specCase, handler func(h *Handlers) http.HandlerFunc) {
+	GinkgoHelper()
+	store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
 	store.EXPECT().GetClusterData(gomock.Any()).DoAndReturn(
 		func(context.Context) (*apiv1.Data, *consensus.KVPair, error) {
 			if tc.getErr != nil {
@@ -88,12 +89,10 @@ func runSpecCase(t *testing.T, method string, tc specCase, handler func(h *Handl
 	for _, putErr := range tc.puts {
 		calls = append(calls, store.EXPECT().AtomicPutClusterData(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(_ context.Context, cd *apiv1.Data, previous *consensus.KVPair) (*consensus.KVPair, error) {
-				if previous == nil || previous.LastIndex != 1 {
-					t.Errorf("expected the write to be conditional on the read pair, got %v", previous)
-				}
-				if cd.Cluster.UID != "cluster1" {
-					t.Errorf("expected the rest of the cluster data to be kept, got cluster %q", cd.Cluster.UID)
-				}
+				Expect(previous).NotTo(BeNil(), "expected the write to be conditional on the read pair")
+				Expect(previous.LastIndex).To(BeEquivalentTo(1),
+					"expected the write to be conditional on the read pair")
+				Expect(cd.Cluster.UID).To(Equal("cluster1"), "expected the rest of the cluster data to be kept")
 				stored = cd.Cluster.Spec
 				return &consensus.KVPair{LastIndex: 2}, putErr
 			}))
@@ -109,415 +108,341 @@ func runSpecCase(t *testing.T, method string, tc specCase, handler func(h *Handl
 	}
 	w := httptest.NewRecorder()
 	var ready atomic.Bool
-	handler(NewHandlers(store, mockconsensus.NewMockElection(gomock.NewController(t)), &ready))(w, r)
+	handler(NewHandlers(store, mockconsensus.NewMockElection(gomock.NewController(GinkgoT())), &ready))(w, r)
 
-	if w.Code != tc.status {
-		t.Fatalf("expected status %d, got %d: %s", tc.status, w.Code, w.Body)
-	}
+	Expect(w.Code).To(Equal(tc.status), "body: %s", w.Body)
 	if tc.status != http.StatusOK {
-		if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
-			t.Errorf("expected a problem, got Content-Type %q", ct)
-		}
-		if etag := w.Header().Get("ETag"); etag != "" {
-			t.Errorf("expected no ETag on an error, got %s", etag)
-		}
+		Expect(w.Header().Get("Content-Type")).To(Equal(endpoints.ContentTypeProblem), "expected a problem")
+		Expect(w.Header().Get("ETag")).To(BeEmpty(), "expected no ETag on an error")
 		return
 	}
-	if stored == nil {
-		t.Fatal("expected the new spec to be stored")
-	}
-	if etag := w.Header().Get("ETag"); etag != etagOfSpec(stored) {
-		t.Errorf("expected the ETag of the new spec %s, got %s", etagOfSpec(stored), etag)
-	}
+	Expect(stored).NotTo(BeNil(), "expected the new spec to be stored")
+	Expect(w.Header().Get("ETag")).To(Equal(etagOfSpec(stored)), "expected the ETag of the new spec")
 	if tc.stored != nil {
-		tc.stored(t, stored)
+		tc.stored(stored)
 	}
 }
 
 // workMem checks that the stored spec has work_mem set to value (or unset, when value is "")
-func workMem(value string) func(t *testing.T, spec *apiv1.Spec) {
-	return func(t *testing.T, spec *apiv1.Spec) {
-		t.Helper()
-		got, ok := spec.PGParameters["work_mem"]
-		if value == "" && ok {
-			t.Errorf("expected work_mem to be removed, got %q", got)
+func workMem(value string) func(spec *apiv1.Spec) {
+	return func(spec *apiv1.Spec) {
+		GinkgoHelper()
+		if value == "" {
+			Expect(spec.PGParameters).NotTo(HaveKey("work_mem"), "expected work_mem to be removed")
+			return
 		}
-		if value != "" && got != value {
-			t.Errorf("expected work_mem %q, got %q", value, got)
-		}
+		Expect(spec.PGParameters["work_mem"]).To(Equal(value))
 	}
 }
 
-func TestGetClusterSpecHandler(t *testing.T) {
-	for name, tc := range map[string]struct {
-		cd     *apiv1.Data
-		err    error
-		status int
-	}{
-		"the spec":                     {cd: testSpecData(testSpec()), status: http.StatusOK},
-		"no cluster data":              {status: http.StatusNotFound},
-		"cluster data without cluster": {cd: testSpecData(nil), status: http.StatusNotFound},
-		"a cluster without spec": {
-			cd: &apiv1.Data{Cluster: &apiv1.Cluster{UID: "cluster1"}}, status: http.StatusNotFound,
-		},
-		"the store fails": {err: errors.New("boom"), status: http.StatusInternalServerError},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
+var _ = Describe("GET /v1/cluster/spec", func() {
+	DescribeTable("GetClusterSpecHandler",
+		func(cd *apiv1.Data, err error, status int) {
+			ctrl := gomock.NewController(GinkgoT())
 			store := mockconsensus.NewMockStore(ctrl)
-			store.EXPECT().GetClusterData(gomock.Any()).Return(tc.cd, &consensus.KVPair{LastIndex: 1}, tc.err)
+			store.EXPECT().GetClusterData(gomock.Any()).Return(cd, &consensus.KVPair{LastIndex: 1}, err)
 			var ready atomic.Bool
 			h := NewHandlers(store, mockconsensus.NewMockElection(ctrl), &ready)
 
 			w := httptest.NewRecorder()
 			h.GetClusterSpecHandler(w, httptest.NewRequest(http.MethodGet, "/v1/cluster/spec", nil))
 
-			if w.Code != tc.status {
-				t.Fatalf("expected status %d, got %d: %s", tc.status, w.Code, w.Body)
-			}
-			if tc.status != http.StatusOK {
-				if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
-					t.Errorf("expected a problem, got Content-Type %q", ct)
-				}
+			Expect(w.Code).To(Equal(status), "body: %s", w.Body)
+			if status != http.StatusOK {
+				Expect(w.Header().Get("Content-Type")).To(Equal(endpoints.ContentTypeProblem), "expected a problem")
 				return
 			}
-			if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-				t.Errorf("expected Content-Type application/json, got %q", ct)
-			}
-			if etag := w.Header().Get("ETag"); etag != etagOfSpec(testSpec()) {
-				t.Errorf("expected the ETag of the spec %s, got %s", etagOfSpec(testSpec()), etag)
-			}
+			Expect(w.Header().Get("Content-Type")).To(Equal("application/json"))
+			Expect(w.Header().Get("ETag")).To(Equal(etagOfSpec(testSpec())), "expected the ETag of the spec")
 			var spec apiv1.Spec
-			if err := json.Unmarshal(w.Body.Bytes(), &spec); err != nil {
-				t.Fatalf("expected a spec, got %s: %v", w.Body, err)
-			}
-			if etagOfSpec(&spec) != etagOfSpec(testSpec()) {
-				t.Errorf("expected the spec of the cluster, got %s", w.Body)
-			}
-		})
-	}
-}
+			Expect(json.Unmarshal(w.Body.Bytes(), &spec)).To(Succeed(), "expected a spec, got %s", w.Body)
+			Expect(etagOfSpec(&spec)).To(Equal(etagOfSpec(testSpec())), "expected the spec of the cluster, got %s",
+				w.Body)
+		},
+		Entry("the spec", testSpecData(testSpec()), nil, http.StatusOK),
+		Entry("no cluster data", nil, nil, http.StatusNotFound),
+		Entry("cluster data without cluster", testSpecData(nil), nil, http.StatusNotFound),
+		Entry("a cluster without spec", &apiv1.Data{Cluster: &apiv1.Cluster{UID: "cluster1"}}, nil,
+			http.StatusNotFound),
+		Entry("the store fails", nil, errors.New("boom"), http.StatusInternalServerError),
+	)
+})
 
-func TestPatchClusterSpecHandler(t *testing.T) {
+var _ = Describe("PATCH /v1/cluster/spec", func() {
 	errBoom := errors.New("boom")
 	modified := fmt.Errorf("put: %w", consensus.ErrKeyModified)
 	tooLarge := `{"pgParameters":{"x":"` + strings.Repeat("x", int(readMaxBytes)) + `"}}`
 
-	for name, tc := range map[string]specCase{
-		"a merge patch adds a parameter and keeps the others": {
+	DescribeTable("PatchClusterSpecHandler",
+		func(tc specCase) {
+			runSpecCase(http.MethodPatch, tc, func(h *Handlers) http.HandlerFunc { return h.PatchClusterSpecHandler })
+		},
+		Entry("a merge patch adds a parameter and keeps the others", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"pgParameters":{"shared_buffers":"1GB"}}`,
 			gets: 1, puts: []error{nil}, status: http.StatusOK,
-			stored: func(t *testing.T, spec *apiv1.Spec) {
-				workMem("8MB")(t, spec)
-				if spec.PGParameters["shared_buffers"] != "1GB" {
-					t.Errorf("expected shared_buffers 1GB, got %v", spec.PGParameters)
-				}
+			stored: func(spec *apiv1.Spec) {
+				workMem("8MB")(spec)
+				Expect(spec.PGParameters["shared_buffers"]).To(Equal("1GB"))
 			},
-		},
-		"a merge patch with parameters in the content type": {
-			contentType: endpoints.ContentTypeMergePatch + "; charset=utf-8", body: `{"pgParameters":{"work_mem":"16MB"}}`,
-			gets: 1, puts: []error{nil}, status: http.StatusOK, stored: workMem("16MB"),
-		},
-		"null removes a parameter": {
+		}),
+		Entry("a merge patch with parameters in the content type", specCase{
+			contentType: endpoints.ContentTypeMergePatch + "; charset=utf-8",
+			body:        `{"pgParameters":{"work_mem":"16MB"}}`,
+			gets:        1, puts: []error{nil}, status: http.StatusOK, stored: workMem("16MB"),
+		}),
+		Entry("null removes a parameter", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"pgParameters":{"work_mem":null}}`,
 			gets: 1, puts: []error{nil}, status: http.StatusOK, stored: workMem(""),
-		},
-		"the ETag of the spec in If-Match": {
+		}),
+		Entry("the ETag of the spec in If-Match", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"pgParameters":{"work_mem":"16MB"}}`,
-			ifMatch: etagOfSpec(testSpec()), gets: 1, puts: []error{nil}, status: http.StatusOK, stored: workMem("16MB"),
-		},
-		"a stale ETag in If-Match": {
+			ifMatch: etagOfSpec(testSpec()), gets: 1, puts: []error{nil}, status: http.StatusOK,
+			stored: workMem("16MB"),
+		}),
+		Entry("a stale ETag in If-Match", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"pgParameters":{"work_mem":"16MB"}}`,
 			ifMatch: `"stale"`, gets: 1, status: http.StatusPreconditionFailed,
-		},
-		"a JSON content type": {
+		}),
+		Entry("a JSON content type", specCase{
 			contentType: "application/json", body: `{}`, status: http.StatusUnsupportedMediaType,
-		},
-		"no content type": {
+		}),
+		Entry("no content type", specCase{
 			body: `{}`, status: http.StatusUnsupportedMediaType,
-		},
-		"a body that is too large": {
+		}),
+		Entry("a body that is too large", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: tooLarge, status: http.StatusBadRequest,
-		},
-		"a patch that is not JSON": {
+		}),
+		Entry("a patch that is not JSON", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{`, gets: 1, status: http.StatusBadRequest,
-		},
-		"a patch with a value of the wrong type": {
+		}),
+		Entry("a patch with a value of the wrong type", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"maxStandbys":"many"}`, gets: 1,
 			status: http.StatusBadRequest,
-		},
-		"a patch that makes the spec invalid": {
+		}),
+		Entry("a patch that makes the spec invalid", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"maxStandbys":0}`, gets: 1,
 			status: http.StatusBadRequest,
-		},
-		"a patch that changes the init mode": {
+		}),
+		Entry("a patch that changes the init mode", specCase{
 			contentType: endpoints.ContentTypeMergePatch,
 			body:        `{"initMode":"existing","existingConfig":{"keeperUID":"keeper1"}}`,
 			gets:        1, status: http.StatusConflict,
-		},
-		"no cluster": {
+		}),
+		Entry("no cluster", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{}`, noCluster: true, gets: 1,
 			status: http.StatusNotFound,
-		},
-		"the cluster data cannot be read": {
+		}),
+		Entry("the cluster data cannot be read", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{}`, getErr: errBoom, gets: 1,
 			status: http.StatusInternalServerError,
-		},
-		"the cluster data cannot be written": {
+		}),
+		Entry("the cluster data cannot be written", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{}`, gets: 1, puts: []error{errBoom},
 			status: http.StatusInternalServerError,
-		},
-		"the cluster data changed once and the patch is retried": {
+		}),
+		Entry("the cluster data changed once and the patch is retried", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{"pgParameters":{"work_mem":"16MB"}}`,
 			gets: 2, puts: []error{modified, nil}, status: http.StatusOK, stored: workMem("16MB"),
-		},
-		"the cluster data keeps changing": {
+		}),
+		Entry("the cluster data keeps changing", specCase{
 			contentType: endpoints.ContentTypeMergePatch, body: `{}`,
 			gets: 3, puts: []error{modified, modified, modified}, status: http.StatusInternalServerError,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			runSpecCase(t, http.MethodPatch, tc, func(h *Handlers) http.HandlerFunc { return h.PatchClusterSpecHandler })
-		})
-	}
-}
+		}),
+	)
 
-func TestPatchClusterSpecHandlerAcceptPatch(t *testing.T) {
-	var ready atomic.Bool
-	ctrl := gomock.NewController(t)
-	h := NewHandlers(mockconsensus.NewMockStore(ctrl), mockconsensus.NewMockElection(ctrl), &ready)
-	r := httptest.NewRequest(http.MethodPatch, "/v1/cluster/spec", strings.NewReader(`{}`))
-	r.Header.Set("Content-Type", "application/json-patch+json")
-	w := httptest.NewRecorder()
-	h.PatchClusterSpecHandler(w, r)
-	if w.Code != http.StatusUnsupportedMediaType {
-		t.Fatalf("expected status %d, got %d", http.StatusUnsupportedMediaType, w.Code)
-	}
-	if got := w.Header().Get("Accept-Patch"); got != endpoints.ContentTypeMergePatch {
-		t.Errorf("expected Accept-Patch %s, got %q", endpoints.ContentTypeMergePatch, got)
-	}
-}
+	It("answers a JSON patch with the patch formats it accepts", func() {
+		var ready atomic.Bool
+		ctrl := gomock.NewController(GinkgoT())
+		h := NewHandlers(mockconsensus.NewMockStore(ctrl), mockconsensus.NewMockElection(ctrl), &ready)
+		r := httptest.NewRequest(http.MethodPatch, "/v1/cluster/spec", strings.NewReader(`{}`))
+		r.Header.Set("Content-Type", "application/json-patch+json")
+		w := httptest.NewRecorder()
+		h.PatchClusterSpecHandler(w, r)
+		Expect(w.Code).To(Equal(http.StatusUnsupportedMediaType))
+		Expect(w.Header().Get("Accept-Patch")).To(Equal(endpoints.ContentTypeMergePatch))
+	})
+})
 
-func TestPutClusterSpecHandler(t *testing.T) {
+var _ = Describe("PUT /v1/cluster/spec", func() {
 	errBoom := errors.New("boom")
 	modified := fmt.Errorf("put: %w", consensus.ErrKeyModified)
 	tooLarge := `{"pgParameters":{"x":"` + strings.Repeat("x", int(readMaxBytes)) + `"}}`
 
-	for name, tc := range map[string]specCase{
-		"a new spec replaces the spec": {
+	DescribeTable("PutClusterSpecHandler",
+		func(tc specCase) {
+			runSpecCase(http.MethodPut, tc, func(h *Handlers) http.HandlerFunc { return h.PutClusterSpecHandler })
+		},
+		Entry("a new spec replaces the spec", specCase{
 			body: `{"initMode":"new","pgParameters":{"shared_buffers":"1GB"}}`,
 			gets: 1, puts: []error{nil}, status: http.StatusOK,
-			stored: func(t *testing.T, spec *apiv1.Spec) {
-				workMem("")(t, spec)
-				if spec.PGParameters["shared_buffers"] != "1GB" {
-					t.Errorf("expected shared_buffers 1GB, got %v", spec.PGParameters)
-				}
+			stored: func(spec *apiv1.Spec) {
+				workMem("")(spec)
+				Expect(spec.PGParameters["shared_buffers"]).To(Equal("1GB"))
 			},
-		},
-		"the ETag of the spec in If-Match": {
+		}),
+		Entry("the ETag of the spec in If-Match", specCase{
 			body: `{"initMode":"new"}`, ifMatch: etagOfSpec(testSpec()),
 			gets: 1, puts: []error{nil}, status: http.StatusOK, stored: workMem(""),
-		},
-		"any spec in If-Match": {
+		}),
+		Entry("any spec in If-Match", specCase{
 			body: `{"initMode":"new"}`, ifMatch: "*", gets: 1, puts: []error{nil}, status: http.StatusOK,
-		},
-		"a stale ETag in If-Match": {
+		}),
+		Entry("a stale ETag in If-Match", specCase{
 			body: `{"initMode":"new"}`, ifMatch: `"stale"`, gets: 1, status: http.StatusPreconditionFailed,
-		},
-		"any spec in If-Match without a cluster": {
+		}),
+		Entry("any spec in If-Match without a cluster", specCase{
 			body: `{"initMode":"new"}`, ifMatch: "*", noCluster: true, gets: 1, status: http.StatusNotFound,
-		},
-		"a body that is too large": {
+		}),
+		Entry("a body that is too large", specCase{
 			body: tooLarge, status: http.StatusBadRequest,
-		},
-		"a spec that is not JSON": {
+		}),
+		Entry("a spec that is not JSON", specCase{
 			body: `{`, gets: 1, status: http.StatusBadRequest,
-		},
-		"a null spec": {
+		}),
+		Entry("a null spec", specCase{
 			body: `null`, gets: 1, status: http.StatusBadRequest,
-		},
-		"a spec without init mode": {
+		}),
+		Entry("a spec without init mode", specCase{
 			body: `{"pgParameters":{"work_mem":"16MB"}}`, gets: 1, status: http.StatusBadRequest,
-		},
-		"a spec with another init mode": {
+		}),
+		Entry("a spec with another init mode", specCase{
 			body: `{"initMode":"existing","existingConfig":{"keeperUID":"keeper1"}}`, gets: 1,
 			status: http.StatusConflict,
-		},
-		"no cluster": {
+		}),
+		Entry("no cluster", specCase{
 			body: `{"initMode":"new"}`, noCluster: true, gets: 1, status: http.StatusNotFound,
-		},
-		"the cluster data cannot be read": {
+		}),
+		Entry("the cluster data cannot be read", specCase{
 			body: `{"initMode":"new"}`, getErr: errBoom, gets: 1, status: http.StatusInternalServerError,
-		},
-		"the cluster data cannot be written": {
+		}),
+		Entry("the cluster data cannot be written", specCase{
 			body: `{"initMode":"new"}`, gets: 1, puts: []error{errBoom}, status: http.StatusInternalServerError,
-		},
-		"the cluster data changed twice and the spec is retried": {
+		}),
+		Entry("the cluster data changed twice and the spec is retried", specCase{
 			body: `{"initMode":"new"}`, gets: 3, puts: []error{modified, modified, nil}, status: http.StatusOK,
 			stored: workMem(""),
-		},
-		"the cluster data keeps changing": {
+		}),
+		Entry("the cluster data keeps changing", specCase{
 			body: `{"initMode":"new"}`, gets: 3, puts: []error{modified, modified, modified},
 			status: http.StatusInternalServerError,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			runSpecCase(t, http.MethodPut, tc, func(h *Handlers) http.HandlerFunc { return h.PutClusterSpecHandler })
-		})
-	}
-}
+		}),
+	)
+})
 
-func TestClusterSpecHandlersLogABodyThatFailsToClose(t *testing.T) {
-	for name, tc := range map[string]struct {
-		method      string
-		contentType string
-		handler     func(h *Handlers) http.HandlerFunc
-	}{
-		"PATCH": {http.MethodPatch, endpoints.ContentTypeMergePatch,
-			func(h *Handlers) http.HandlerFunc { return h.PatchClusterSpecHandler }},
-		"PUT": {http.MethodPut, "application/json",
-			func(h *Handlers) http.HandlerFunc { return h.PutClusterSpecHandler }},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
+var _ = Describe("the cluster spec handlers", func() {
+	DescribeTable("log a body that fails to close",
+		func(method, contentType string, handler func(h *Handlers) http.HandlerFunc) {
+			ctrl := gomock.NewController(GinkgoT())
 			store := mockconsensus.NewMockStore(ctrl)
 			store.EXPECT().GetClusterData(gomock.Any()).Return(testSpecData(testSpec()), &consensus.KVPair{}, nil)
 			store.EXPECT().AtomicPutClusterData(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 			var ready atomic.Bool
 			h := NewHandlers(store, mockconsensus.NewMockElection(ctrl), &ready)
 
-			r := httptest.NewRequest(tc.method, "/v1/cluster/spec", nil)
+			r := httptest.NewRequest(method, "/v1/cluster/spec", nil)
 			r.Body = errCloseBody{strings.NewReader(`{"initMode":"new"}`)}
-			r.Header.Set("Content-Type", tc.contentType)
+			r.Header.Set("Content-Type", contentType)
 			w := httptest.NewRecorder()
-			tc.handler(h)(w, r)
+			handler(h)(w, r)
 			// failing to close the body is only logged: the spec is updated
-			if w.Code != http.StatusOK {
-				t.Errorf("expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body)
-			}
-		})
-	}
-}
-
-func TestPatchClusterSpec(t *testing.T) {
-	for name, tc := range map[string]struct {
-		patch   string
-		wantErr bool
-		check   func(t *testing.T, spec *apiv1.Spec)
-	}{
-		"objects are merged": {
-			patch: `{"pgParameters":{"shared_buffers":"1GB"}}`,
-			check: func(t *testing.T, spec *apiv1.Spec) {
-				workMem("8MB")(t, spec)
-				if spec.PGParameters["shared_buffers"] != "1GB" {
-					t.Errorf("expected shared_buffers 1GB, got %v", spec.PGParameters)
-				}
-			},
+			Expect(w.Code).To(Equal(http.StatusOK), "body: %s", w.Body)
 		},
-		"null removes a field":           {patch: `{"pgParameters":null}`, check: workMem("")},
-		"other values replace the field": {patch: `{"pgParameters":{"work_mem":"16MB"}}`, check: workMem("16MB")},
-		"a patch that is not JSON":       {patch: `{`, wantErr: true},
-		"a value of the wrong type":      {patch: `{"maxStandbys":-1}`, wantErr: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			spec, err := patchClusterSpec(testSpec(), []byte(tc.patch))
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("expected an error, got spec %v", spec)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			tc.check(t, spec)
-		})
-	}
-}
+		Entry("PATCH", http.MethodPatch, endpoints.ContentTypeMergePatch,
+			func(h *Handlers) http.HandlerFunc { return h.PatchClusterSpecHandler }),
+		Entry("PUT", http.MethodPut, "application/json",
+			func(h *Handlers) http.HandlerFunc { return h.PutClusterSpecHandler }),
+	)
+})
 
-func TestUpdateSpecRetriesStopsAtOtherErrors(t *testing.T) {
-	errBoom := errors.New("boom")
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, errBoom).Times(1)
-	r := httptest.NewRequest(http.MethodPut, "/v1/cluster/spec", nil)
-	if _, err := updateSpecRetries(context.Background(), store, []byte(`{}`), true, r); !errors.Is(err, errBoom) {
-		t.Errorf("expected %v, got %v", errBoom, err)
-	}
-}
+var _ = Describe("patchClusterSpec", func() {
+	DescribeTable("merges a patch into a spec",
+		func(patch string, check func(spec *apiv1.Spec)) {
+			spec, err := patchClusterSpec(testSpec(), []byte(patch))
+			Expect(err).NotTo(HaveOccurred())
+			check(spec)
+		},
+		Entry("objects are merged", `{"pgParameters":{"shared_buffers":"1GB"}}`, func(spec *apiv1.Spec) {
+			workMem("8MB")(spec)
+			Expect(spec.PGParameters["shared_buffers"]).To(Equal("1GB"))
+		}),
+		Entry("null removes a field", `{"pgParameters":null}`, workMem("")),
+		Entry("other values replace the field", `{"pgParameters":{"work_mem":"16MB"}}`, workMem("16MB")),
+	)
 
-func TestUpdateSpecRetriesReportsEveryConflict(t *testing.T) {
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).DoAndReturn(
-		func(context.Context) (*apiv1.Data, *consensus.KVPair, error) {
-			return testSpecData(testSpec()), &consensus.KVPair{}, nil
-		}).Times(3)
-	store.EXPECT().AtomicPutClusterData(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, consensus.ErrKeyModified).Times(3)
-	r := httptest.NewRequest(http.MethodPut, "/v1/cluster/spec", nil)
-	_, err := updateSpecRetries(context.Background(), store, []byte(`{"initMode":"new"}`), true, r)
-	if err == nil || !strings.Contains(err.Error(), "3 retries") {
-		t.Fatalf("expected an error after 3 retries, got %v", err)
-	}
-	if got := strings.Count(err.Error(), consensus.ErrKeyModified.Error()); got != 3 {
-		t.Errorf("expected the 3 conflicts in the error, got %d: %v", got, err)
-	}
-}
+	DescribeTable("fails",
+		func(patch string) {
+			spec, err := patchClusterSpec(testSpec(), []byte(patch))
+			Expect(err).To(HaveOccurred(), "expected an error, got spec %v", spec)
+		},
+		Entry("a patch that is not JSON", `{`),
+		Entry("a value of the wrong type", `{"maxStandbys":-1}`),
+	)
+})
 
-func TestTryUpdateSpecErrors(t *testing.T) {
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(testSpecData(testSpec()), &consensus.KVPair{}, nil)
-	r := httptest.NewRequest(http.MethodPatch, "/v1/cluster/spec", nil)
-	_, err := tryUpdateSpec(context.Background(), store, []byte(`{"maxStandbys":0}`), false, r)
-	var se statusError
-	if !errors.As(err, &se) || se.status != http.StatusBadRequest {
-		t.Fatalf("expected a %d status error, got %v", http.StatusBadRequest, err)
-	}
-	if !strings.HasPrefix(err.Error(), "invalid spec: ") {
-		t.Errorf("expected an invalid spec error, got %v", err)
-	}
-}
+var _ = Describe("updating the spec", func() {
+	It("stops retrying at other errors than conflicts", func(ctx SpecContext) {
+		errBoom := errors.New("boom")
+		store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+		store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, errBoom).Times(1)
+		r := httptest.NewRequest(http.MethodPut, "/v1/cluster/spec", nil)
+		_, err := updateSpecRetries(ctx, store, []byte(`{}`), true, r)
+		Expect(err).To(MatchError(errBoom))
+	})
 
-func TestStatusError(t *testing.T) {
-	err := statusError{http.StatusNotFound, errNoSpec}
-	if err.Error() != errNoSpec.Error() {
-		t.Errorf("expected the message of the wrapped error, got %q", err.Error())
-	}
-	if !errors.Is(err, errNoSpec) {
-		t.Error("expected the wrapped error to be unwrapped")
-	}
-	wrapped := fmt.Errorf("wrapped: %w", err)
-	var se statusError
-	if !errors.As(wrapped, &se) || se.status != http.StatusNotFound {
-		t.Errorf("expected the status error in a wrapped error, got %v", wrapped)
-	}
-}
+	It("reports every conflict", func(ctx SpecContext) {
+		store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+		store.EXPECT().GetClusterData(gomock.Any()).DoAndReturn(
+			func(context.Context) (*apiv1.Data, *consensus.KVPair, error) {
+				return testSpecData(testSpec()), &consensus.KVPair{}, nil
+			}).Times(3)
+		store.EXPECT().AtomicPutClusterData(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, consensus.ErrKeyModified).Times(3)
+		r := httptest.NewRequest(http.MethodPut, "/v1/cluster/spec", nil)
+		_, err := updateSpecRetries(ctx, store, []byte(`{"initMode":"new"}`), true, r)
+		Expect(err).To(MatchError(ContainSubstring("3 retries")), "expected an error after 3 retries")
+		Expect(strings.Count(err.Error(), consensus.ErrKeyModified.Error())).To(Equal(3),
+			"expected the 3 conflicts in the error: %v", err)
+	})
 
-func TestWriteSpecError(t *testing.T) {
-	for name, tc := range map[string]struct {
-		err    error
-		status int
-		detail string
-	}{
-		"a status error":         {statusError{http.StatusConflict, errors.New("no")}, http.StatusConflict, "no"},
-		"a wrapped status error": {fmt.Errorf("w: %w", errPreconditionFailed), http.StatusPreconditionFailed, ""},
-		"another error":          {errors.New("secret"), http.StatusInternalServerError, "failed to update"},
-	} {
-		t.Run(name, func(t *testing.T) {
+	It("returns a 400 status error for an invalid spec", func(ctx SpecContext) {
+		store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+		store.EXPECT().GetClusterData(gomock.Any()).Return(testSpecData(testSpec()), &consensus.KVPair{}, nil)
+		r := httptest.NewRequest(http.MethodPatch, "/v1/cluster/spec", nil)
+		_, err := tryUpdateSpec(ctx, store, []byte(`{"maxStandbys":0}`), false, r)
+		var se statusError
+		Expect(errors.As(err, &se)).To(BeTrue(), "expected a status error, got %v", err)
+		Expect(se.status).To(Equal(http.StatusBadRequest))
+		Expect(err.Error()).To(HavePrefix("invalid spec: "))
+	})
+})
+
+var _ = Describe("statusError", func() {
+	It("wraps an error with a status", func() {
+		err := statusError{http.StatusNotFound, errNoSpec}
+		Expect(err.Error()).To(Equal(errNoSpec.Error()), "expected the message of the wrapped error")
+		Expect(errors.Is(err, errNoSpec)).To(BeTrue(), "expected the wrapped error to be unwrapped")
+		wrapped := fmt.Errorf("wrapped: %w", err)
+		var se statusError
+		Expect(errors.As(wrapped, &se)).To(BeTrue(), "expected the status error in a wrapped error")
+		Expect(se.status).To(Equal(http.StatusNotFound))
+	})
+})
+
+var _ = Describe("writeSpecError", func() {
+	DescribeTable("writes a problem",
+		func(ctx SpecContext, err error, status int, detail string) {
 			w := httptest.NewRecorder()
-			writeSpecError(context.Background(), w, tc.err, "failed to update")
-			if w.Code != tc.status {
-				t.Errorf("expected status %d, got %d", tc.status, w.Code)
-			}
-			if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
-				t.Errorf("expected a problem, got Content-Type %q", ct)
-			}
+			writeSpecError(ctx, w, err, "failed to update")
+			Expect(w.Code).To(Equal(status))
+			Expect(w.Header().Get("Content-Type")).To(Equal(endpoints.ContentTypeProblem), "expected a problem")
 			var problem endpoints.Problem
-			if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
-				t.Fatalf("expected a problem, got %s: %v", w.Body, err)
+			Expect(json.Unmarshal(w.Body.Bytes(), &problem)).To(Succeed(), "expected a problem, got %s", w.Body)
+			if detail != "" {
+				Expect(problem.Detail).To(Equal(detail))
 			}
-			if tc.detail != "" && problem.Detail != tc.detail {
-				t.Errorf("expected detail %q, got %q", tc.detail, problem.Detail)
-			}
-		})
-	}
-}
+		},
+		Entry("a status error", statusError{http.StatusConflict, errors.New("no")}, http.StatusConflict, "no"),
+		Entry("a wrapped status error", fmt.Errorf("w: %w", errPreconditionFailed), http.StatusPreconditionFailed, ""),
+		Entry("another error", errors.New("secret"), http.StatusInternalServerError, "failed to update"),
+	)
+})
