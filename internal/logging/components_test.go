@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -14,24 +13,39 @@ func TestComponentToString(t *testing.T) {
 	assert.Equal(t, componentToString(nonexistentComponent), componentToString(UnknownComponent))
 }
 
-func TestNewComponentsFromString(t *testing.T) {
-	var (
-		components = []string{
-			"keeper",
-			"proxy",
-			"undefined_component",
-			"unittest_component",
-		}
-		commaSeparatedString = strings.Join(components, ",")
-		result               = DebugComponentsFromString(commaSeparatedString)
-	)
-	for _, compName := range components {
-		comp, exists := componentConverter[compName]
-		if !exists {
-			comp = UnknownComponent
-		}
-		require.Contains(t, result, comp)
-		assert.Equal(t, zerolog.DebugLevel, result[comp])
+func TestParseComponents(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want Components
+		err  string
+	}{
+		{in: "", want: Components{}},
+		{in: "keeper", want: Components{KeeperComponent: zerolog.DebugLevel}},
+		{
+			in: "keeper=debug, kv-store=warn,postgres,web-api=error",
+			want: Components{
+				KeeperComponent: zerolog.DebugLevel,
+				StoreComponent:  zerolog.WarnLevel,
+				PgComponent:     zerolog.DebugLevel,
+				WebApiComponent: zerolog.ErrorLevel,
+			},
+		},
+		{in: "sentinel=info,", want: Components{SentinelComponent: zerolog.InfoLevel}},
+		{in: "zookeeper", err: `unknown log component "zookeeper" (components: keeper, kv-store, orion-cli, postgres, ` +
+			`postgres-utils, proxy, sentinel, web-api)`},
+		{in: "unittest_component", err: `unknown log component "unittest_component"`},
+		{in: "keeper=loud", err: `unknown log level "loud" for component keeper`},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := ParseComponents(tc.in)
+			if tc.err != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
 	}
 }
 

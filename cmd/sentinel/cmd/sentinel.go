@@ -84,12 +84,8 @@ func Execute() {
 
 func runSentinel(c *cobra.Command, _ []string) {
 	ctx, logger := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
-	logging.SetStaticLevel(cfg.LogLevel)
-	if debug {
-		logging.SetStaticLevel("debug")
-	}
-	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
-		logging.EnableColor()
+	if err := cmd.SetupLogging(c, &cfg.CommonConfig, debug); err != nil {
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	if err := store.CheckCommonConfig(&cfg.CommonConfig); err != nil {

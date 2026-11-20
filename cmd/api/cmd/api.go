@@ -80,11 +80,9 @@ func Execute() {
 func runAPI(c *cobra.Command, _ []string) {
 	ctx, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
 
-	if debug {
-		logging.SetStaticLevel("debug")
-	}
-	if cmdcommon.IsColorLoggerEnable(c, &cfg.CommonConfig) {
-		logging.EnableColor()
+	// also --log-level, which the api didn't apply before
+	if err := cmdcommon.SetupLogging(c, &cfg.CommonConfig, debug); err != nil {
+		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
 
 	if err := store.CheckCommonConfig(&cfg.CommonConfig); err != nil {

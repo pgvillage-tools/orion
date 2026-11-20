@@ -16,11 +16,14 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mattn/go-isatty"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -99,6 +102,12 @@ func AddCommonFlags(cmd *cobra.Command, cfg *store.CommonConfig) {
 			"log-level",
 			"info",
 			"debug, info (default), warn or error")
+		cmd.PersistentFlags().StringVar(
+			&cfg.LogComponents,
+			"log-components",
+			"",
+			"log levels per component, over --log-level, e.g. keeper=debug,kv-store=warn (a component without a "+
+				"level is at debug); components: "+strings.Join(logging.ComponentNames(), ", "))
 	}
 
 	if cfg.IsCLI {
@@ -122,6 +131,24 @@ func AddCommonFlags(cmd *cobra.Command, cfg *store.CommonConfig) {
 			"kube-namespace", "",
 			"name of the kubernetes namespace to use")
 	}
+}
+
+// SetupLogging sets the log levels from --log-level (debug when the deprecated --debug is set) and
+// --log-components, and colors the logs as --log-color says
+func SetupLogging(cmd *cobra.Command, cfg *store.CommonConfig, debug bool) error {
+	logging.SetStaticLevel(cfg.LogLevel)
+	if debug {
+		logging.SetStaticLevel("debug")
+	}
+	components, err := logging.ParseComponents(cfg.LogComponents)
+	if err != nil {
+		return fmt.Errorf("invalid --log-components: %w", err)
+	}
+	logging.SetStaticComponents(components)
+	if IsColorLoggerEnable(cmd, cfg) {
+		logging.EnableColor()
+	}
+	return nil
 }
 
 // IsColorLoggerEnable is a function which checks if logs should be colorized or not

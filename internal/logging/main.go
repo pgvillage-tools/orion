@@ -33,6 +33,8 @@ var (
 	staticComponents = Components{}
 	// Commandline args will use this to enable all debug logging
 	dynamicLevel = defaultLevel
+	// dynamicLevelSet tells if SetDynamicLoggingConfig set dynamicLevel: only then it can lower the static level
+	dynamicLevelSet = false
 	// Commandline args can use this to enable logging for a component
 	dynamicComponents = Components{}
 	// The output logger to be used
@@ -88,6 +90,7 @@ func SetDynamicLoggingConfig(level string, components Components) {
 	if lvl, ok := sToLevel[level]; ok {
 		dynamicLevel = lvl
 	}
+	dynamicLevelSet = true
 	if components == nil {
 		components = Components{}
 	}
@@ -101,7 +104,9 @@ func getComponentLevel(name Component) zerolog.Level {
 	if level, ok := staticComponents[name]; ok {
 		return level
 	}
-	if staticLevel < dynamicLevel {
+	// the more verbose of the static and the dynamic level; without a dynamic level the static one (--log-level), so
+	// warn and error take effect
+	if !dynamicLevelSet || staticLevel < dynamicLevel {
 		return staticLevel
 	}
 	return dynamicLevel

@@ -17,6 +17,8 @@
 package logging
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -83,18 +85,43 @@ func componentToString(component Component) string {
 	return "undefined_component"
 }
 
-// DebugComponentsFromString takes a comma separated string (as used in a command argument)
-// and returns a Components object with all items set to debug
-func DebugComponentsFromString(commaSeparated string) Components {
-	components := Components{}
-	for _, compName := range strings.Split(commaSeparated, ",") {
-		if component, exists := componentConverter[compName]; exists {
-			components[component] = zerolog.DebugLevel
-		} else {
-			components[UnknownComponent] = zerolog.DebugLevel
+// ComponentNames returns the names of the components that ParseComponents accepts, sorted
+func ComponentNames() []string {
+	var names []string
+	for name, comp := range componentConverter {
+		if comp != UnknownComponent && comp != TestComponent {
+			names = append(names, name)
 		}
 	}
-	return components
+	sort.Strings(names)
+	return names
+}
+
+// ParseComponents parses a comma separated list of components with their levels (as used in a command argument,
+// e.g. "keeper=debug,kv-store=warn"); a component without a level is at debug. An empty string gives no components.
+func ParseComponents(commaSeparated string) (Components, error) {
+	components := Components{}
+	for _, item := range strings.Split(commaSeparated, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		name, levelName, hasLevel := strings.Cut(item, "=")
+		component, ok := componentConverter[name]
+		if !ok || component == UnknownComponent || component == TestComponent {
+			return nil, fmt.Errorf("unknown log component %q (components: %s)", name,
+				strings.Join(ComponentNames(), ", "))
+		}
+		level := zerolog.DebugLevel
+		if hasLevel {
+			if level, ok = sToLevel[levelName]; !ok {
+				return nil, fmt.Errorf("unknown log level %q for component %s (levels: debug, info, warn, error)",
+					levelName, name)
+			}
+		}
+		components[component] = level
+	}
+	return components, nil
 }
 
 // NewComponentsFromStringMap takes a string map and converts it into a Components object

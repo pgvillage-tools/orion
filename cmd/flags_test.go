@@ -15,9 +15,13 @@
 package cmd
 
 import (
+	"context"
+	"strings"
 	"testing"
 
+	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/store"
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
 
@@ -26,5 +30,44 @@ func TestTheKubeResourceKindFlagIsGone(t *testing.T) {
 	AddCommonFlags(c, &store.CommonConfig{})
 	if c.PersistentFlags().Lookup("kube-resource-kind") != nil {
 		t.Error("--kube-resource-kind is still there")
+	}
+}
+
+func TestSetupLogging(t *testing.T) {
+	level := func(comp logging.Component) zerolog.Level {
+		_, logger := logging.GetLogComponent(context.Background(), comp)
+		return logger.GetLevel()
+	}
+	setup := func(t *testing.T, args ...string) error {
+		t.Helper()
+		cfg := &store.CommonConfig{}
+		c := &cobra.Command{Use: "test"}
+		AddCommonFlags(c, cfg)
+		if err := c.PersistentFlags().Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		return SetupLogging(c, cfg, false)
+	}
+	t.Cleanup(func() {
+		logging.SetStaticLevel("info")
+		logging.SetStaticComponents(nil)
+	})
+
+	if err := setup(t, "--log-level=warn", "--log-components=keeper=debug,kv-store=error"); err != nil {
+		t.Fatal(err)
+	}
+	for comp, want := range map[logging.Component]zerolog.Level{
+		logging.KeeperComponent:   zerolog.DebugLevel,
+		logging.StoreComponent:    zerolog.ErrorLevel,
+		logging.SentinelComponent: zerolog.WarnLevel,
+	} {
+		if got := level(comp); got != want {
+			t.Errorf("level of component %d = %v, want %v", comp, got, want)
+		}
+	}
+
+	if err := setup(t, "--log-components=keeper=loud"); err == nil ||
+		!strings.Contains(err.Error(), `invalid --log-components: unknown log level "loud"`) {
+		t.Errorf("expected an invalid level error, got %v", err)
 	}
 }
