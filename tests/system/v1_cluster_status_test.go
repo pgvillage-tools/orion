@@ -94,11 +94,11 @@ var _ = Describe("GET /v1/cluster/status when the cluster is unhealthy", Ordered
 			g.Ω(status.Status).To(HaveKeyWithValue("primaryKeeper", primary))
 		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		_, httpCode, err := tc.APIClient.GetStatus()
+		_, httpCode, err := tc.APIClient.WithUnavailableRetries(0).GetStatus()
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 

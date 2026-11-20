@@ -47,11 +47,11 @@ var _ = Describe("GET /v1/cluster/proxies when the proxy stops", Ordered, func()
 			g.Ω(proxies).To(BeEmpty())
 		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		_, httpCode, err := tc.APIClient.GetProxies()
+		_, httpCode, err := tc.APIClient.WithUnavailableRetries(0).GetProxies()
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 

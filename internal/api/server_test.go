@@ -17,14 +17,20 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 )
 
 func TestRunWithoutCertificates(t *testing.T) {
@@ -98,4 +104,46 @@ func TestRunUntilTheContextIsDone(t *testing.T) {
 	if err := Run(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestHandleError(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		err        error
+		status     int
+		retryAfter string
+	}{
+		{name: "an error", err: errors.New("boom"), status: http.StatusInternalServerError},
+		{name: "no error", status: http.StatusInternalServerError},
+		{
+			name:   "the store timed out",
+			err:    fmt.Errorf("cannot store updated cluster spec: %w", rpctypes.ErrTimeout),
+			status: http.StatusServiceUnavailable, retryAfter: storeRetryAfter,
+		},
+		{
+			name:   "the store request hit its deadline",
+			err:    fmt.Errorf("cannot get cluster data: %w", context.DeadlineExceeded),
+			status: http.StatusServiceUnavailable, retryAfter: storeRetryAfter,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			handleError(t.Context(), tc.err, w, "failed to patch cluster spec")
+			if w.Code != tc.status {
+				t.Errorf("status = %d, want %d", w.Code, tc.status)
+			}
+			if got := w.Header().Get("Retry-After"); got != tc.retryAfter {
+				t.Errorf("Retry-After = %q, want %q", got, tc.retryAfter)
+			}
+			if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
+				t.Errorf("Content-Type = %q, want a problem", ct)
+			}
+			if body := w.Body.String(); !strings.Contains(body, "failed to patch cluster spec") ||
+				strings.Contains(body, "etcdserver") {
+				t.Errorf("body = %s, want msg and not the store error", body)
+			}
+		})
+	}
+	// without a writer it only logs
+	handleError(t.Context(), errors.New("boom"), nil, "failed to get sentinels info")
 }

@@ -95,11 +95,11 @@ var _ = Describe("POST /v1/cluster/keepers/{uid}/actions/fail without a cluster,
 		Ω(err).To(MatchError(ContainSubstring("no cluster yet")))
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		httpCode, err := tc.APIClient.FailKeeper("keeper0")
+		httpCode, err := tc.APIClient.WithUnavailableRetries(0).FailKeeper("keeper0")
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 

@@ -39,6 +39,9 @@ const (
 	DefaultKeepers = 3
 	// APITimeout is the timeout of the api client of the tests
 	APITimeout = 5 * time.Second
+	// APIUnavailableRetries is how often the api client of the tests retries a request the api answered with 503: its
+	// store didn't answer in time, which happens when etcd stalls on a busy CI runner
+	APIUnavailableRetries = 5
 	// PrimaryTimeout is the time a cluster gets to elect a primary
 	PrimaryTimeout = 3 * time.Minute
 	// PollInterval is the interval for polling the cluster with Eventually
@@ -203,7 +206,8 @@ func (tc *Cluster) RunAPI(ctx context.Context) {
 	Ω(err).NotTo(HaveOccurred())
 	apiPort, err := tc.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", APIInternalPort))
 	Ω(err).NotTo(HaveOccurred())
-	tc.APIClient = client.NewTLSConnection(LocalHost, apiPort.Num(), APITimeout, clientTLS)
+	tc.APIClient = client.NewTLSConnection(LocalHost, apiPort.Num(), APITimeout, clientTLS).
+		WithUnavailableRetries(APIUnavailableRetries)
 	probePort, err := tc.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiProbeInternalPort))
 	Ω(err).NotTo(HaveOccurred())
 	tc.ProbeURL = fmt.Sprintf("http://%s:%s", LocalHost, probePort.Port())
