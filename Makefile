@@ -91,6 +91,9 @@ E2E_SUITES ?= system cli
 # E2E_SHARD runs one part of each suite, e.g. 2/3 for the second of three: CI runs the system suite over several jobs
 # (see scripts/e2e-shard.sh)
 E2E_SHARD ?=
+# E2E_REPORT_DIR is a directory (absolute) for a Ginkgo JSON report per suite, with the run time of every spec: CI keeps
+# them to divide the shards by run time (scripts/e2e-timings.sh)
+E2E_REPORT_DIR ?=
 
 .PHONY: fast-e2e-test
 fast-e2e-test:
@@ -100,7 +103,9 @@ fast-e2e-test:
 			focus="-ginkgo.focus-file=$$(./scripts/e2e-shard.sh tests/$$suite $(subst /, ,$(E2E_SHARD)))" || exit 1; \
 			echo "shard $(E2E_SHARD) of $$suite: $$focus"; \
 		fi; \
-		(cd ./tests/$$suite && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./... $$focus) || exit 1; \
+		report=; \
+		if [ -n "$(E2E_REPORT_DIR)" ]; then mkdir -p "$(E2E_REPORT_DIR)" && report="-ginkgo.json-report=$(E2E_REPORT_DIR)/$$suite.json"; fi; \
+		(cd ./tests/$$suite && PGVERSION=$(PGVERSION) go test -count=1 -v -timeout 45m ./... $$focus $$report) || exit 1; \
 	done
 
 .PHONY: full-e2e-test
