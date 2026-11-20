@@ -53,8 +53,6 @@ exclude:
     - ^cmd/api/[^/]+\.go$
     # moved from cmd/common.go, which was excluded too; its tests follow in a later PR
     - ^internal/store/
-    # moved from cmd/sentinel/cmd, which was excluded too (62%); its tests follow in a later PR
-    - ^internal/sentinel/
     - e2e
     - internal/mock
 
