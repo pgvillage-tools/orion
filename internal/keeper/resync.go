@@ -98,55 +98,24 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 	return nil
 }
 
-// TODO(sgotti) unify this with the sentinel one. They have the same logic but one uses *cluster.PostgresState
-// while the other *cluster.DB
+// isDifferentTimelineBranch tells if our instance (at pgState) is on another timeline branch than followedDB (see
+// cluster.TimelinePosition.OnOtherBranch), and logs why
 func (p *PostgresKeeper) isDifferentTimelineBranch(
 	ctx context.Context, followedDB *cluster.DB, pgState *cluster.PostgresState) bool {
 	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
-	if followedDB.Status.TimelineID < pgState.TimelineID {
-		logger.Info().
-			Uint64("followedTimeline", followedDB.Status.TimelineID).
-			Uint64("timeline", pgState.TimelineID).
-			Msg("followed instance timeline < than our timeline")
-		return true
+	pos := cluster.TimelinePosition{
+		TimelineID:       pgState.TimelineID,
+		XLogPos:          pgState.XLogPos,
+		TimelinesHistory: pgState.TimelinesHistory,
 	}
-
-	// if the timelines are the same check that also the switchpoints are the same.
-	if followedDB.Status.TimelineID == pgState.TimelineID {
-		if pgState.TimelineID <= 1 {
-			// if timeline <= 1 then no timeline history file exists.
-			return false
-		}
-		ftlh := followedDB.Status.TimelinesHistory.GetTimelineHistory(pgState.TimelineID - 1)
-		tlh := pgState.TimelinesHistory.GetTimelineHistory(pgState.TimelineID - 1)
-		if ftlh == nil || tlh == nil {
-			// No timeline history to check
-			return false
-		}
-		if ftlh.SwitchPoint == tlh.SwitchPoint {
-			return false
-		}
-		logger.Info().
-			Uint64("followedTimeline", followedDB.Status.TimelineID).
-			Uint64("followedXlogpos", ftlh.SwitchPoint).
-			Uint64("timeline", pgState.TimelineID).
-			Uint64("xlogpos", tlh.SwitchPoint).
-			Msg("followed instance timeline forked at a different xlog pos than our timeline")
-		return true
+	followed := cluster.TimelinePosition{
+		TimelineID:       followedDB.Status.TimelineID,
+		XLogPos:          followedDB.Status.XLogPos,
+		TimelinesHistory: followedDB.Status.TimelinesHistory,
 	}
-
-	// followedDB.Status.TimelineID > pgState.TimelineID
-	ftlh := followedDB.Status.TimelinesHistory.GetTimelineHistory(pgState.TimelineID)
-	if ftlh != nil {
-		if ftlh.SwitchPoint < pgState.XLogPos {
-			logger.Info().
-				Uint64("followedTimeline", followedDB.Status.TimelineID).
-				Uint64("followedXlogpos", ftlh.SwitchPoint).
-				Uint64("timeline", pgState.TimelineID).
-				Uint64("xlogpos", pgState.XLogPos).
-				Msg("followed instance timeline forked before our current state")
-			return true
-		}
+	other, reason := pos.OnOtherBranch(followed)
+	if other {
+		logger.Info().Str("followedDB", followedDB.UID).Msg(reason)
 	}
-	return false
+	return other
 }
