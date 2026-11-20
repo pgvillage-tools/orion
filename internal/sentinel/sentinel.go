@@ -701,58 +701,32 @@ func (s *Sentinel) dbStatus(cd *cluster.Data, dbUID string) dbStatus {
 	return dbStatusGood
 }
 
-func (s *Sentinel) validMastersByStatus(ctx context.Context, cd *cluster.Data) (
-	map[string]*cluster.DB,
-	map[string]*cluster.DB,
-	map[string]*cluster.DB,
+// validDBsByStatus returns the valid dbs of type typ (masters or standbys) by their status: good, failed and
+// converging
+func (s *Sentinel) validDBsByStatus(ctx context.Context, cd *cluster.Data, typ dbType) (
+	good map[string]*cluster.DB,
+	failed map[string]*cluster.DB,
+	converging map[string]*cluster.DB,
 ) {
-	goodMasters := map[string]*cluster.DB{}
-	failedMasters := map[string]*cluster.DB{}
-	convergingMasters := map[string]*cluster.DB{}
+	good = map[string]*cluster.DB{}
+	failed = map[string]*cluster.DB{}
+	converging = map[string]*cluster.DB{}
 
 	for _, db := range cd.DBs {
-		// keep only valid masters
-		if s.dbValidity(ctx, cd, db.UID) != dbValidityValid || s.dbType(cd, db.UID) != dbTypeMaster {
+		// keep only valid dbs of the type
+		if s.dbValidity(ctx, cd, db.UID) != dbValidityValid || s.dbType(cd, db.UID) != typ {
 			continue
 		}
-		status := s.dbStatus(cd, db.UID)
-		switch status {
+		switch s.dbStatus(cd, db.UID) {
 		case dbStatusGood:
-			goodMasters[db.UID] = db
+			good[db.UID] = db
 		case dbStatusFailed:
-			failedMasters[db.UID] = db
+			failed[db.UID] = db
 		case dbStatusConverging:
-			convergingMasters[db.UID] = db
+			converging[db.UID] = db
 		}
 	}
-	return goodMasters, failedMasters, convergingMasters
-}
-
-func (s *Sentinel) validStandbysByStatus(ctx context.Context, cd *cluster.Data) (
-	map[string]*cluster.DB,
-	map[string]*cluster.DB,
-	map[string]*cluster.DB,
-) {
-	goodStandbys := map[string]*cluster.DB{}
-	failedStandbys := map[string]*cluster.DB{}
-	convergingStandbys := map[string]*cluster.DB{}
-
-	for _, db := range cd.DBs {
-		// keep only valid standbys
-		if s.dbValidity(ctx, cd, db.UID) != dbValidityValid || s.dbType(cd, db.UID) != dbTypeStandby {
-			continue
-		}
-		status := s.dbStatus(cd, db.UID)
-		switch status {
-		case dbStatusGood:
-			goodStandbys[db.UID] = db
-		case dbStatusFailed:
-			failedStandbys[db.UID] = db
-		case dbStatusConverging:
-			convergingStandbys[db.UID] = db
-		}
-	}
-	return goodStandbys, failedStandbys, convergingStandbys
+	return good, failed, converging
 }
 
 // dbSlice implements sort interface to sort by XLogPos
@@ -764,7 +738,7 @@ func (p dbSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 
 func (s *Sentinel) findBestStandbys(ctx context.Context, cd *cluster.Data, masterDB *cluster.DB) []*cluster.DB {
 	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	goodStandbys, _, _ := s.validStandbysByStatus(ctx, cd)
+	goodStandbys, _, _ := s.validDBsByStatus(ctx, cd, dbTypeStandby)
 	bestDBs := []*cluster.DB{}
 	for _, db := range goodStandbys {
 		if db.Status.TimelineID != masterDB.Status.TimelineID {
@@ -815,7 +789,7 @@ func (s *Sentinel) findBestNewMasters(ctx context.Context, cd *cluster.Data, mas
 	}
 
 	// Add the previous masters to the best standbys (if valid and in good state)
-	validMastersByStatus, _, _ := s.validMastersByStatus(ctx, cd)
+	validMastersByStatus, _, _ := s.validDBsByStatus(ctx, cd, dbTypeMaster)
 	logger.Debug().Any("validMastersByStatus", spew.Sdump(validMastersByStatus)).Msg("validMastersByStatus")
 	for _, db := range validMastersByStatus {
 		if db.UID == masterDB.UID {
@@ -1334,7 +1308,7 @@ func (s *Sentinel) updateCluster(ctx context.Context, cd *cluster.Data,
 					delete(newcd.DBs, db.UID)
 				}
 
-				goodStandbys, failedStandbys, convergingStandbys := s.validStandbysByStatus(ctx, newcd)
+				goodStandbys, failedStandbys, convergingStandbys := s.validDBsByStatus(ctx, newcd, dbTypeStandby)
 				goodStandbysCount := len(goodStandbys)
 				failedStandbysCount := len(failedStandbys)
 				convergingStandbysCount := len(convergingStandbys)
