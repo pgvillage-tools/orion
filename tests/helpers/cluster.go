@@ -458,30 +458,99 @@ func (tc *Cluster) Terminate(ctx context.Context, failed bool) {
 // logTailLines is the number of lines of every container's log that dumpLogs shows
 const logTailLines = 300
 
+// logDirEnv is the environment variable with a directory where dumpLogs also writes the full logs of the containers
+// of a failed cluster, one file per container (CI uploads it as an artifact): the tail in the output may start too
+// late to show what went wrong.
+const logDirEnv = "ORION_TEST_LOG_DIR"
+
+const (
+	logDirMode  = 0o755
+	logFileMode = 0o644
+)
+
+// role returns what cnt is in the cluster (etcd, api, sentinel, proxy or keeper-i), or "container" when it isn't one
+// of those (e.g. a sentinel added by AddSentinel)
+func (tc *Cluster) role(cnt testcontainers.Container) string {
+	id := cnt.GetContainerID()
+	is := func(c testcontainers.Container) bool { return c != nil && c.GetContainerID() == id }
+	switch {
+	case tc.Etcd != nil && tc.Etcd.GetContainerID() == id:
+		return "etcd"
+	case is(tc.API):
+		return "api"
+	case is(tc.Sentinel):
+		return "sentinel"
+	case is(tc.Proxy):
+		return "proxy"
+	}
+	for i, k := range tc.Keepers {
+		if is(k) {
+			return fmt.Sprintf("keeper-%d", i)
+		}
+	}
+	return "container"
+}
+
+// logDir returns the directory for the full logs of the cluster in the directory of logDirEnv (created), named after
+// the test file of the specs (or "shared" for the cluster of the suite) and the network of the cluster, or "" when
+// logDirEnv isn't set or the directory can't be created
+func (tc *Cluster) logDir() string {
+	base := os.Getenv(logDirEnv)
+	if base == "" {
+		return ""
+	}
+	// the node that terminates a cluster is in this file: the test file is where its top container is
+	name := "shared"
+	if locations := CurrentSpecReport().ContainerHierarchyLocations; len(locations) > 0 {
+		name = strings.TrimSuffix(filepath.Base(locations[0].FileName), "_test.go")
+	}
+	if tc.Network != nil {
+		name += "-" + tc.Network.Name
+	}
+	dir := filepath.Join(base, name)
+	if err := os.MkdirAll(dir, logDirMode); err != nil {
+		fmt.Printf("cannot create the log directory %s: %v\n", dir, err)
+		return ""
+	}
+	return dir
+}
+
 // dumpLogs writes the last logTailLines lines of the logs of all containers of the cluster to stdout, in a collapsible
-// group in GitHub Actions. It writes to stdout and not to the GinkgoWriter: it runs in AfterAll, which succeeds, and
-// Ginkgo only shows the GinkgoWriter output of nodes that fail (unless it runs verbose).
+// group in GitHub Actions, and with logDirEnv set, the full logs to files. It writes to stdout and not to the
+// GinkgoWriter: it runs in AfterAll, which succeeds, and Ginkgo only shows the GinkgoWriter output of nodes that fail
+// (unless it runs verbose).
 func (tc *Cluster) dumpLogs(ctx context.Context) {
 	group, endGroup := "===== logs of %s (last %d lines) =====\n", ""
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		group, endGroup = "::group::logs of %s (last %d lines)\n", "::endgroup::\n"
 	}
-	for _, cnt := range tc.all {
+	dir := tc.logDir()
+	for i, cnt := range tc.all {
 		name, _ := cnt.Name(ctx)
+		label := tc.role(cnt) + " " + name
 		logs, err := cnt.Logs(ctx)
 		if err != nil {
-			fmt.Printf("no logs for %s: %v\n", name, err)
+			fmt.Printf("no logs for %s: %v\n", label, err)
 			continue
 		}
 		data, _ := io.ReadAll(logs)
 		_ = logs.Close()
+		if dir != "" {
+			file := filepath.Join(dir, fmt.Sprintf("%02d-%s-%s.log", i, tc.role(cnt), strings.TrimPrefix(name, "/")))
+			if err := os.WriteFile(file, data, logFileMode); err != nil {
+				fmt.Printf("cannot write the logs of %s: %v\n", label, err)
+			}
+		}
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 		if len(lines) > logTailLines {
 			lines = lines[len(lines)-logTailLines:]
 		}
-		fmt.Printf(group, name, logTailLines)
+		fmt.Printf(group, label, logTailLines)
 		fmt.Println(strings.Join(lines, "\n"))
 		fmt.Print(endGroup)
+	}
+	if dir != "" {
+		fmt.Printf("the full logs of the containers are in %s\n", dir)
 	}
 }
 
