@@ -3,10 +3,10 @@ package logging
 import (
 	"bytes"
 	"context"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/rs/zerolog"
-	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -14,154 +14,111 @@ const (
 	enabledLevelString = "debug"
 )
 
-type logSink struct {
-	logs []string
-	buf  bytes.Buffer
-}
-
-func (l *logSink) Write(p []byte) (n int, err error) {
-	l.logs = append(l.logs, string(p))
-	return l.buf.Write(p)
-}
-
-func (l *logSink) Index(i int) string {
-	if i >= 0 && i < len(l.logs) {
-		return l.logs[i]
-	}
-	return ""
-}
-
-func (l *logSink) String() string {
-	return l.buf.String()
-}
-
-func (l *logSink) Reset() {
-	l.logs = []string{}
-	l.buf.Reset()
-}
-
-func TestDebuggingStatic(t *testing.T) {
-	const comp1 = TestComponent
-	SetDynamicLoggingConfig(defaultLevelString, nil)
-	ctx := context.TODO()
-	// debug false
-	SetStaticLevel(defaultLevelString)
-	_, noDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.InfoLevel, noDebugLogger.GetLevel())
-	// debug true
-	SetStaticLevel(enabledLevelString)
-	_, allDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.DebugLevel, allDebugLogger.GetLevel())
-	// debug component
-	SetStaticComponents(Components{comp1: zerolog.DebugLevel})
-	_, componentDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.DebugLevel, componentDebugLogger.GetLevel())
-}
-
-func TestDebuggingDynamic(t *testing.T) {
-	ctx := context.TODO()
-	const comp1 = TestComponent
-	SetStaticLevel(defaultLevelString)
-	SetStaticComponents(nil)
-	// debug false
-	SetDynamicLoggingConfig(defaultLevelString, nil)
-	_, noDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.InfoLevel, noDebugLogger.GetLevel())
-	// debug true
-	SetDynamicLoggingConfig(enabledLevelString, nil)
-	_, allDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.DebugLevel, allDebugLogger.GetLevel())
-	// debug component on
-	SetDynamicLoggingConfig(defaultLevelString, Components{comp1: zerolog.DebugLevel})
-	_, componentDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.DebugLevel, componentDebugLogger.GetLevel())
-
-	// debug component off
-	SetDynamicLoggingConfig(defaultLevelString, Components{})
-	_, componentNoDebugLogger := GetLogComponent(ctx, comp1)
-	assert.Equal(t, zerolog.InfoLevel, componentNoDebugLogger.GetLevel())
-}
-
-func TestOutput(t *testing.T) {
-	// Keep original output
-	originalOut := output.Out
-	sink := &logSink{}
-	output.Out = sink
-	// Restore original output after test
-	defer func() {
-		output.Out = originalOut
-	}()
-
-	ctx := context.TODO()
-	const comp = TestComponent
-
-	// Test Info level
-	SetStaticLevel("info")
-	SetStaticComponents(nil)
-	SetDynamicLoggingConfig("info", nil)
-	_, logger := GetLogComponent(ctx, comp)
-
-	logger.Debug().Msg("this is a debug message")
-	assert.Empty(t, sink.String(), "Debug message should not be logged at info level")
-	sink.Reset()
-
-	logger.Info().Msg("this is an info message")
-	assert.Contains(t, sink.String(), "this is an info message", "Info message should be logged at info level")
-	sink.Reset()
-
-	logger.Warn().Msg("this is a warning message")
-	assert.Contains(t, sink.String(), "this is a warning message", "Warning message should be logged at info level")
-	sink.Reset()
-
-	// Test Error level
-	SetStaticLevel("error")
-	SetDynamicLoggingConfig("error", nil)
-	_, logger = GetLogComponent(ctx, comp)
-	logger.Warn().Msg("this is another warning message")
-	assert.Empty(t, sink.String(), "Warning message should not be logged at error level")
-	sink.Reset()
-
-	logger.Error().Msg("this is an error message")
-	assert.Contains(t, sink.String(), "this is an error message", "Error message should be logged at error level")
-	sink.Reset()
-}
-
-func TestInvalidLevel(t *testing.T) {
-	// Test that setting an invalid level falls back to the default (info)
+var _ = Describe("log levels", func() {
 	const comp = TestComponent
 	ctx := context.TODO()
-	SetStaticLevel("invalidlevel")
-	SetStaticComponents(nil)
-	SetDynamicLoggingConfig("anotherinvalidlevel", nil)
 
-	_, logger := GetLogComponent(ctx, comp)
-
-	assert.Equal(t, zerolog.InfoLevel, logger.GetLevel(), "Logger level should default to Info for invalid level strings")
-}
-
-func TestColoring(t *testing.T) {
-	originalNoColor := output.NoColor
-
-	EnableColor()
-	assert.False(t, output.NoColor, "EnableColor should set NoColor to false")
-
-	DisableColor()
-	assert.True(t, output.NoColor, "DisableColor should set NoColor to true")
-
-	// Restore original
-	output.NoColor = originalNoColor
-}
-
-func TestStaticLevelWithoutDynamicLevel(t *testing.T) {
-	const comp = TestComponent
-	ctx := context.TODO()
-	SetStaticComponents(nil)
-	for _, level := range []string{"debug", "info", "warn", "error"} {
-		// as in the components: SetDynamicLoggingConfig is never called
-		dynamicLevelSet = false
-		SetStaticLevel(level)
+	// level returns the level of the logger of comp
+	level := func() zerolog.Level {
 		_, logger := GetLogComponent(ctx, comp)
-		assert.Equal(t, sToLevel[level], logger.GetLevel(), "--log-level %s", level)
+		return logger.GetLevel()
 	}
-	SetStaticLevel(defaultLevelString)
-}
+
+	BeforeEach(func() {
+		SetStaticLevel(defaultLevelString)
+		SetStaticComponents(nil)
+		SetDynamicLoggingConfig(defaultLevelString, nil)
+	})
+	AfterEach(func() {
+		SetStaticLevel(defaultLevelString)
+		SetStaticComponents(nil)
+		SetDynamicLoggingConfig(defaultLevelString, nil)
+	})
+
+	It("takes the static level, or the static level of the component", func() {
+		Ω(level()).To(Equal(zerolog.InfoLevel))
+		SetStaticLevel(enabledLevelString)
+		Ω(level()).To(Equal(zerolog.DebugLevel))
+		SetStaticLevel(defaultLevelString)
+		SetStaticComponents(Components{comp: zerolog.DebugLevel})
+		Ω(level()).To(Equal(zerolog.DebugLevel))
+	})
+
+	It("takes the dynamic level, or the dynamic level of the component", func() {
+		SetDynamicLoggingConfig(enabledLevelString, nil)
+		Ω(level()).To(Equal(zerolog.DebugLevel))
+		SetDynamicLoggingConfig(defaultLevelString, Components{comp: zerolog.DebugLevel})
+		Ω(level()).To(Equal(zerolog.DebugLevel))
+		SetDynamicLoggingConfig(defaultLevelString, Components{})
+		Ω(level()).To(Equal(zerolog.InfoLevel))
+	})
+
+	It("falls back to info for invalid levels", func() {
+		SetStaticLevel("invalidlevel")
+		SetDynamicLoggingConfig("anotherinvalidlevel", nil)
+		Ω(level()).To(Equal(zerolog.InfoLevel))
+	})
+
+	DescribeTable("takes the static level when there is no dynamic level, as in the components",
+		func(lvl string) {
+			// SetDynamicLoggingConfig is never called in the components
+			dynamicLevelSet = false
+			SetStaticLevel(lvl)
+			Ω(level()).To(Equal(sToLevel[lvl]))
+		},
+		Entry("debug", "debug"),
+		Entry("info", "info"),
+		Entry("warn", "warn"),
+		Entry("error", "error"),
+	)
+})
+
+var _ = Describe("output", func() {
+	var sink *bytes.Buffer
+
+	BeforeEach(func() {
+		originalOut := output.Out
+		sink = &bytes.Buffer{}
+		output.Out = sink
+		SetStaticComponents(nil)
+		DeferCleanup(func() {
+			output.Out = originalOut
+			SetStaticLevel(defaultLevelString)
+			SetDynamicLoggingConfig(defaultLevelString, nil)
+		})
+	})
+
+	// logs logs msg at lvl with the logger of the test component, and returns whether it was written
+	logs := func(lvl zerolog.Level, msg string) bool {
+		sink.Reset()
+		_, logger := GetLogComponent(context.TODO(), TestComponent)
+		logger.WithLevel(lvl).Msg(msg)
+		return bytes.Contains(sink.Bytes(), []byte(msg))
+	}
+
+	It("writes from info up at the info level", func() {
+		SetStaticLevel("info")
+		SetDynamicLoggingConfig("info", nil)
+		Ω(logs(zerolog.DebugLevel, "a debug message")).To(BeFalse())
+		Ω(logs(zerolog.InfoLevel, "an info message")).To(BeTrue())
+		Ω(logs(zerolog.WarnLevel, "a warning message")).To(BeTrue())
+	})
+
+	It("writes only errors at the error level", func() {
+		SetStaticLevel("error")
+		SetDynamicLoggingConfig("error", nil)
+		Ω(logs(zerolog.WarnLevel, "a warning message")).To(BeFalse())
+		Ω(logs(zerolog.ErrorLevel, "an error message")).To(BeTrue())
+	})
+})
+
+var _ = Describe("color", func() {
+	It("is enabled and disabled", func() {
+		originalNoColor := output.NoColor
+		DeferCleanup(func() { output.NoColor = originalNoColor })
+		EnableColor()
+		Ω(output.NoColor).To(BeFalse())
+		DisableColor()
+		Ω(output.NoColor).To(BeTrue())
+	})
+})
