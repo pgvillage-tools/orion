@@ -50,7 +50,7 @@ See [Stolon Architecture and Requirements](architecture.md)
 
 ## How are backups handled with orion?
 
-orion let you easily integrate with any backup/restore solution. See the [point in time recovery](pitr.md) and the [wal-e example](pitr_wal-e.md).
+orion let you easily integrate with any backup/restore solution. See [point in time recovery](../operations/pitr.md), with a wal-g example.
 
 ## How orion decide which standby should be promoted to master?
 

@@ -10,9 +10,7 @@ We suggest that you first read the [Stolon Architecture and Requirements](archit
 * [Custom pg_hba.conf entries](custom_pg_hba_entries.md)
 * [Stolon Client](orion-cli.md)
 * Backup/Restore
-  * [Point In Time Recovery](pitr.md)
-  * [Point In Time Recovery with wal-e](pitr_wal-e.md)
-  * [Point In Time Recovery with wal-g](pitr_wal-g.md)
+  * [Point In Time Recovery](../operations/pitr.md) (reviewed for Orion, moved out of docs/stolon)
 * [Standby Cluster](standbycluster.md)
 
 ### Misc topics
