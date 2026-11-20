@@ -88,3 +88,5 @@ nav:
       - Bootstrap design: api/bootstrap-design.md
   - Deploy:
       - Kubernetes: deploy/k8s.md
+  - Operations:
+      - Point in time recovery: operations/pitr.md
