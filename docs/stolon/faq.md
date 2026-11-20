@@ -17,7 +17,7 @@ Currently the proxy redirects all requests to the master.
 ## Why is shared storage and fencing not necessary with orion?
 
 orion eliminates the requirement of a shared storage since it uses postgres streaming replication and can avoid the need of fencing (killing the node, removing access to the shared storage etc...) due to its architecture:
-* It uses etcd/consul as the first step to determine which components are healthy.
+* It uses etcd (or kubernetes) as the first step to determine which components are healthy.
 * The orion-proxy is a sort of fencer since it'll close connections to old masters and direct new connections to the current master.
 
 ## How does orion differ from pure kubernetes high availability?
@@ -44,7 +44,7 @@ With pacemaker, using the provided postgresql resource agent, you can achieve in
 
 The orion pros are the same of the above question and it'll let you avoid the need of node fencing and provides an easier cluster management and scaling.
 
-## What happens if etcd/consul is partitioned?
+## What happens if etcd is partitioned?
 
 See [Stolon Architecture and Requirements](architecture.md)
 
@@ -66,11 +66,7 @@ We deliberately don't use postgres FIRST or ANY methods with N different than th
 
 This is needed for consistency. If we have 3 standbys and we use FIRST 2 (a, b, c), the sentinel, when the master fails, won't be able to know which of the 3 standbys is really synchronous and in sync with the master. And choosing the non synchronous one will cause the loss of the transactions contained in the wal records not transmitted.
 
-## Does orion use Consul as a DNS server as well?
-
-Consul (or etcd) is used only as a key-value storage.
-
-## Lets say I have multiple orion clusters. Do I need a separate stores (etcd or consul) for each orion cluster?
+## Lets say I have multiple orion clusters. Do I need a separate store (etcd) for each orion cluster?
 
 orion will create its keys using the cluster name as part of the key hierarchy. So multiple orion clusters can share the same store.
 

@@ -9,7 +9,7 @@ date: 2026-11-14
 # Orion on Kubernetes
 
 This page describes how to run Orion on Kubernetes with the `kubernetes` store backend: Kubernetes itself stores the
-cluster data and does the sentinel leader election, so you don't need etcd or consul.
+cluster data and does the sentinel leader election, so you don't need etcd.
 
 The steps and manifests on this page are the ones the end-to-end tests run on [kind](https://kind.sigs.k8s.io/) for
 every change (`tests/k8s`): the manifests below are included from `examples/kubernetes`. They are a minimal setup to

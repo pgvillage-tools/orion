@@ -25,7 +25,7 @@ a REST api with a cli on top of it, secured with TLS and client certificates.
 | api | `orion-api` | Manages Orion clusters with a REST api, with TLS and client certificates (mTLS). |
 | cli | `orion-cli` | Consumes the api. |
 
-All components keep their state in a highly available store (etcd, consul or the Kubernetes api server), so they can
+All components keep their state in a highly available store (etcd or the Kubernetes api server), so they can
 run anywhere, come and go, and change their addresses.
 
 ## Documentation

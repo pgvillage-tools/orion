@@ -81,13 +81,9 @@ func CheckCommonConfig(cfg *CommonConfig) error {
 	}
 
 	switch cfg.StoreBackend {
-	case "consul":
-	case "etcd":
-		// etcd is old alias for etcdv2
-		cfg.StoreBackend = "etcdv2"
-	case "etcdv2":
-	case "etcdv3":
-	case "kubernetes":
+	case "etcdv3", "kubernetes":
+	case "etcd", "etcdv2", "consul":
+		return fmt.Errorf("store backend %q is no longer supported: use etcdv3 or kubernetes", cfg.StoreBackend)
 	default:
 		return fmt.Errorf("Unknown store backend: %q", cfg.StoreBackend)
 	}
@@ -122,10 +118,6 @@ func NewStore(ctx context.Context, cfg *CommonConfig) (consensus.Store, error) {
 	var s consensus.Store
 
 	switch cfg.StoreBackend {
-	case "consul":
-		fallthrough
-	case "etcdv2":
-		fallthrough
 	case "etcdv3":
 		kvstore, err := NewKVStore(ctx, cfg)
 		if err != nil {
@@ -151,10 +143,6 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.
 	var election consensus.Election
 
 	switch cfg.StoreBackend {
-	case "consul":
-		fallthrough
-	case "etcdv2":
-		fallthrough
 	case "etcdv3":
 		kvstore, err := NewKVStore(ctx, cfg)
 		if err != nil {
@@ -182,7 +170,7 @@ func NewElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.
 func NewStoreAndElection(ctx context.Context, cfg *CommonConfig, uid string) (consensus.Store, consensus.Election,
 	error) {
 	switch cfg.StoreBackend {
-	case "consul", "etcdv2", "etcdv3":
+	case "etcdv3":
 		kvstore, err := NewKVStore(ctx, cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot create kv store: %w", err)

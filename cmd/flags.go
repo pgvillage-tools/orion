@@ -40,14 +40,13 @@ func AddCommonFlags(cmd *cobra.Command, cfg *store.CommonConfig) {
 		&cfg.StoreBackend,
 		"store-backend",
 		"",
-		"store backend type (etcdv2/etcd, etcdv3, consul or kubernetes)")
+		"store backend type (etcdv3 or kubernetes)")
 
 	cmd.PersistentFlags().StringVar(
 		&cfg.StoreEndpoints,
 		"store-endpoints",
 		"",
-		// revive:disable-next-line
-		"a comma-delimited list of store endpoints (use https scheme for tls communication) (defaults: http://127.0.0.1:2379 for etcd, http://127.0.0.1:8500 for consul)")
+		"a comma-delimited list of store endpoints (use https for tls) (default: http://127.0.0.1:2379)")
 
 	cmd.PersistentFlags().DurationVar(
 		&cfg.StoreTimeout,

@@ -3,7 +3,7 @@
 `orion` is the orion client which controls the orion cluster(s). 
 
 Since `orion`needs to communicate with the cluster backend store, it requires providing the requested cluster name (`--cluster-name`), its store backend type (`--store-backend`), and how to reach the store, such as:
-* For etcdv2, etcdv3 or consul as store, a comma separated list of endpoints (`--store-endpoints`).
+* For etcdv3 as store, a comma separated list of endpoints (`--store-endpoints`).
 * For kubernetes as store, the kind of kubernetes resources (`--kube-resource-kind`). See below.
 
 `orion` example for checking the status of a cluster named "orion-cluster" using "etcdv3" as a store backend:

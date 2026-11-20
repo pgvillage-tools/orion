@@ -27,7 +27,9 @@ func TestCheckCommonConfig(t *testing.T) {
 	}{
 		{name: "kubernetes needs nothing more", cfg: CommonConfig{ClusterName: "c", StoreBackend: "kubernetes"}, backend: "kubernetes"},
 		{name: "etcdv3", cfg: CommonConfig{ClusterName: "c", StoreBackend: "etcdv3"}, backend: "etcdv3"},
-		{name: "etcd is etcdv2", cfg: CommonConfig{ClusterName: "c", StoreBackend: "etcd"}, backend: "etcdv2"},
+		{name: "etcd (v2) is no longer supported", cfg: CommonConfig{ClusterName: "c", StoreBackend: "etcd"}, wantErr: true},
+		{name: "etcdv2 is no longer supported", cfg: CommonConfig{ClusterName: "c", StoreBackend: "etcdv2"}, wantErr: true},
+		{name: "consul is no longer supported", cfg: CommonConfig{ClusterName: "c", StoreBackend: "consul"}, wantErr: true},
 		{name: "no cluster name", cfg: CommonConfig{StoreBackend: "etcdv3"}, wantErr: true},
 		{name: "no store backend", cfg: CommonConfig{ClusterName: "c"}, wantErr: true},
 		{name: "unknown store backend", cfg: CommonConfig{ClusterName: "c", StoreBackend: "zookeeper"}, wantErr: true},

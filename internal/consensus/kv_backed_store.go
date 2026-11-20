@@ -213,10 +213,6 @@ func (s *KVBackedStore) GetProxiesInfo(ctx context.Context) (cluster.ProxiesInfo
 // NewKVBackedElection starts a campaign for getting elected with a kv backed store
 func NewKVBackedElection(kvStore KVStore, path, candidateUID string, timeout time.Duration) Election {
 	switch kvStore := kvStore.(type) {
-	case *libKVStore:
-		s := kvStore
-		candidate := NewCandidate(s.store, path, candidateUID, minTTL)
-		return &libkvElection{store: s, path: path, candidate: candidate}
 	case *etcdV3Store:
 		etcdV3Store := kvStore
 		return &etcdv3Election{
