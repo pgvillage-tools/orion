@@ -151,6 +151,7 @@ func runKeeper(
 	nw *testcontainers.DockerNetwork,
 	aliasses map[string][]string,
 	settings map[string]string,
+	mounts testcontainers.ContainerMounts,
 ) (testcontainers.Container, error) {
 	pgVersion := os.Getenv("PGVERSION")
 	if pgVersion == "" {
@@ -173,6 +174,7 @@ func runKeeper(
 				Files:          st.files(),
 				Networks:       []string{nw.Name},
 				NetworkAliases: aliasses,
+				Mounts:         mounts,
 				WaitingFor: wait.ForLog(
 					"postgres hba entries not changed"),
 			},

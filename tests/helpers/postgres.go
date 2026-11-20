@@ -84,3 +84,15 @@ func PgQueryInt(ctx context.Context, connParams PgConnParams, query string, args
 	err = conn.QueryRow(ctx, query, args...).Scan(&n)
 	return n, err
 }
+
+// PgQueryString runs query, which returns one text value
+func PgQueryString(ctx context.Context, connParams PgConnParams, query string, args ...any) (string, error) {
+	conn, err := pgx.Connect(ctx, connParams.ConnString())
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	var value string
+	err = conn.QueryRow(ctx, query, args...).Scan(&value)
+	return value, err
+}
