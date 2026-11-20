@@ -45,6 +45,7 @@ type CommonConfig struct {
 	MetricsListenAddress string
 	LogColor             bool
 	LogLevel             string
+	LogComponents        string
 	Debug                bool
 	KubeConfig           string
 	KubeContext          string

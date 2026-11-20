@@ -124,12 +124,8 @@ func runKeeper(c *cobra.Command, _ []string) {
 		cfg.PGSUUsername = user
 	}
 
-	logging.SetStaticLevel(cfg.LogLevel)
-	if debug {
-		logging.SetStaticLevel("debug")
-	}
-	if cmd.IsColorLoggerEnable(c, &cfg.CommonConfig) {
-		logging.EnableColor()
+	if err := cmd.SetupLogging(c, &cfg.CommonConfig, debug); err != nil {
+		logger.Fatal().AnErr(logging.KeyErr, err).Msg("")
 	}
 
 	if cfg.DataDir == "" {
