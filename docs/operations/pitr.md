@@ -31,7 +31,9 @@ orion-cli update --patch '{
 ```
 
 The keepers apply the parameters to every instance, so whichever keeper becomes the primary archives to the same
-location. The archive must therefore be reachable from every keeper (a shared volume, NFS, an object store, ...).
+location. The archive must therefore be reachable from every keeper (a shared volume, NFS, an object store, ...). With
+`archive_mode` `on` only the primary archives: the standbys don't, so they don't archive the same WAL files again.
+Use `always` only if the standbys must archive too, and make sure they don't overwrite each other's files then.
 
 The command must fail when the file already exists (`test ! -f`), and only return 0 when the WAL file is safely stored;
 see [continuous archiving](https://www.postgresql.org/docs/current/continuous-archiving.html) in the PostgreSQL
@@ -86,6 +88,23 @@ superuser and replication passwords (`--pg-su-passwordfile`, `--pg-repl-password
 Once converged, the new cluster is a primary cluster of its own, on a new timeline: it doesn't change the backed up
 cluster or its archive. Keepers you add get their data from its primary, as in any other cluster.
 
+### What the keeper does
+
+The leader sentinel chooses one of the registered keepers to restore the database. That keeper:
+
+1. Removes its data directory.
+2. Runs `dataRestoreCommand` with `/bin/sh -c`, with `%d` replaced by its data directory, `%w` by its WAL directory
+   (`--wal-dir`, when set) and `%%` by `%`. The command must exit 0 only when the restore succeeded.
+3. Starts PostgreSQL in archive recovery, with `restore_command` and the recovery target settings, and waits until the
+   recovery is done. With a `syncTimeout` in the cluster spec it gives up after that time; by default it waits as
+   long as the recovery takes.
+4. Becomes the primary of the new cluster. The other keepers then get their data from it.
+
+When a step fails, the keeper logs the error, removes the half restored data directory and tries again on its next
+check. Look in the keeper's log for errors of `dataRestoreCommand`, and in the PostgreSQL log for errors of
+`restore_command`. The keeper keeps the `pitrConfig` it got when the restore started: changing the cluster spec
+doesn't change a restore in progress, so fix what the command needs (files, permissions, credentials) instead.
+
 ## Restore up to a point in time
 
 Without a target, PostgreSQL replays all the archived WAL (Orion sets `recovery_target_timeline` to `latest`). To stop
@@ -123,3 +142,36 @@ The settings are PostgreSQL's
 
 With a target, Orion sets `recovery_target_action` to `promote`: once PostgreSQL reaches the target it becomes the
 primary of the new cluster.
+
+## With wal-g
+
+[wal-g](https://github.com/wal-g/wal-g) takes base backups and archives WAL to object stores (S3, GCS, Azure, ...).
+Keep its credentials out of the cluster spec and the PostgreSQL parameters, which every database user can read: put
+them in environment files on the keepers, and load them with `envdir` (or a small script that sets them):
+
+```bash
+orion-cli update --patch '{
+  "pgParameters": {
+    "archive_mode": "on",
+    "archive_command": "envdir /etc/wal-g.d/env wal-g wal-push %p"
+  }
+}'
+```
+
+Take base backups with `wal-g backup-push` on the primary. Restore the latest one into a new cluster with:
+
+```json
+{
+  "initMode": "pitr",
+  "pitrConfig": {
+    "dataRestoreCommand": "envdir /etc/wal-g.d/env wal-g backup-fetch %d LATEST",
+    "archiveRecoverySettings": {
+      "restoreCommand": "envdir /etc/wal-g.d/env wal-g wal-fetch %f %p"
+    }
+  },
+  "mergePgParameters": false
+}
+```
+
+A wal-g backup doesn't hold `postgresql.conf` and `pg_hba.conf`. Orion writes both itself, so put the PostgreSQL
+parameters the restored cluster needs in the `pgParameters` of its spec.
