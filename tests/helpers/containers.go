@@ -152,6 +152,7 @@ func runKeeper(
 	aliasses map[string][]string,
 	settings map[string]string,
 	mounts testcontainers.ContainerMounts,
+	extraNetworks []string,
 ) (testcontainers.Container, error) {
 	pgVersion := os.Getenv("PGVERSION")
 	if pgVersion == "" {
@@ -172,7 +173,7 @@ func runKeeper(
 				Env:            envSettings,
 				Image:          image,
 				Files:          st.files(),
-				Networks:       []string{nw.Name},
+				Networks:       append([]string{nw.Name}, extraNetworks...),
 				NetworkAliases: aliasses,
 				Mounts:         mounts,
 				WaitingFor: wait.ForLog(
