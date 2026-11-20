@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	mobyclient "github.com/moby/moby/client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
@@ -60,12 +61,14 @@ type Cluster struct {
 	// cluster; set it before StartMembers
 	InitialClusterSpec *apiv1.Spec
 	StoreTLS           bool
-	store              store
-	API                testcontainers.Container
-	Sentinel           testcontainers.Container
-	Proxy              testcontainers.Container
-	Keepers            []testcontainers.Container
-	all                []testcontainers.Container
+	// KeeperMounts are mounted in every keeper (e.g. a volume with a WAL archive); set them before StartMembers
+	KeeperMounts testcontainers.ContainerMounts
+	store        store
+	API          testcontainers.Container
+	Sentinel     testcontainers.Container
+	Proxy        testcontainers.Container
+	Keepers      []testcontainers.Container
+	all          []testcontainers.Container
 	// tmpDir holds the files of the cluster (e.g. the certificates); it is removed with the cluster, when the node
 	// that started it (StartStore) ends
 	tmpDir string
@@ -134,7 +137,7 @@ func (tc *Cluster) StartMembers(ctx context.Context, numKeepers int) {
 			"pg-listen-address": alias,
 		}
 		cnt, keeperErr := runKeeper(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {alias}},
-			maps.Clone(settings))
+			maps.Clone(settings), tc.KeeperMounts)
 		tc.add(cnt)
 		Ω(keeperErr).NotTo(HaveOccurred())
 		tc.Keepers = append(tc.Keepers, cnt)
@@ -245,6 +248,42 @@ func WithOwnCluster(numKeepers int) *Cluster {
 // WithOwnClusterSpec is WithOwnCluster for a cluster created with spec (e.g. DefaultSpec with sync replication)
 func WithOwnClusterSpec(numKeepers int, spec *apiv1.Spec) *Cluster {
 	return withOwn(func(tc *Cluster, ctx context.Context) { tc.StartWithSpec(ctx, numKeepers, spec) })
+}
+
+// WithOwnClusterSetup is WithOwnClusterSpec for a cluster that setup prepares when it starts (in the BeforeAll, so
+// after the specs before it in an Ordered container): setup sets the options of the cluster (e.g. KeeperMounts) and
+// returns its spec
+func WithOwnClusterSetup(numKeepers int, setup func(ctx context.Context, tc *Cluster) *apiv1.Spec) *Cluster {
+	return withOwn(func(tc *Cluster, ctx context.Context) {
+		tc.StartWithSpec(ctx, numKeepers, setup(ctx, tc))
+	})
+}
+
+// KeeperExec runs script with sh -c in keeper i, as user (the user of the image, postgres, when empty), and returns
+// the exit code and the output
+func (tc *Cluster) KeeperExec(ctx context.Context, i int, user, script string) (int, string) {
+	opts := []tcexec.ProcessOption{tcexec.Multiplexed()}
+	if user != "" {
+		opts = append(opts, tcexec.WithUser(user))
+	}
+	code, out, err := tc.Keepers[i].Exec(ctx, []string{"sh", "-c", script}, opts...)
+	Ω(err).NotTo(HaveOccurred())
+	output, err := io.ReadAll(out)
+	Ω(err).NotTo(HaveOccurred())
+	return code, string(output)
+}
+
+// RemoveVolume removes a volume (e.g. of KeeperMounts) once the containers that use it are gone: testcontainers
+// doesn't remove volumes. It only reports a failure, e.g. when ORION_TEST_KEEP kept the containers that use it.
+func RemoveVolume(ctx context.Context, name string) {
+	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
+	if err == nil {
+		defer func() { _ = cli.Close() }()
+		_, err = cli.VolumeRemove(ctx, name, mobyclient.VolumeRemoveOptions{Force: true})
+	}
+	if err != nil {
+		GinkgoWriter.Printf("cannot remove volume %s: %v\n", name, err)
+	}
 }
 
 // WithOwnClusterInitialSpec starts etcd, the api, a sentinel with --initial-cluster-spec (spec), numKeepers keepers
