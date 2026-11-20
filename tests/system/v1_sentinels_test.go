@@ -74,11 +74,11 @@ var _ = Describe("GET /v1/cluster/sentinels when sentinels stop", Ordered, func(
 			g.Ω(sentinels).To(BeEmpty())
 		}).WithTimeout(helpers.PrimaryTimeout).WithPolling(helpers.PollInterval).Should(Succeed())
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		_, httpCode, err := tc.APIClient.GetSentinels()
+		_, httpCode, err := tc.APIClient.WithUnavailableRetries(0).GetSentinels()
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 

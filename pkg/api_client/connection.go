@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,33 @@ type Connection struct {
 	host     string
 	port     uint16
 	client   http.Client
+	// unavailableRetries is how often a request is retried after a 503 (see WithUnavailableRetries)
+	unavailableRetries int
+}
+
+const (
+	// defaultRetryAfter is the wait before a retry after a 503 without a (valid) Retry-After
+	defaultRetryAfter = time.Second
+	// maxRetryAfter caps the wait before a retry after a 503
+	maxRetryAfter = 10 * time.Second
+)
+
+// WithUnavailableRetries returns c, retrying a request up to retries times when the api answers 503 Service
+// Unavailable (its store didn't answer in time). It waits what the Retry-After of the response says (at most
+// maxRetryAfter), or defaultRetryAfter. Mind that a write the api answered with 503 may have been applied: a retried
+// write must be one that can be applied twice (or use If-Match).
+func (c Connection) WithUnavailableRetries(retries int) Connection {
+	c.unavailableRetries = retries
+	return c
+}
+
+// retryAfter returns the wait of the Retry-After header (in seconds), capped at maxRetryAfter, or defaultRetryAfter
+func retryAfter(h http.Header) time.Duration {
+	seconds, err := strconv.Atoi(h.Get("Retry-After"))
+	if err != nil || seconds < 0 {
+		return defaultRetryAfter
+	}
+	return min(time.Duration(seconds)*time.Second, maxRetryAfter)
 }
 
 // NewConnection returns an initialized Connection
@@ -128,21 +156,7 @@ func (c Connection) do(method string, ep endpoint, body []byte, contentType stri
 func (c Connection) doWithHeaders(method string, ep endpoint, body []byte, contentType string,
 	headers map[string]string, o any) (int, http.Header, error) {
 	url := c.EndpointURL(ep)
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequest(method, url, reader)
-	if err != nil {
-		return httpClientError, nil, err
-	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := c.client.Do(req)
+	resp, err := c.send(method, url, body, contentType, headers)
 	if err != nil {
 		return httpClientError, nil, err
 	}
@@ -162,6 +176,34 @@ func (c Connection) doWithHeaders(method string, ep endpoint, body []byte, conte
 		}
 	}
 	return resp.StatusCode, resp.Header, nil
+}
+
+// send sends a request, and retries it after a 503 as WithUnavailableRetries says
+func (c Connection) send(method, url string, body []byte, contentType string, headers map[string]string) (
+	*http.Response, error) {
+	for attempt := 0; ; attempt++ {
+		var reader io.Reader
+		if body != nil {
+			reader = bytes.NewReader(body)
+		}
+		req, err := http.NewRequest(method, url, reader)
+		if err != nil {
+			return nil, err
+		}
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := c.client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusServiceUnavailable || attempt >= c.unavailableRetries {
+			return resp, err
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBody))
+		_ = resp.Body.Close()
+		time.Sleep(retryAfter(resp.Header))
+	}
 }
 
 // GetWithETag issues a GET request for ep, decodes the response into o, and returns its ETag

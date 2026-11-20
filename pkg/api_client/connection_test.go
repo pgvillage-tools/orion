@@ -53,6 +53,56 @@ var _ = Describe("Connection", func() {
 	}
 	ok := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) }
 
+	Context("when the api answers 503 (its store didn't answer in time)", func() {
+		// unavailable answers 503 with Retry-After 0 to the first n requests, and ok after
+		unavailable := func(n int, calls *int) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				*calls++
+				if *calls <= n {
+					w.Header().Set("Retry-After", "0")
+					endpoints.WriteProblem(w, http.StatusServiceUnavailable, "failed to patch cluster spec")
+					return
+				}
+				ok(w, r)
+			}
+		}
+		It("doesn't retry by default", func() {
+			var calls int
+			c := connect(unavailable(1, &calls))
+			httpCode, err := c.Patch(endpoints.ClusterSpecEndPoint, []byte(`{"a":1}`))
+			Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
+			Ω(err).To(HaveOccurred())
+			Ω(calls).To(Equal(1))
+		})
+		It("retries with WithUnavailableRetries, with the same body", func() {
+			var calls int
+			c := connect(unavailable(2, &calls)).WithUnavailableRetries(3)
+			httpCode, err := c.Patch(endpoints.ClusterSpecEndPoint, []byte(`{"a":1}`))
+			Ω(err).NotTo(HaveOccurred())
+			Ω(httpCode).To(Equal(http.StatusAccepted))
+			Ω(calls).To(Equal(3))
+			Ω(last.body).To(Equal(`{"a":1}`))
+			Ω(last.method).To(Equal(http.MethodPatch))
+		})
+		It("gives up after the retries", func() {
+			var calls int
+			c := connect(unavailable(5, &calls)).WithUnavailableRetries(2)
+			httpCode, err := c.Patch(endpoints.ClusterSpecEndPoint, []byte(`{"a":1}`))
+			Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
+			Ω(err).To(MatchError(HaveSuffix("503 Service Unavailable: failed to patch cluster spec")))
+			Ω(calls).To(Equal(3))
+		})
+		It("doesn't retry other errors", func() {
+			var calls int
+			c := connect(func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				endpoints.WriteProblem(w, http.StatusInternalServerError, "boom")
+			}).WithUnavailableRetries(3)
+			httpCode, _ := c.Get(endpoints.StatusEndPoint, nil)
+			Ω(httpCode).To(Equal(http.StatusInternalServerError))
+			Ω(calls).To(Equal(1))
+		})
+	})
 	It("returns the problem of an error response as the error", func() {
 		c := connect(func(w http.ResponseWriter, _ *http.Request) {
 			endpoints.WriteProblem(w, http.StatusNotFound, "keeper keeper1 doesn't exist")

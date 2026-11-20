@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 
 	"github.com/pgvillage-tools/orion/internal/auth"
+	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	"github.com/pgvillage-tools/orion/internal/store"
@@ -184,7 +185,12 @@ func shutdown(ctx context.Context, ready *atomic.Bool, delay time.Duration, srv,
 	logger.Info().Msg("stopped")
 }
 
-// handleError logs err with msg, and (when w is set) responds with a 500 problem with msg as the detail
+// storeRetryAfter is the Retry-After (in seconds) of a 503 for a store that didn't answer in time
+const storeRetryAfter = "2"
+
+// handleError logs err with msg, and (when w is set) responds with a problem with msg as the detail: a 503 with
+// Retry-After when the store didn't answer in time or can't serve requests right now (the request may succeed when
+// retried), a 500 otherwise
 func handleError(ctx context.Context, err error, w http.ResponseWriter, msg string) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	if err != nil {
@@ -193,6 +199,11 @@ func handleError(ctx context.Context, err error, w http.ResponseWriter, msg stri
 	if w == nil {
 		return
 	}
+	status := http.StatusInternalServerError
+	if consensus.IsUnavailable(err) {
+		status = http.StatusServiceUnavailable
+		w.Header().Set("Retry-After", storeRetryAfter)
+	}
 	// msg, not err: a store error can name store internals (endpoints, keys), so it is only logged
-	endpoints.WriteProblem(w, http.StatusInternalServerError, msg)
+	endpoints.WriteProblem(w, status, msg)
 }

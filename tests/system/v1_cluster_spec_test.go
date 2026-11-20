@@ -164,10 +164,10 @@ var _ = Describe("/v1/cluster/spec without a cluster", Ordered, func() {
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		_, httpCode, err := tc.APIClient.GetClusterSpec()
+		_, httpCode, err := tc.APIClient.WithUnavailableRetries(0).GetClusterSpec()
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })

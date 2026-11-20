@@ -17,7 +17,7 @@ separate etcd suite:
 
 - the orion code for etcd (`internal/consensus/etcdv3.go`: election, leases, atomic
   writes) is covered by unit tests, and every `system` spec runs on top of it;
-- the store-down specs (the api returns 500, readyz returns 503, the proxy fences)
+- the store-down specs (the api returns 503, readyz returns 503, the proxy fences)
   pause the etcd container;
 - what is left would test etcd itself or its client library, not orion.
 

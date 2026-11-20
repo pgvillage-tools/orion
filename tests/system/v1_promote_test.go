@@ -43,10 +43,10 @@ var _ = Describe("POST /v1/cluster/actions/promote without a cluster, or without
 		Ω(err).To(MatchError(ContainSubstring("no cluster yet")))
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		httpCode, err := tc.APIClient.PromoteCluster()
+		httpCode, err := tc.APIClient.WithUnavailableRetries(0).PromoteCluster()
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })

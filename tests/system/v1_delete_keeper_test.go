@@ -93,11 +93,11 @@ var _ = Describe("DELETE /v1/cluster/keepers/{uid}", Ordered, func() {
 		Ω(err).To(HaveOccurred())
 		Ω(httpCode).To(Equal(http.StatusNotFound))
 	})
-	It("returns 500 while the store doesn't respond", func(ctx context.Context) {
+	It("returns 503 while the store doesn't respond", func(ctx context.Context) {
 		helpers.PauseContainer(ctx, tc.Etcd)
-		httpCode, err := tc.APIClient.DeleteKeeper(standbys[1].UID)
+		httpCode, err := tc.APIClient.WithUnavailableRetries(0).DeleteKeeper(standbys[1].UID)
 		Ω(err).To(HaveOccurred())
-		Ω(httpCode).To(Equal(http.StatusInternalServerError))
+		Ω(httpCode).To(Equal(http.StatusServiceUnavailable))
 	})
 })
 
