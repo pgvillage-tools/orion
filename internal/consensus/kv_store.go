@@ -22,7 +22,6 @@ import (
 
 	"github.com/kvtools/consul"
 	"github.com/kvtools/etcdv2"
-	"github.com/kvtools/etcdv3"
 	"github.com/kvtools/valkeyrie"
 	"github.com/pgvillage-tools/orion/internal/logging"
 )
@@ -92,11 +91,8 @@ func NewKVStore(ctx context.Context, cfg Config) (KVStore, error) {
 		}
 
 	case ETCDV3:
-		config = &etcdv3.Config{
-			TLS:               tlsConfig,
-			ConnectionTimeout: cfg.Timeout,
-			SyncPeriod:        cfg.Timeout,
-		}
+		// orion's own etcd v3 client, not libkv's
+		return newEtcdV3Store(addrs, tlsConfig, cfg.Timeout)
 	default:
 		return nil, fmt.Errorf("Unknown store backend: %q", cfg.Backend)
 	}

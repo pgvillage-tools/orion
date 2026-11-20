@@ -313,7 +313,11 @@ func TestEtcdV3StorePutGetList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if pair.Key != "/dir/a" || string(pair.Value) != "1" || pair.LastIndex != 2 {
+	// keys are stored without the leading /, as libkv stored them
+	if _, ok := kv.kvs["dir/a"]; !ok {
+		t.Errorf("expected key dir/a in etcd, got %v", kv.kvs)
+	}
+	if pair.Key != "dir/a" || string(pair.Value) != "1" || pair.LastIndex != 2 {
 		t.Errorf("unexpected pair %v", pair)
 	}
 
@@ -321,7 +325,7 @@ func TestEtcdV3StorePutGetList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(pairs) != 2 || pairs[0].Key != "/dir/a" || string(pairs[1].Value) != "2" || pairs[1].LastIndex != 3 {
+	if len(pairs) != 2 || pairs[0].Key != "dir/a" || string(pairs[1].Value) != "2" || pairs[1].LastIndex != 3 {
 		t.Errorf("unexpected pairs %v", pairs)
 	}
 
@@ -363,7 +367,7 @@ func TestEtcdV3StoreAtomicPut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if first.Key != "/a" || string(first.Value) != "1" || first.LastIndex != 2 {
+	if first.Key != "a" || string(first.Value) != "1" || first.LastIndex != 2 {
 		t.Errorf("unexpected pair %v", first)
 	}
 	// create only on an existing key

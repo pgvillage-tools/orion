@@ -490,8 +490,20 @@ func TestNewKVStore(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if _, ok := s.(*libKVStore); !ok {
-				t.Errorf("expected a libkv store, got %T", s)
+			switch cfg.Backend {
+			case ETCDV3:
+				es, ok := s.(*etcdV3Store)
+				if !ok {
+					t.Fatalf("expected orion's etcd v3 store, got %T", s)
+				}
+				if eps := es.c.Endpoints(); len(eps) != 1 || eps[0] != "https://127.0.0.1:1" ||
+					es.requestTimeout != time.Second {
+					t.Errorf("endpoints %v, request timeout %v", eps, es.requestTimeout)
+				}
+			default:
+				if _, ok := s.(*libKVStore); !ok {
+					t.Errorf("expected a libkv store, got %T", s)
+				}
 			}
 			if err = s.Close(); err != nil {
 				t.Errorf("unexpected error: %v", err)
