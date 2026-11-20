@@ -48,5 +48,9 @@ cluster, named after its test file. CI does this and uploads them as the artifac
 of a failed job.
 
 CI runs the system suite in three jobs: `E2E_SHARD=2/3` runs the second of three parts of each suite in
-`E2E_SUITES`. `scripts/e2e-shard.sh` divides the test files (every file is in one part), weighing each file by the
-clusters it starts of its own. A new file needs nothing: it is divided like the others.
+`E2E_SUITES`. `scripts/e2e-shard.sh` divides the test files (every file is in one part), weighing each file by its
+run time in `tests/<suite>/timings.tsv`. A new file needs nothing: until it is in there, its weight is estimated from the
+clusters it starts of its own.
+
+To update the run times: download the `e2e-report-system-<pgversion>-*` artifacts of a CI run (one PostgreSQL version,
+all its shards) and run `scripts/e2e-timings.sh <reports>/*/system.json > tests/system/timings.tsv`.
