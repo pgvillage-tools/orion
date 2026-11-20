@@ -1,14 +1,16 @@
 package auth_test
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/internal/auth"
 )
 
@@ -21,6 +23,7 @@ func (s staticAuthenticator) Authenticate(_ *http.Request) (*auth.Identity, erro
 	return s.identity, s.err
 }
 
+// serve serves r with the middleware and authenticators, and returns the response and the identity the handler saw
 func serve(r *http.Request, authenticators ...auth.Authenticator) (*httptest.ResponseRecorder, *auth.Identity) {
 	var seen *auth.Identity
 	handler := auth.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -31,6 +34,7 @@ func serve(r *http.Request, authenticators ...auth.Authenticator) (*httptest.Res
 	return w, seen
 }
 
+// requestWithCert returns a request with a verified client certificate for cn, in the groups ou
 func requestWithCert(cn string, ou ...string) *http.Request {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	cert := &x509.Certificate{Subject: pkix.Name{CommonName: cn, OrganizationalUnit: ou}}
@@ -41,46 +45,53 @@ func requestWithCert(cn string, ou ...string) *http.Request {
 	return r
 }
 
-func TestClientCert(t *testing.T) {
-	w, identity := serve(requestWithCert("orion-cli", "admins"), auth.ClientCertAuthenticator{})
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	if identity == nil || identity.Name != "orion-cli" || identity.Method != auth.MethodClientCert {
-		t.Fatalf("unexpected identity %+v", identity)
-	}
-	if len(identity.Groups) != 1 || identity.Groups[0] != "admins" {
-		t.Fatalf("unexpected groups %v", identity.Groups)
-	}
-}
+var _ = Describe("Middleware", func() {
+	Context("with client certificates", func() {
+		It("authenticates the common name, with the organizational units as groups", func() {
+			w, identity := serve(requestWithCert("orion-cli", "admins"), auth.ClientCertAuthenticator{})
+			Ω(w.Code).To(Equal(http.StatusOK))
+			Ω(identity).To(Equal(&auth.Identity{Name: "orion-cli", Method: auth.MethodClientCert,
+				Groups: []string{"admins"}}))
+		})
 
-func TestUnauthenticated(t *testing.T) {
-	unverified := httptest.NewRequest(http.MethodGet, "/", nil)
-	unverified.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{}}}
-	for name, r := range map[string]*http.Request{
-		"no tls":         httptest.NewRequest(http.MethodGet, "/", nil),
-		"unverified":     unverified,
-		"no common name": requestWithCert(""),
-	} {
-		w, identity := serve(r, auth.ClientCertAuthenticator{})
-		if w.Code != http.StatusUnauthorized || identity != nil {
-			t.Errorf("%s: expected 401 without identity, got %d with %+v", name, w.Code, identity)
-		}
-	}
-}
+		DescribeTable("answers 401 without an identity",
+			func(r func() *http.Request) {
+				w, identity := serve(r(), auth.ClientCertAuthenticator{})
+				Ω(w.Code).To(Equal(http.StatusUnauthorized))
+				Ω(identity).To(BeNil())
+			},
+			Entry("without TLS", func() *http.Request { return httptest.NewRequest(http.MethodGet, "/", nil) }),
+			Entry("with an unverified certificate", func() *http.Request {
+				r := httptest.NewRequest(http.MethodGet, "/", nil)
+				r.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{}}}
+				return r
+			}),
+			Entry("without a common name", func() *http.Request { return requestWithCert("") }),
+		)
+	})
 
-func TestChain(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	next := &auth.Identity{Name: "token-user"}
-	w, identity := serve(r, auth.ClientCertAuthenticator{}, staticAuthenticator{identity: next})
-	if w.Code != http.StatusOK || identity != next {
-		t.Fatalf("expected the second authenticator to apply, got %d with %+v", w.Code, identity)
-	}
-	w, identity = serve(r, staticAuthenticator{err: errors.New("bad token")}, staticAuthenticator{identity: next})
-	if w.Code != http.StatusUnauthorized || identity != nil {
-		t.Fatalf("expected a failing authenticator to stop the chain, got %d with %+v", w.Code, identity)
-	}
-	if _, ok := auth.FromContext(r.Context()); ok {
-		t.Fatal("expected no identity in a plain context")
-	}
-}
+	Context("with a chain of authenticators", func() {
+		next := &auth.Identity{Name: "token-user"}
+
+		It("goes to the next authenticator when one doesn't apply", func() {
+			w, identity := serve(httptest.NewRequest(http.MethodGet, "/", nil), auth.ClientCertAuthenticator{},
+				staticAuthenticator{identity: next})
+			Ω(w.Code).To(Equal(http.StatusOK))
+			Ω(identity).To(BeIdenticalTo(next))
+		})
+
+		It("stops at an authenticator that fails", func() {
+			w, identity := serve(httptest.NewRequest(http.MethodGet, "/", nil),
+				staticAuthenticator{err: errors.New("bad token")}, staticAuthenticator{identity: next})
+			Ω(w.Code).To(Equal(http.StatusUnauthorized))
+			Ω(identity).To(BeNil())
+		})
+	})
+})
+
+var _ = Describe("FromContext", func() {
+	It("has no identity in a plain context", func() {
+		_, ok := auth.FromContext(context.Background())
+		Ω(ok).To(BeFalse())
+	})
+})
