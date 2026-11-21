@@ -25,11 +25,14 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
+// the consts and helpers below are shared with start_test.go
 const (
 	proxyUID      = "proxy1"
 	masterDBUID   = "db1"
@@ -108,213 +111,188 @@ func proxies(c *ClusterChecker) bool {
 	return err == nil && string(buf) == "ping"
 }
 
-// eventually waits for cond
-func eventually(t *testing.T, cond func() bool, what string) {
-	t.Helper()
-	deadline := time.Now().Add(waitFor)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for: %s", what)
-		}
-		time.Sleep(checkInterval)
-	}
-}
-
 func stop(c *ClusterChecker) {
 	c.stopPollonProxy(context.Background())
 }
 
-func TestCheckProxiesToTheMaster(t *testing.T) {
-	host, port := echoServer(t)
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(clusterData(host, port, proxyUID), nil, nil)
-	store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), 2*cluster.DefaultProxyTimeout).
-		DoAndReturn(func(_ context.Context, pi *cluster.ProxyInfo, _ time.Duration) error {
-			if pi.UID != proxyUID || pi.Generation != proxyGen || pi.ProxyTimeout != cluster.DefaultProxyTimeout {
-				t.Errorf("unexpected proxy info %+v", pi)
-			}
-			return nil
+var _ = Describe("ClusterChecker", func() {
+	var store *mockconsensus.MockStore
+
+	BeforeEach(func() {
+		store = mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+	})
+
+	// checker returns a checker on store, stopped at the end of the spec
+	checker := func() *ClusterChecker {
+		c := newChecker(store)
+		DeferCleanup(stop, c)
+		return c
+	}
+
+	Describe("Check", func() {
+		var host, port string
+
+		BeforeEach(func() {
+			host, port = echoServer(GinkgoTB())
 		})
-	c := newChecker(store)
-	defer stop(c)
 
-	if err := c.Check(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool { return proxies(c) }, "the proxy sends connections to the master")
-}
+		It("proxies to the master", func(ctx SpecContext) {
+			store.EXPECT().GetClusterData(gomock.Any()).Return(clusterData(host, port, proxyUID), nil, nil)
+			store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), 2*cluster.DefaultProxyTimeout).
+				DoAndReturn(func(_ context.Context, pi *cluster.ProxyInfo, _ time.Duration) error {
+					Expect(pi).To(SatisfyAll(
+						HaveField("UID", proxyUID),
+						HaveField("Generation", proxyGen),
+						HaveField("ProxyTimeout", cluster.DefaultProxyTimeout),
+					), "unexpected proxy info")
+					return nil
+				})
+			c := checker()
 
-func TestCheckDoesNotProxyWhenNotEnabled(t *testing.T) {
-	host, port := echoServer(t)
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(clusterData(host, port, "other-proxy"), nil, nil)
-	store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	c := newChecker(store)
-	defer stop(c)
-
-	if err := c.Check(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	// it listens (the sentinel must see it first), but closes the connections
-	if c.listener == nil {
-		t.Fatal("expected the proxy to listen")
-	}
-	if proxies(c) {
-		t.Error("a proxy that isn't enabled sends connections to the master")
-	}
-}
-
-func TestCheckClosesConnections(t *testing.T) {
-	host, port := echoServer(t)
-	noProxy := clusterData(host, port, proxyUID)
-	noProxy.Proxy = nil
-	noMasterDB := clusterData(host, port, proxyUID)
-	noMasterDB.Proxy.Spec.MasterDBUID = "unknown"
-	badAddress := clusterData("no such host.invalid", port, proxyUID)
-	for name, tc := range map[string]struct {
-		cd      *cluster.Data
-		infoGen int64 // the generation in the proxy info; -1: no proxy info
-	}{
-		"no cluster data":      {cd: nil, infoGen: -1},
-		"no proxy object":      {cd: noProxy, infoGen: cluster.NoGeneration},
-		"no db for the master": {cd: noMasterDB, infoGen: proxyGen},
-		"unresolvable address": {cd: badAddress, infoGen: -1},
-	} {
-		t.Run(name, func(t *testing.T) {
-			store := mockconsensus.NewMockStore(gomock.NewController(t))
-			store.EXPECT().GetClusterData(gomock.Any()).Return(tc.cd, nil, nil)
-			if tc.infoGen != -1 {
-				store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(_ context.Context, pi *cluster.ProxyInfo, _ time.Duration) error {
-						if pi.Generation != tc.infoGen {
-							t.Errorf("proxy info generation %d, want %d", pi.Generation, tc.infoGen)
-						}
-						return nil
-					})
-			}
-			c := newChecker(store)
-			defer stop(c)
-
-			if err := c.Check(t.Context()); err != nil {
-				t.Fatal(err)
-			}
-			if proxies(c) {
-				t.Error("the proxy sends connections without a master")
-			}
+			Expect(c.Check(ctx)).To(Succeed())
+			Eventually(func() bool { return proxies(c) }).WithTimeout(waitFor).WithPolling(checkInterval).
+				Should(BeTrue(), "the proxy sends connections to the master")
 		})
-	}
-}
 
-func TestCheckErrors(t *testing.T) {
-	host, port := echoServer(t)
-	oldFormat := clusterData(host, port, proxyUID)
-	oldFormat.FormatVersion = cluster.CurrentCDFormatVersion + 1
-	invalid := clusterData(host, port, proxyUID)
-	invalid.Cluster.Spec.InitMode = nil
-	for name, tc := range map[string]struct {
-		cd       *cluster.Data
-		storeErr error
-		infoErr  error
-		listens  bool
-	}{
-		"the store fails":            {storeErr: errors.New("store down")},
-		"unsupported format version": {cd: oldFormat, listens: true},
-		"invalid spec":               {cd: invalid, listens: true},
-		"the proxy info can't be set": {cd: clusterData(host, port, proxyUID), infoErr: errors.New("store down"),
-			listens: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			store := mockconsensus.NewMockStore(gomock.NewController(t))
-			store.EXPECT().GetClusterData(gomock.Any()).Return(tc.cd, nil, tc.storeErr)
-			if tc.infoErr != nil {
-				store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(tc.infoErr)
-			}
-			c := newChecker(store)
-			defer stop(c)
+		It("does not proxy when the proxy isn't enabled", func(ctx SpecContext) {
+			store.EXPECT().GetClusterData(gomock.Any()).Return(clusterData(host, port, "other-proxy"), nil, nil)
+			store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+			c := checker()
 
-			if err := c.Check(t.Context()); err == nil {
-				t.Fatal("expected an error")
-			}
-			if (c.listener != nil) != tc.listens {
-				t.Errorf("listening: %v, want %v", c.listener != nil, tc.listens)
-			}
-			if proxies(c) {
-				t.Error("the proxy sends connections after a failed check")
-			}
+			Expect(c.Check(ctx)).To(Succeed())
+			// it listens (the sentinel must see it first), but closes the connections
+			Expect(c.listener).NotTo(BeNil(), "expected the proxy to listen")
+			Expect(proxies(c)).To(BeFalse(), "a proxy that isn't enabled sends connections to the master")
 		})
-	}
-}
 
-func TestCheckTakesTheTimeoutsOfTheSpec(t *testing.T) {
-	host, port := echoServer(t)
-	cd := clusterData(host, port, proxyUID)
-	cd.Cluster.Spec.ProxyCheckInterval = &cluster.Duration{Duration: time.Second}
-	cd.Cluster.Spec.ProxyTimeout = &cluster.Duration{Duration: time.Minute}
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(cd, nil, nil)
-	// the proxy info uses the greater of the current and the new timeout
-	store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), 2*time.Minute).Return(nil)
-	c := newChecker(store)
-	defer stop(c)
+		DescribeTable("closes the connections",
+			// cd builds the cluster data on the echo server; infoGen is the generation in the proxy info,
+			// -1: no proxy info
+			func(ctx SpecContext, cd func(host, port string) *cluster.Data, infoGen int64) {
+				store.EXPECT().GetClusterData(gomock.Any()).Return(cd(host, port), nil, nil)
+				if infoGen != -1 {
+					store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(func(_ context.Context, pi *cluster.ProxyInfo, _ time.Duration) error {
+							Expect(pi.Generation).To(Equal(infoGen), "proxy info generation")
+							return nil
+						})
+				}
+				c := checker()
 
-	if err := c.Check(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if c.proxyCheckInterval != time.Second || c.proxyTimeout != time.Minute {
-		t.Errorf("got check interval %s and timeout %s", c.proxyCheckInterval, c.proxyTimeout)
-	}
-}
+				Expect(c.Check(ctx)).To(Succeed())
+				Expect(proxies(c)).To(BeFalse(), "the proxy sends connections without a master")
+			},
+			Entry("when there is no cluster data, without proxy info",
+				func(string, string) *cluster.Data { return nil }, int64(-1)),
+			Entry("when there is no proxy object, with proxy info without a generation",
+				func(host, port string) *cluster.Data {
+					cd := clusterData(host, port, proxyUID)
+					cd.Proxy = nil
+					return cd
+				}, cluster.NoGeneration),
+			Entry("when there is no db for the master, with proxy info of the proxy generation",
+				func(host, port string) *cluster.Data {
+					cd := clusterData(host, port, proxyUID)
+					cd.Proxy.Spec.MasterDBUID = "unknown"
+					return cd
+				}, proxyGen),
+			Entry("when the address of the master doesn't resolve, without proxy info",
+				func(_, port string) *cluster.Data { return clusterData("no such host.invalid", port, proxyUID) },
+				int64(-1)),
+		)
 
-func TestStartReturnsTheErrorOfThePollonProxy(t *testing.T) {
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, nil).AnyTimes()
-	c := newChecker(store)
-	defer stop(c)
-	c.endPollonProxyCh <- errors.New("listener closed")
-	if err := c.Start(t.Context()); err == nil {
-		t.Fatal("expected the error of the pollon proxy")
-	}
-}
+		DescribeTable("fails, and doesn't proxy",
+			func(ctx SpecContext, cd func(host, port string) *cluster.Data, storeErr, infoErr error, listens bool) {
+				store.EXPECT().GetClusterData(gomock.Any()).Return(cd(host, port), nil, storeErr)
+				if infoErr != nil {
+					store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(infoErr)
+				}
+				c := checker()
 
-func TestNewClusterChecker(t *testing.T) {
-	cfg := Config{ListenAddress: "127.0.0.1", Port: "0", StopListening: true, KeepAliveIdle: 1}
-	cfg.ClusterName = "cluster1"
-	cfg.StoreBackend = "etcdv3"
-	cfg.StoreEndpoints = "http://127.0.0.1:1"
-	cfg.StorePrefix = "orion/cluster"
-	cfg.StoreTimeout = time.Second
-	c, err := NewClusterChecker(t.Context(), proxyUID, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.uid != proxyUID || c.port != "0" || !c.stopListening || c.cfg.KeepAliveIdle != 1 {
-		t.Errorf("unexpected cluster checker %+v", c)
-	}
-}
+				Expect(c.Check(ctx)).NotTo(Succeed())
+				Expect(c.listener != nil).To(Equal(listens), "listening")
+				Expect(proxies(c)).To(BeFalse(), "the proxy sends connections after a failed check")
+			},
+			Entry("when the store fails, without listening",
+				func(string, string) *cluster.Data { return nil }, errors.New("store down"), nil, false),
+			Entry("when the cluster data has an unsupported format version, listening",
+				func(host, port string) *cluster.Data {
+					cd := clusterData(host, port, proxyUID)
+					cd.FormatVersion = cluster.CurrentCDFormatVersion + 1
+					return cd
+				}, nil, nil, true),
+			Entry("when the cluster spec is invalid, listening",
+				func(host, port string) *cluster.Data {
+					cd := clusterData(host, port, proxyUID)
+					cd.Cluster.Spec.InitMode = nil
+					return cd
+				}, nil, nil, true),
+			Entry("when the proxy info can't be set, listening",
+				func(host, port string) *cluster.Data { return clusterData(host, port, proxyUID) },
+				nil, errors.New("store down"), true),
+		)
 
-func TestRunWithoutAStore(t *testing.T) {
-	// the kubernetes backend needs POD_NAME (and a cluster): no store, so no proxy
-	t.Setenv("POD_NAME", "")
-	cfg := Config{ListenAddress: "127.0.0.1", Port: "0"}
-	cfg.ClusterName = "cluster1"
-	cfg.StoreBackend = "kubernetes"
-	if err := Run(t.Context(), cfg); err == nil {
-		t.Fatal("expected an error without a store")
-	}
-}
+		It("takes the timeouts of the spec", func(ctx SpecContext) {
+			cd := clusterData(host, port, proxyUID)
+			cd.Cluster.Spec.ProxyCheckInterval = &cluster.Duration{Duration: time.Second}
+			cd.Cluster.Spec.ProxyTimeout = &cluster.Duration{Duration: time.Minute}
+			store.EXPECT().GetClusterData(gomock.Any()).Return(cd, nil, nil)
+			// the proxy info uses the greater of the current and the new timeout
+			store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), 2*time.Minute).Return(nil)
+			c := checker()
 
-func TestRunUntilTheContextIsDone(t *testing.T) {
-	cfg := Config{ListenAddress: "127.0.0.1", Port: "0", StopListening: true}
-	cfg.ClusterName = "cluster1"
-	cfg.StoreBackend = "etcdv3"
-	cfg.StoreEndpoints = "http://127.0.0.1:1"
-	cfg.StorePrefix = "orion/cluster"
-	cfg.StoreTimeout = shortTimeout
-	cfg.MetricsListenAddress = "127.0.0.1:0"
-	ctx, cancel := context.WithTimeout(t.Context(), 4*shortTimeout)
-	defer cancel()
-	// the store doesn't answer, so the checks fail; Run stops with ctx
-	if err := Run(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-}
+			Expect(c.Check(ctx)).To(Succeed())
+			Expect(c.proxyCheckInterval).To(Equal(time.Second), "check interval")
+			Expect(c.proxyTimeout).To(Equal(time.Minute), "timeout")
+		})
+	})
+
+	It("returns the error of the pollon proxy from Start", func(ctx SpecContext) {
+		store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, nil).AnyTimes()
+		c := checker()
+		c.endPollonProxyCh <- errors.New("listener closed")
+		Expect(c.Start(ctx)).NotTo(Succeed(), "expected the error of the pollon proxy")
+	})
+})
+
+var _ = Describe("NewClusterChecker", func() {
+	It("returns a cluster checker with the config", func(ctx SpecContext) {
+		cfg := Config{ListenAddress: "127.0.0.1", Port: "0", StopListening: true, KeepAliveIdle: 1}
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "etcdv3"
+		cfg.StoreEndpoints = "http://127.0.0.1:1"
+		cfg.StorePrefix = "orion/cluster"
+		cfg.StoreTimeout = time.Second
+		c, err := NewClusterChecker(ctx, proxyUID, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.uid).To(Equal(proxyUID))
+		Expect(c.port).To(Equal("0"))
+		Expect(c.stopListening).To(BeTrue())
+		Expect(c.cfg.KeepAliveIdle).To(Equal(1))
+	})
+})
+
+var _ = Describe("Run", func() {
+	It("fails without a store", func(ctx SpecContext) {
+		// the kubernetes backend needs POD_NAME (and a cluster): no store, so no proxy
+		GinkgoT().Setenv("POD_NAME", "")
+		cfg := Config{ListenAddress: "127.0.0.1", Port: "0"}
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "kubernetes"
+		Expect(Run(ctx, cfg)).NotTo(Succeed(), "expected an error without a store")
+	})
+
+	It("runs until the context is done", func(ctx SpecContext) {
+		cfg := Config{ListenAddress: "127.0.0.1", Port: "0", StopListening: true}
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "etcdv3"
+		cfg.StoreEndpoints = "http://127.0.0.1:1"
+		cfg.StorePrefix = "orion/cluster"
+		cfg.StoreTimeout = shortTimeout
+		cfg.MetricsListenAddress = "127.0.0.1:0"
+		runCtx, cancel := context.WithTimeout(ctx, 4*shortTimeout)
+		DeferCleanup(cancel)
+		// the store doesn't answer, so the checks fail; Run stops with ctx
+		Expect(Run(runCtx, cfg)).To(Succeed())
+	})
+})
