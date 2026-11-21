@@ -25,7 +25,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// TestSentinel runs the Ginkgo specs of the package; the plain tests run next to them
+// TestSentinel runs the Ginkgo specs of the package
 func TestSentinel(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Sentinel Suite")
