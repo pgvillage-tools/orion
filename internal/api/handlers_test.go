@@ -17,16 +17,16 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestWriteAccepted(t *testing.T) {
-	w := httptest.NewRecorder()
-	writeAccepted(w)
-	if w.Code != http.StatusAccepted {
-		t.Errorf("expected 202, got %d", w.Code)
-	}
-	if got := w.Header().Get("Location"); got != "/v1/cluster/status" {
-		t.Errorf("expected Location /v1/cluster/status, got %q", got)
-	}
-}
+var _ = Describe("writeAccepted", func() {
+	It("returns 202 with the status as Location", func() {
+		w := httptest.NewRecorder()
+		writeAccepted(w)
+		Expect(w.Code).To(Equal(http.StatusAccepted))
+		Expect(w.Header().Get("Location")).To(Equal("/v1/cluster/status"))
+	})
+})

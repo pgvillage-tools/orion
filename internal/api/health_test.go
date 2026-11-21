@@ -19,89 +19,78 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
-	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-func TestLivez(t *testing.T) {
-	// liveness doesn't look at readiness or the store: a nil store would panic if it did
-	var notReady atomic.Bool
-	w := httptest.NewRecorder()
-	NewHandlers(nil, nil, &notReady).LivezHandler(w, httptest.NewRequest(http.MethodGet, "/livez", nil))
-	if w.Code != http.StatusOK || w.Body.String() != "OK" {
-		t.Errorf("expected 200 OK, got %d %q", w.Code, w.Body.String())
-	}
-}
+var _ = Describe("health", func() {
+	It("livez returns 200 OK", func() {
+		// liveness doesn't look at readiness or the store: a nil store would panic if it did
+		var notReady atomic.Bool
+		w := httptest.NewRecorder()
+		NewHandlers(nil, nil, &notReady).LivezHandler(w, httptest.NewRequest(http.MethodGet, "/livez", nil))
+		Expect(w.Code).To(Equal(http.StatusOK))
+		Expect(w.Body.String()).To(Equal("OK"))
+	})
 
-func TestReadyz(t *testing.T) {
-	for name, tc := range map[string]struct {
-		ready    bool
-		storeErr error
-		status   int
-		body     string
-	}{
-		"starting or shutting down": {ready: false, status: http.StatusServiceUnavailable, body: "Not Ready"},
-		"ready, the store answers":  {ready: true, status: http.StatusOK, body: "Ready"},
-		"ready, the store doesn't answer": {ready: true, storeErr: errors.New("context deadline exceeded"),
-			status: http.StatusServiceUnavailable, body: "Not Ready"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			var ready atomic.Bool
-			ready.Store(tc.ready)
-			store := mockconsensus.NewMockStore(gomock.NewController(t))
-			if tc.ready {
-				store.EXPECT().Healthy(gomock.Any()).Return(tc.storeErr)
+	DescribeTable("readyz",
+		func(ready bool, storeErr error, status int, body string) {
+			var isReady atomic.Bool
+			isReady.Store(ready)
+			store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+			if ready {
+				store.EXPECT().Healthy(gomock.Any()).Return(storeErr)
 			}
 			w := httptest.NewRecorder()
-			NewHandlers(store, nil, &ready).ReadyzHandler(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-			if w.Code != tc.status || w.Body.String() != tc.body {
-				t.Errorf("expected %d %q, got %d %q", tc.status, tc.body, w.Code, w.Body.String())
+			NewHandlers(store, nil, &isReady).ReadyzHandler(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			Expect(w.Code).To(Equal(status))
+			Expect(w.Body.String()).To(Equal(body))
+		},
+		Entry("starting or shutting down", false, nil, http.StatusServiceUnavailable, "Not Ready"),
+		Entry("ready, the store answers", true, nil, http.StatusOK, "Ready"),
+		Entry("ready, the store doesn't answer", true, errors.New("context deadline exceeded"),
+			http.StatusServiceUnavailable, "Not Ready"),
+	)
+
+	It("shuts down after the shutdown delay, returning 503 on readyz during the delay", func(ctx SpecContext) {
+		const delay = 200 * time.Millisecond
+		var ready atomic.Bool
+		ready.Store(true)
+
+		store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+		store.EXPECT().Healthy(gomock.Any()).Return(nil).AnyTimes()
+		h := NewHandlers(store, nil, &ready)
+		probe := httptest.NewServer(newMux(ctx, h.ProbeRoutes(http.NotFoundHandler())))
+		DeferCleanup(probe.Close)
+		srv := httptest.NewServer(http.NotFoundHandler())
+		DeferCleanup(srv.Close)
+
+		readyz := func() (int, error) {
+			resp, err := http.Get(probe.URL + "/" + string(endpoints.ReadyEndPoint))
+			if err != nil {
+				return 0, err
 			}
-		})
-	}
-}
-
-func TestShutdown(t *testing.T) {
-	const delay = 200 * time.Millisecond
-	var ready atomic.Bool
-	ready.Store(true)
-
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().Healthy(gomock.Any()).Return(nil).AnyTimes()
-	h := NewHandlers(store, nil, &ready)
-	probe := httptest.NewServer(newMux(t.Context(), h.ProbeRoutes(http.NotFoundHandler())))
-	defer probe.Close()
-	srv := httptest.NewServer(http.NotFoundHandler())
-	defer srv.Close()
-
-	readyz := func() (int, error) {
-		resp, err := http.Get(probe.URL + "/" + string(endpoints.ReadyEndPoint))
-		if err != nil {
-			return 0, err
+			_ = resp.Body.Close()
+			return resp.StatusCode, nil
 		}
-		_ = resp.Body.Close()
-		return resp.StatusCode, nil
-	}
-	done := make(chan struct{})
-	go func() {
-		shutdown(t.Context(), &ready, delay, srv.Config, probe.Config)
-		close(done)
-	}()
-	// during the delay, readyz returns 503 and the servers still run
-	time.Sleep(50 * time.Millisecond)
-	if code, err := readyz(); err != nil || code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503 during the shutdown delay, got %d %v", code, err)
-	}
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("shutdown didn't finish")
-	}
-	if _, err := readyz(); err == nil {
-		t.Error("expected the probe server to be stopped after the shutdown")
-	}
-}
+		done := make(chan struct{})
+		go func() {
+			defer GinkgoRecover()
+			shutdown(ctx, &ready, delay, srv.Config, probe.Config)
+			close(done)
+		}()
+		// during the delay, readyz returns 503 and the servers still run
+		time.Sleep(50 * time.Millisecond)
+		code, err := readyz()
+		Expect(err).NotTo(HaveOccurred(), "expected 503 during the shutdown delay")
+		Expect(code).To(Equal(http.StatusServiceUnavailable), "expected 503 during the shutdown delay")
+		Eventually(done).WithTimeout(5*time.Second).Should(BeClosed(), "shutdown didn't finish")
+		_, err = readyz()
+		Expect(err).To(HaveOccurred(), "expected the probe server to be stopped after the shutdown")
+	})
+})

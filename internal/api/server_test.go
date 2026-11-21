@@ -24,126 +24,97 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
-	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/internal/pki"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 )
 
-func TestRunWithoutCertificates(t *testing.T) {
-	err := Run(t.Context(), Config{PKIDir: filepath.Join(t.TempDir(), "missing")})
-	if !errors.Is(err, pki.ErrFilesNotFound) {
-		t.Fatalf("expected ErrFilesNotFound, got %v", err)
-	}
-}
+var _ = Describe("Run", func() {
+	It("fails without certificates", func(ctx SpecContext) {
+		err := Run(ctx, Config{PKIDir: filepath.Join(GinkgoT().TempDir(), "missing")})
+		Expect(err).To(MatchError(pki.ErrFilesNotFound))
+	})
 
-func TestRunWithUnreadableCertificates(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root reads every file")
-	}
-	dir := t.TempDir()
-	for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
-		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o000); err != nil {
-			t.Fatal(err)
+	It("fails with unreadable certificates", func(ctx SpecContext) {
+		if os.Getuid() == 0 {
+			Skip("root reads every file")
 		}
-	}
-	err := Run(t.Context(), Config{PKIDir: dir})
-	if err == nil || errors.Is(err, pki.ErrFilesNotFound) {
-		t.Fatalf("expected a read error, got %v", err)
-	}
-}
-
-func TestRunWithInvalidCertificates(t *testing.T) {
-	dir := t.TempDir()
-	for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
-		if err := os.WriteFile(filepath.Join(dir, f), []byte("not a certificate"), 0o600); err != nil {
-			t.Fatal(err)
+		dir := GinkgoT().TempDir()
+		for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
+			Expect(os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o000)).To(Succeed())
 		}
-	}
-	if err := Run(t.Context(), Config{PKIDir: dir}); err == nil {
-		t.Fatal("expected an error for files that are no certificates")
-	}
-}
+		err := Run(ctx, Config{PKIDir: dir})
+		Expect(err).To(HaveOccurred(), "expected a read error")
+		Expect(err).NotTo(MatchError(pki.ErrFilesNotFound), "expected a read error")
+	})
 
-func TestListen(t *testing.T) {
-	ln, err := listen("127.0.0.1", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	port, err := strconv.ParseUint(strconv.Itoa(ln.Addr().(*net.TCPAddr).Port), 10, 32)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// the port is taken now
-	if _, err := listen("127.0.0.1", uint(port)); err == nil {
-		t.Error("expected an error binding a port that is in use")
-	}
-}
+	It("fails with invalid certificates", func(ctx SpecContext) {
+		dir := GinkgoT().TempDir()
+		for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
+			Expect(os.WriteFile(filepath.Join(dir, f), []byte("not a certificate"), 0o600)).To(Succeed())
+		}
+		Expect(Run(ctx, Config{PKIDir: dir})).NotTo(Succeed(), "expected an error for files that are no certificates")
+	})
 
-func TestRunUntilTheContextIsDone(t *testing.T) {
-	dir := t.TempDir()
-	opts := pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api")}
-	if _, err := pki.Init(opts); err != nil {
-		t.Fatal(err)
-	}
-	cfg := Config{PKIDir: opts.APIDir, BaseURL: "127.0.0.1", ShutdownDelay: time.Millisecond}
-	cfg.ClusterName = "cluster1"
-	cfg.StoreBackend = "etcdv3"
-	// nothing listens there: the store client connects on its first call
-	cfg.StoreEndpoints = "http://127.0.0.1:1"
-	cfg.StorePrefix = "orion/cluster"
-	cfg.StoreTimeout = time.Second
+	It("serves until the context is done", func(ctx SpecContext) {
+		dir := GinkgoT().TempDir()
+		opts := pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api")}
+		_, err := pki.Init(opts)
+		Expect(err).NotTo(HaveOccurred())
+		cfg := Config{PKIDir: opts.APIDir, BaseURL: "127.0.0.1", ShutdownDelay: time.Millisecond}
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "etcdv3"
+		// nothing listens there: the store client connects on its first call
+		cfg.StoreEndpoints = "http://127.0.0.1:1"
+		cfg.StorePrefix = "orion/cluster"
+		cfg.StoreTimeout = time.Second
 
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer cancel()
-	// port 0: free ports for the api and the probe port; Run serves until ctx is done, then shuts down
-	if err := Run(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-}
+		runCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		// port 0: free ports for the api and the probe port; Run serves until ctx is done, then shuts down
+		Expect(Run(runCtx, cfg)).To(Succeed())
+	})
+})
 
-func TestHandleError(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		err        error
-		status     int
-		retryAfter string
-	}{
-		{name: "an error", err: errors.New("boom"), status: http.StatusInternalServerError},
-		{name: "no error", status: http.StatusInternalServerError},
-		{
-			name:   "the store timed out",
-			err:    fmt.Errorf("cannot store updated cluster spec: %w", rpctypes.ErrTimeout),
-			status: http.StatusServiceUnavailable, retryAfter: storeRetryAfter,
-		},
-		{
-			name:   "the store request hit its deadline",
-			err:    fmt.Errorf("cannot get cluster data: %w", context.DeadlineExceeded),
-			status: http.StatusServiceUnavailable, retryAfter: storeRetryAfter,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+var _ = Describe("listen", func() {
+	It("fails to bind a port that is in use", func() {
+		ln, err := listen("127.0.0.1", 0)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = ln.Close() })
+		port, err := strconv.ParseUint(strconv.Itoa(ln.Addr().(*net.TCPAddr).Port), 10, 32)
+		Expect(err).NotTo(HaveOccurred())
+		// the port is taken now
+		_, err = listen("127.0.0.1", uint(port))
+		Expect(err).To(HaveOccurred(), "expected an error binding a port that is in use")
+	})
+})
+
+var _ = Describe("handleError", func() {
+	DescribeTable("writes a problem",
+		func(ctx SpecContext, err error, status int, retryAfter string) {
 			w := httptest.NewRecorder()
-			handleError(t.Context(), tc.err, w, "failed to patch cluster spec")
-			if w.Code != tc.status {
-				t.Errorf("status = %d, want %d", w.Code, tc.status)
-			}
-			if got := w.Header().Get("Retry-After"); got != tc.retryAfter {
-				t.Errorf("Retry-After = %q, want %q", got, tc.retryAfter)
-			}
-			if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
-				t.Errorf("Content-Type = %q, want a problem", ct)
-			}
-			if body := w.Body.String(); !strings.Contains(body, "failed to patch cluster spec") ||
-				strings.Contains(body, "etcdserver") {
-				t.Errorf("body = %s, want msg and not the store error", body)
-			}
-		})
-	}
-	// without a writer it only logs
-	handleError(t.Context(), errors.New("boom"), nil, "failed to get sentinels info")
-}
+			handleError(ctx, err, w, "failed to patch cluster spec")
+			Expect(w.Code).To(Equal(status))
+			Expect(w.Header().Get("Retry-After")).To(Equal(retryAfter))
+			Expect(w.Header().Get("Content-Type")).To(Equal(endpoints.ContentTypeProblem))
+			Expect(w.Body.String()).To(ContainSubstring("failed to patch cluster spec"), "want msg")
+			Expect(w.Body.String()).NotTo(ContainSubstring("etcdserver"), "want not the store error")
+		},
+		Entry("an error", errors.New("boom"), http.StatusInternalServerError, ""),
+		Entry("no error", nil, http.StatusInternalServerError, ""),
+		Entry("the store timed out",
+			fmt.Errorf("cannot store updated cluster spec: %w", rpctypes.ErrTimeout),
+			http.StatusServiceUnavailable, storeRetryAfter),
+		Entry("the store request hit its deadline",
+			fmt.Errorf("cannot get cluster data: %w", context.DeadlineExceeded),
+			http.StatusServiceUnavailable, storeRetryAfter),
+	)
+
+	It("only logs without a writer", func(ctx SpecContext) {
+		handleError(ctx, errors.New("boom"), nil, "failed to get sentinels info")
+	})
+})

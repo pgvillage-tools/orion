@@ -23,31 +23,15 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
-	"testing"
 
 	"github.com/golang/mock/gomock"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
-
-// keeperTestData returns cluster data with 3 keepers: keeper1 runs the primary (db1), keeper2 a standby (db2), and
-// keeper3 has no db
-func keeperTestData() *apiv1.Data {
-	initMode := apiv1.New
-	cd := apiv1.NewClusterData(&apiv1.Cluster{
-		UID:    "cluster1",
-		Spec:   &apiv1.Spec{InitMode: &initMode},
-		Status: apiv1.ClusterStatus{Master: "db1"},
-	})
-	for _, uid := range []string{"keeper1", "keeper2", "keeper3"} {
-		cd.Keepers[uid] = &apiv1.Keeper{UID: uid}
-	}
-	cd.DBs["db1"] = &apiv1.DB{UID: "db1", Spec: &apiv1.DBSpec{KeeperUID: "keeper1"}}
-	cd.DBs["db2"] = &apiv1.DB{UID: "db2", Spec: &apiv1.DBSpec{KeeperUID: "keeper2"}}
-	return cd
-}
 
 // sortedKeys returns the keys of m, sorted
 func sortedKeys[V any](m map[string]V) string {
@@ -59,11 +43,27 @@ func sortedKeys[V any](m map[string]V) string {
 	return strings.Join(keys, ",")
 }
 
-func TestDeleteKeeperHandler(t *testing.T) {
+var _ = Describe("DELETE /v1/cluster/keepers/{uid}", func() {
 	errBoom := errors.New("boom")
 	modified := fmt.Errorf("put: %w", consensus.ErrKeyModified)
+	// keeperTestData returns cluster data with 3 keepers: keeper1 runs the primary (db1), keeper2 a standby (db2),
+	// and keeper3 has no db
+	keeperTestData := func() *apiv1.Data {
+		initMode := apiv1.New
+		cd := apiv1.NewClusterData(&apiv1.Cluster{
+			UID:    "cluster1",
+			Spec:   &apiv1.Spec{InitMode: &initMode},
+			Status: apiv1.ClusterStatus{Master: "db1"},
+		})
+		for _, uid := range []string{"keeper1", "keeper2", "keeper3"} {
+			cd.Keepers[uid] = &apiv1.Keeper{UID: uid}
+		}
+		cd.DBs["db1"] = &apiv1.DB{UID: "db1", Spec: &apiv1.DBSpec{KeeperUID: "keeper1"}}
+		cd.DBs["db2"] = &apiv1.DB{UID: "db2", Spec: &apiv1.DBSpec{KeeperUID: "keeper2"}}
+		return cd
+	}
 
-	for name, tc := range map[string]struct {
+	type deleteCase struct {
 		keeper    string
 		cd        *apiv1.Data
 		getErr    error
@@ -73,45 +73,11 @@ func TestDeleteKeeperHandler(t *testing.T) {
 		keepers   string // the keepers in the stored cluster data
 		dbs       string // the dbs in the stored cluster data
 		detailHas string
-	}{
-		"a keeper with a standby is removed with its db": {
-			keeper: "keeper2", cd: keeperTestData(), writes: true, status: http.StatusAccepted,
-			keepers: "keeper1,keeper3", dbs: "db1",
-		},
-		"a keeper without db is removed": {
-			keeper: "keeper3", cd: keeperTestData(), writes: true, status: http.StatusAccepted,
-			keepers: "keeper1,keeper2", dbs: "db1,db2",
-		},
-		"the keeper of the primary": {
-			keeper: "keeper1", cd: keeperTestData(), status: http.StatusConflict,
-			detailHas: "/v1/cluster/keepers/keeper1/actions/fail",
-		},
-		"an unknown keeper": {
-			keeper: "gone", cd: keeperTestData(), status: http.StatusNotFound, detailHas: "keeper gone doesn't exist",
-		},
-		"no cluster data": {
-			keeper: "keeper2", status: http.StatusNotFound,
-		},
-		"cluster data without cluster": {
-			keeper: "keeper2", cd: &apiv1.Data{}, status: http.StatusNotFound,
-		},
-		"a cluster without spec": {
-			keeper: "keeper2", cd: &apiv1.Data{Cluster: &apiv1.Cluster{UID: "cluster1"}}, status: http.StatusNotFound,
-		},
-		"the cluster data cannot be read": {
-			keeper: "keeper2", getErr: errBoom, status: http.StatusInternalServerError,
-		},
-		"the cluster data changed while removing": {
-			keeper: "keeper2", cd: keeperTestData(), writes: true, putErr: modified, status: http.StatusConflict,
-			keepers: "keeper1,keeper3", dbs: "db1", detailHas: "try again",
-		},
-		"the cluster data cannot be written": {
-			keeper: "keeper2", cd: keeperTestData(), writes: true, putErr: errBoom,
-			status: http.StatusInternalServerError, keepers: "keeper1,keeper3", dbs: "db1",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
+	}
+
+	DescribeTable("DeleteKeeperHandler",
+		func(tc deleteCase) {
+			ctrl := gomock.NewController(GinkgoT())
 			store := mockconsensus.NewMockStore(ctrl)
 			pair := &consensus.KVPair{LastIndex: 7}
 			store.EXPECT().GetClusterData(gomock.Any()).Return(tc.cd, pair, tc.getErr)
@@ -131,35 +97,57 @@ func TestDeleteKeeperHandler(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.DeleteKeeperHandler(w, r)
 
-			if w.Code != tc.status {
-				t.Fatalf("expected status %d, got %d: %s", tc.status, w.Code, w.Body)
-			}
+			Expect(w.Code).To(Equal(tc.status), "body: %s", w.Body)
 			if tc.status == http.StatusAccepted {
-				if got := w.Header().Get("Location"); got != "/v1/cluster/status" {
-					t.Errorf("expected Location /v1/cluster/status, got %q", got)
-				}
-			} else if ct := w.Header().Get("Content-Type"); ct != endpoints.ContentTypeProblem {
-				t.Errorf("expected a problem, got Content-Type %q", ct)
+				Expect(w.Header().Get("Location")).To(Equal("/v1/cluster/status"))
+			} else {
+				Expect(w.Header().Get("Content-Type")).To(Equal(endpoints.ContentTypeProblem), "expected a problem")
 			}
-			if !strings.Contains(w.Body.String(), tc.detailHas) {
-				t.Errorf("expected %q in the body, got %s", tc.detailHas, w.Body)
-			}
+			Expect(w.Body.String()).To(ContainSubstring(tc.detailHas))
 			if !tc.writes {
 				return
 			}
-			if got := sortedKeys(stored.Keepers); got != tc.keepers {
-				t.Errorf("expected keepers %s to be stored, got %s", tc.keepers, got)
-			}
-			if got := sortedKeys(stored.DBs); got != tc.dbs {
-				t.Errorf("expected dbs %s to be stored, got %s", tc.dbs, got)
-			}
-			if stored.Cluster.Status.Master != "db1" {
-				t.Errorf("expected the primary to be kept, got %q", stored.Cluster.Status.Master)
-			}
+			Expect(sortedKeys(stored.Keepers)).To(Equal(tc.keepers), "the stored keepers")
+			Expect(sortedKeys(stored.DBs)).To(Equal(tc.dbs), "the stored dbs")
+			Expect(stored.Cluster.Status.Master).To(Equal("db1"), "expected the primary to be kept")
 			// the handler changes a copy: the cluster data it read stays as it was
-			if got := sortedKeys(tc.cd.Keepers); got != "keeper1,keeper2,keeper3" {
-				t.Errorf("expected the cluster data that was read to be unchanged, got keepers %s", got)
-			}
-		})
-	}
-}
+			Expect(sortedKeys(tc.cd.Keepers)).To(Equal("keeper1,keeper2,keeper3"),
+				"expected the cluster data that was read to be unchanged")
+		},
+		Entry("a keeper with a standby is removed with its db", deleteCase{
+			keeper: "keeper2", cd: keeperTestData(), writes: true, status: http.StatusAccepted,
+			keepers: "keeper1,keeper3", dbs: "db1",
+		}),
+		Entry("a keeper without db is removed", deleteCase{
+			keeper: "keeper3", cd: keeperTestData(), writes: true, status: http.StatusAccepted,
+			keepers: "keeper1,keeper2", dbs: "db1,db2",
+		}),
+		Entry("the keeper of the primary", deleteCase{
+			keeper: "keeper1", cd: keeperTestData(), status: http.StatusConflict,
+			detailHas: "/v1/cluster/keepers/keeper1/actions/fail",
+		}),
+		Entry("an unknown keeper", deleteCase{
+			keeper: "gone", cd: keeperTestData(), status: http.StatusNotFound, detailHas: "keeper gone doesn't exist",
+		}),
+		Entry("no cluster data", deleteCase{
+			keeper: "keeper2", status: http.StatusNotFound,
+		}),
+		Entry("cluster data without cluster", deleteCase{
+			keeper: "keeper2", cd: &apiv1.Data{}, status: http.StatusNotFound,
+		}),
+		Entry("a cluster without spec", deleteCase{
+			keeper: "keeper2", cd: &apiv1.Data{Cluster: &apiv1.Cluster{UID: "cluster1"}}, status: http.StatusNotFound,
+		}),
+		Entry("the cluster data cannot be read", deleteCase{
+			keeper: "keeper2", getErr: errBoom, status: http.StatusInternalServerError,
+		}),
+		Entry("the cluster data changed while removing", deleteCase{
+			keeper: "keeper2", cd: keeperTestData(), writes: true, putErr: modified, status: http.StatusConflict,
+			keepers: "keeper1,keeper3", dbs: "db1", detailHas: "try again",
+		}),
+		Entry("the cluster data cannot be written", deleteCase{
+			keeper: "keeper2", cd: keeperTestData(), writes: true, putErr: errBoom,
+			status: http.StatusInternalServerError, keepers: "keeper1,keeper3", dbs: "db1",
+		}),
+	)
+})

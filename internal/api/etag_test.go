@@ -16,54 +16,44 @@ package api
 
 import (
 	"net/http/httptest"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 )
 
-func TestIfMatches(t *testing.T) {
+var _ = Describe("ETags", func() {
 	pair := &consensus.KVPair{LastIndex: 42}
-	for name, tc := range map[string]struct {
-		header   string
-		pair     *consensus.KVPair
-		expected bool
-	}{
-		"no If-Match":                  {"", pair, true},
-		"the current ETag":             {`"42"`, pair, true},
-		"an old ETag":                  {`"41"`, pair, false},
-		"one of several":               {`"40", "42"`, pair, true},
-		"a weak ETag":                  {`W/"42"`, pair, true},
-		"* with cluster data":          {"*", pair, true},
-		"* without cluster data":       {"*", nil, false},
-		"an ETag without cluster data": {`"42"`, nil, false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			r := httptest.NewRequest("PUT", "/v1/cluster/spec", nil)
-			if tc.header != "" {
-				r.Header.Set("If-Match", tc.header)
-			}
-			if got := ifMatches(r, etagOf(tc.pair)); got != tc.expected {
-				t.Errorf("expected %v, got %v", tc.expected, got)
-			}
-		})
-	}
-	if got := etagOf(pair); got != `"42"` {
-		t.Errorf(`expected "42", got %s`, got)
-	}
-}
 
-func TestETagOfSpec(t *testing.T) {
-	a := &apiv1.Spec{PGParameters: apiv1.PGParameters{"work_mem": "8MB"}}
-	b := &apiv1.Spec{PGParameters: apiv1.PGParameters{"work_mem": "8MB"}}
-	c := &apiv1.Spec{PGParameters: apiv1.PGParameters{"work_mem": "16MB"}}
-	if etagOfSpec(a) != etagOfSpec(b) {
-		t.Error("the same spec must have the same ETag")
-	}
-	if etagOfSpec(a) == etagOfSpec(c) {
-		t.Error("another spec must have another ETag")
-	}
-	if etagOfSpec(nil) != "" {
-		t.Error("no spec has no ETag")
-	}
-}
+	DescribeTable("ifMatches",
+		func(header string, pair *consensus.KVPair, expected bool) {
+			r := httptest.NewRequest("PUT", "/v1/cluster/spec", nil)
+			if header != "" {
+				r.Header.Set("If-Match", header)
+			}
+			Expect(ifMatches(r, etagOf(pair))).To(Equal(expected))
+		},
+		Entry("no If-Match", "", pair, true),
+		Entry("the current ETag", `"42"`, pair, true),
+		Entry("an old ETag", `"41"`, pair, false),
+		Entry("one of several", `"40", "42"`, pair, true),
+		Entry("a weak ETag", `W/"42"`, pair, true),
+		Entry("* with cluster data", "*", pair, true),
+		Entry("* without cluster data", "*", nil, false),
+		Entry("an ETag without cluster data", `"42"`, nil, false),
+	)
+
+	It("is the revision of the cluster data, quoted", func() {
+		Expect(etagOf(pair)).To(Equal(`"42"`))
+	})
+
+	It("of a spec depends on the spec", func() {
+		a := &apiv1.Spec{PGParameters: apiv1.PGParameters{"work_mem": "8MB"}}
+		b := &apiv1.Spec{PGParameters: apiv1.PGParameters{"work_mem": "8MB"}}
+		c := &apiv1.Spec{PGParameters: apiv1.PGParameters{"work_mem": "16MB"}}
+		Expect(etagOfSpec(a)).To(Equal(etagOfSpec(b)), "the same spec must have the same ETag")
+		Expect(etagOfSpec(a)).NotTo(Equal(etagOfSpec(c)), "another spec must have another ETag")
+		Expect(etagOfSpec(nil)).To(BeEmpty(), "no spec has no ETag")
+	})
+})

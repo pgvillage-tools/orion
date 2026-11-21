@@ -17,12 +17,13 @@ package api
 import (
 	"encoding/json"
 	"maps"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 )
 
-func TestClusterStatus(t *testing.T) {
+var _ = Describe("cluster status", func() {
 	role := func(r apiv1.Role) *apiv1.Spec { return &apiv1.Spec{Role: &r} }
 	// data returns cluster data with a cluster (spec), the primary db master and the keepers
 	data := func(spec *apiv1.Spec, master string, keepers ...string) *apiv1.Data {
@@ -42,52 +43,44 @@ func TestClusterStatus(t *testing.T) {
 	noSpec := data(nil, "db1", "keeper1")
 	noSpec.DBs["db1"].Spec = nil
 
-	for name, tc := range map[string]struct {
-		cd       *apiv1.Data
-		expected apiv1.InfoGenericStatus
-	}{
-		"no cluster data": {nil, apiv1.InfoGenericStatus{"available": false}},
-		"no cluster":      {&apiv1.Data{}, apiv1.InfoGenericStatus{"available": false}},
-		"primary cluster with a primary": {
+	DescribeTable("clusterStatus",
+		func(cd *apiv1.Data, expected apiv1.InfoGenericStatus) {
+			got := clusterStatus(cd)
+			Expect(maps.Equal(got, expected)).To(BeTrue(), "expected %v, got %v", expected, got)
+		},
+		Entry("no cluster data", nil, apiv1.InfoGenericStatus{"available": false}),
+		Entry("no cluster", &apiv1.Data{}, apiv1.InfoGenericStatus{"available": false}),
+		Entry("primary cluster with a primary",
 			data(&apiv1.Spec{}, "db1", "keeper1", "keeper2"),
-			apiv1.InfoGenericStatus{"available": true, "role": "master", "primaryDB": "db1", "primaryKeeper": "keeper1"},
-		},
-		"standby cluster: its primary replicates from the external primary": {
+			apiv1.InfoGenericStatus{"available": true, "role": "master",
+				"primaryDB": "db1", "primaryKeeper": "keeper1"},
+		),
+		Entry("standby cluster: its primary replicates from the external primary",
 			data(role(apiv1.Replica), "db2", "keeper1", "keeper2"),
-			apiv1.InfoGenericStatus{"available": true, "role": "standby", "primaryDB": "db2", "primaryKeeper": "keeper2"},
-		},
-		"no primary (yet)": {
+			apiv1.InfoGenericStatus{"available": true, "role": "standby",
+				"primaryDB": "db2", "primaryKeeper": "keeper2"},
+		),
+		Entry("no primary (yet)",
 			data(&apiv1.Spec{}, "", "keeper1"),
 			apiv1.InfoGenericStatus{"available": false, "role": "master"},
-		},
-		"the primary db is not in the cluster data": {
+		),
+		Entry("the primary db is not in the cluster data",
 			data(&apiv1.Spec{}, "db3", "keeper1"),
 			apiv1.InfoGenericStatus{"available": false, "role": "master"},
-		},
-		"the keeper of the primary is not in the cluster data": {
+		),
+		Entry("the keeper of the primary is not in the cluster data",
 			data(&apiv1.Spec{}, "db1", "keeper2"),
 			apiv1.InfoGenericStatus{"available": false, "role": "master"},
-		},
-		"the primary db has no spec": {
+		),
+		Entry("the primary db has no spec",
 			noSpec,
 			apiv1.InfoGenericStatus{"available": false, "role": "master"},
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if got := clusterStatus(tc.cd); !maps.Equal(got, tc.expected) {
-				t.Errorf("expected %v, got %v", tc.expected, got)
-			}
-		})
-	}
-}
+		),
+	)
 
-func TestNewInfoClusterEncodesEmptyLists(t *testing.T) {
-	data, err := json.Marshal(newInfoCluster(nil, nil, nil, apiv1.InfoGenericStatus{"available": false}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := `{"proxies":[],"keepers":[],"sentinels":[],"status":{"available":false}}`
-	if string(data) != expected {
-		t.Errorf("expected %s, got %s", expected, data)
-	}
-}
+	It("encodes empty lists in the cluster info", func() {
+		data, err := json.Marshal(newInfoCluster(nil, nil, nil, apiv1.InfoGenericStatus{"available": false}))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(Equal(`{"proxies":[],"keepers":[],"sentinels":[],"status":{"available":false}}`))
+	})
+})
