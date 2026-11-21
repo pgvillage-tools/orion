@@ -11,7 +11,7 @@ We suggest that you first read the [Stolon Architecture and Requirements](archit
 * [Stolon Client](orion-cli.md)
 * Backup/Restore
   * [Point In Time Recovery](../operations/pitr.md) (reviewed for Orion, moved out of docs/stolon)
-* [Standby Cluster](standbycluster.md)
+* [Standby Cluster](../operations/standby-cluster.md) (reviewed for Orion, moved out of docs/stolon)
 
 ### Misc topics
 
