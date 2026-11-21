@@ -16,156 +16,64 @@
 package postgresql
 
 import (
-	"reflect"
-	"testing"
-
-	"github.com/davecgh/go-spew/spew"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestParseTimelineHistory(t *testing.T) {
-	const someHugeSwitchPoint = 83886224
-	tests := []struct {
-		contents string
-		tlsh     []*TimelineHistory
-		err      error
-	}{
-		{
-			contents: "",
-			tlsh:     []*TimelineHistory{},
-			err:      nil,
+var _ = Describe("utils", func() {
+	DescribeTable("parseTimelinesHistory",
+		func(contents string, want []*TimelineHistory) {
+			Ω(parseTimelinesHistory(contents)).To(Equal(want))
 		},
-		{
-			contents: `1	0/5000090	no recovery target specified`,
-			tlsh: []*TimelineHistory{
-				{
-					TimelineID:  1,
-					SwitchPoint: someHugeSwitchPoint,
-					Reason:      "no recovery target specified",
-				},
-			},
-			err: nil,
+		Entry("empty", "", []*TimelineHistory{}),
+		Entry("one timeline", "1\t0/5000090\tno recovery target specified", []*TimelineHistory{
+			{TimelineID: 1, SwitchPoint: 83886224, Reason: "no recovery target specified"},
+		}),
+	)
+
+	DescribeTable("IsValidReplSlotName",
+		func(name string, valid bool) {
+			Ω(IsValidReplSlotName(name)).To(Equal(valid))
 		},
-	}
+		Entry(nil, "aaaaaaaa", true),
+		Entry(nil, "a12345aa", true),
+		Entry(nil, "_a1_2345aa_", true),
+		Entry(nil, "", false),
+		Entry(nil, "a-aaaaaaa", false),
+		Entry(nil, "_a1_-2345aa_", false),
+		Entry(nil, "ABC123", false),
+		Entry(nil, "$123", false),
+	)
 
-	for i, tt := range tests {
-		tlsh, err := parseTimelinesHistory(tt.contents)
-		t.Logf("test #%d", i)
-		if tt.err != nil {
-			if err == nil {
-				t.Errorf("got no error, wanted error: %v", tt.err)
-			} else if tt.err.Error() != err.Error() {
-				t.Errorf("got error: %v, wanted error: %v", err, tt.err)
-			}
-		} else {
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			if !reflect.DeepEqual(tlsh, tt.tlsh) {
-				t.Error(spew.Sprintf("#%d: wrong timeline history: got: %#+v, want: %#+v", i, tlsh, tt.tlsh))
-			}
-		}
-	}
-}
-
-func TestValidReplSlotName(t *testing.T) {
-	tests := []struct {
-		name  string
-		valid bool
-	}{
-		{"aaaaaaaa", true},
-		{"a12345aa", true},
-		{"_a1_2345aa_", true},
-		{"", false},
-		{"a-aaaaaaa", false},
-		{"_a1_-2345aa_", false},
-		{"ABC123", false},
-		{"$123", false},
-	}
-
-	for i, tt := range tests {
-		valid := IsValidReplSlotName(tt.name)
-		if valid != tt.valid {
-			t.Errorf("%d: replication slot name %q got valid: %t but wanted valid: %t", i, tt.name, valid, tt.valid)
-		}
-	}
-}
-
-func TestExpandRecoveryCommand(t *testing.T) {
-	tests := []struct {
-		in  string
-		out string
-	}{
-		{
-			in:  "",
-			out: "",
+	DescribeTable("expandRecoveryCommand replaces %d, %w and %%",
+		func(in, out string) {
+			Ω(expandRecoveryCommand(in, "/datadir", "/waldir")).To(Equal(out))
 		},
-		{
-			in:  "%a",
-			out: "%a",
-		},
-		{
-			in:  "%d",
-			out: "/datadir",
-		},
-		{
-			in:  "%w",
-			out: "/waldir",
-		},
-		{
-			in:  "%%d",
-			out: "%d",
-		},
-		{
-			in:  "%%%d",
-			out: "%/datadir",
-		},
-		{
-			in:  "%%%danother/string/%%%%%%%f%dddddblabla",
-			out: "%/datadiranother/string/%%%%f/datadirddddblabla",
-		},
-	}
+		Entry(nil, "", ""),
+		Entry(nil, "%a", "%a"),
+		Entry(nil, "%d", "/datadir"),
+		Entry(nil, "%w", "/waldir"),
+		Entry(nil, "%%d", "%d"),
+		Entry(nil, "%%%d", "%/datadir"),
+		Entry(nil, "%%%danother/string/%%%%%%%f%dddddblabla", "%/datadiranother/string/%%%%f/datadirddddblabla"),
+	)
 
-	for i, tt := range tests {
-		out := expandRecoveryCommand(tt.in, "/datadir", "/waldir")
-		if out != tt.out {
-			t.Errorf("#%d: wrong expanded string: got: %s, want: %s", i, out, tt.out)
-		}
-	}
-}
+	DescribeTable("IsWalFileName",
+		func(name string, valid bool) {
+			Ω(IsWalFileName(name)).To(Equal(valid))
+		},
+		Entry(nil, "000000000000000000000000", true),
+		Entry(nil, "ABCDEF0123456789ABCDEF00", true),
+		Entry(nil, "", false),
+		Entry(nil, "ABCDEF0123456789ABCDEF0", false),
+		Entry(nil, "$123", false),
+	)
 
-func TestIsWalFileName(t *testing.T) {
-	tests := []struct {
-		name  string
-		valid bool
-	}{
-		{"000000000000000000000000", true},
-		{"ABCDEF0123456789ABCDEF00", true},
-		{"", false},
-		{"ABCDEF0123456789ABCDEF0", false},
-		{"$123", false},
-	}
-
-	for i, tt := range tests {
-		valid := IsWalFileName(tt.name)
-		if valid != tt.valid {
-			t.Errorf("%d: wal filename %q got valid: %t but wanted valid: %t", i, tt.name, valid, tt.valid)
-		}
-	}
-}
-
-func TestWalFileNameNoTimeLine(t *testing.T) {
-	tests := []struct {
-		name string
-		out  string
-	}{
-		{"000000000000000000000000", "0000000000000000"},
-		{"ABCDEF0123456789ABCDEF00", "23456789ABCDEF00"},
-	}
-
-	for i, tt := range tests {
-		out, _ := WalFileNameNoTimeLine(tt.name)
-		if out != tt.out {
-			t.Errorf("%d: wal filename %q got: %s but wanted: %s", i, tt.name, out, tt.out)
-		}
-	}
-}
+	DescribeTable("WalFileNameNoTimeLine",
+		func(name, out string) {
+			Ω(WalFileNameNoTimeLine(name)).To(Equal(out))
+		},
+		Entry(nil, "000000000000000000000000", "0000000000000000"),
+		Entry(nil, "ABCDEF0123456789ABCDEF00", "23456789ABCDEF00"),
+	)
+})
