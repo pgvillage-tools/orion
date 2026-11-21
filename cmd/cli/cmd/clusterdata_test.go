@@ -28,21 +28,6 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-const (
-	clusterPath = "/v1/cluster"
-	// missingFile in the arguments of a table entry is replaced by a file that doesn't exist
-	missingFile = "<missing file>"
-)
-
-// withMissingFile returns s with missingFile replaced by missing
-func withMissingFile(missing string, s ...string) []string {
-	result := make([]string, len(s))
-	for i, v := range s {
-		result[i] = strings.ReplaceAll(v, missingFile, missing)
-	}
-	return result
-}
-
 // testClusterData is cluster data with a primary (db1 on keeper1) and a standby (db2 on keeper2)
 func testClusterData() *apiv1.Data {
 	return &apiv1.Data{
@@ -67,6 +52,8 @@ func handleClusterData(api *fakeAPI, cd *apiv1.Data) {
 }
 
 var _ = Describe("clusterdata", func() {
+	const clusterPath = "/v1/cluster"
+
 	// handlePutClusterData lets api accept PUT /v1/cluster
 	handlePutClusterData := func(api *fakeAPI) {
 		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPut), func(w http.ResponseWriter, _ *http.Request) {

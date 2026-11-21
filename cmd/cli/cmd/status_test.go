@@ -25,9 +25,10 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-const statusPath = "/v1/cluster/status"
-
 var _ = Describe("status", func() {
+	const clusterPath = "/v1/cluster"
+	const statusPath = "/v1/cluster/status"
+
 	// testStatus is the status of a cluster with a primary on keeper1 and a standby on keeper2, as the api returns it
 	testStatus := func() *apiv1.InfoCluster {
 		return &apiv1.InfoCluster{

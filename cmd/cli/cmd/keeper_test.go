@@ -23,8 +23,6 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-var removeKeeperRoute = endpoints.KeeperEndPoint.Route(endpoints.MethodDelete)
-
 // expectOnlyRequest fails the spec unless api received one request, with method to path
 func expectOnlyRequest(api *fakeAPI, method, path string) {
 	GinkgoHelper()
@@ -35,6 +33,9 @@ func expectOnlyRequest(api *fakeAPI, method, path string) {
 }
 
 var _ = Describe("keeper commands", func() {
+	const statusPath = "/v1/cluster/status"
+	removeKeeperRoute := endpoints.KeeperEndPoint.Route(endpoints.MethodDelete)
+
 	const (
 		failKeeper1Path = "/v1/cluster/keepers/keeper1/actions/fail"
 		keeper1Path     = "/v1/cluster/keepers/keeper1"

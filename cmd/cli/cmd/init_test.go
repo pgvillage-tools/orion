@@ -28,6 +28,9 @@ import (
 )
 
 var _ = Describe("init", func() {
+	const clusterPath = "/v1/cluster"
+	const statusPath = "/v1/cluster/status"
+
 	// newInitAPI returns a fake api without a cluster, that accepts POST /v1/cluster
 	newInitAPI := func() *fakeAPI {
 		api := newFakeAPI()

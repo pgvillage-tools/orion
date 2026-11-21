@@ -27,9 +27,9 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-const specPath = "/v1/cluster/spec"
-
 var _ = Describe("spec", func() {
+	const specPath = "/v1/cluster/spec"
+
 	// handleSpec lets api answer GET /v1/cluster/spec with spec and ETag "abc"
 	handleSpec := func(api *fakeAPI, spec string) {
 		api.handle(endpoints.ClusterSpecEndPoint.Route(endpoints.MethodGet),
@@ -81,6 +81,9 @@ var _ = Describe("spec", func() {
 })
 
 var _ = Describe("update", func() {
+	const statusPath = "/v1/cluster/status"
+	const specPath = "/v1/cluster/spec"
+
 	// handleSpecUpdates lets api accept PUT and PATCH of /v1/cluster/spec
 	handleSpecUpdates := func(api *fakeAPI) {
 		for _, method := range []endpoints.Method{endpoints.MethodPut, endpoints.MethodPatch} {

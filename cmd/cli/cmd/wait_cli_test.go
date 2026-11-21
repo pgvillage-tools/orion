@@ -59,6 +59,9 @@ func handleStatusSequence(api *fakeAPI, statuses ...*apiv1.InfoCluster) {
 }
 
 var _ = Describe("--wait", func() {
+	const statusPath = "/v1/cluster/status"
+	removeKeeperRoute := endpoints.KeeperEndPoint.Route(endpoints.MethodDelete)
+
 	var api *fakeAPI
 
 	BeforeEach(func() {

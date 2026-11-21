@@ -44,10 +44,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-const (
-	testPollWait = 5 * time.Millisecond
-)
-
+// the suite state: set by the BeforeSuite, read by the harness
 var (
 	// testHome is $HOME during the tests: the config file of the cli and its certificates (~/.orion/cli) are in there
 	testHome string
@@ -58,6 +55,7 @@ var (
 )
 
 var _ = BeforeSuite(func() {
+	const testPollWait = 5 * time.Millisecond
 	testHome = GinkgoT().TempDir()
 	// initConfig writes ~/.orion/config.yml and the cli finds its certificates in ~/.orion/cli: keep both out of the
 	// home of the user
@@ -272,4 +270,16 @@ func expectNoRequests(api *fakeAPI) {
 // httpCodeSuffix is the end of an api error with code
 func httpCodeSuffix(code int) string {
 	return " (http " + strconv.Itoa(code) + ")"
+}
+
+// missingFile in the arguments of a table entry is replaced by a file that doesn't exist
+const missingFile = "<missing file>"
+
+// withMissingFile returns s with missingFile replaced by missing
+func withMissingFile(missing string, s ...string) []string {
+	result := make([]string, len(s))
+	for i, v := range s {
+		result[i] = strings.ReplaceAll(v, missingFile, missing)
+	}
+	return result
 }
