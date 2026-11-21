@@ -17,15 +17,12 @@ package sentinel
 import (
 	"context"
 	"errors"
-	"io"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/consensus"
-	"github.com/pgvillage-tools/orion/internal/logging"
-	"github.com/rs/zerolog"
 )
 
 // checkStore is a consensus.Store for clusterSentinelCheck: it serves cd (with pair) and the keepers and proxies info,
@@ -85,13 +82,6 @@ var _ = Describe("clusterSentinelCheck", func() {
 		s     *Sentinel
 	)
 	errStore := errors.New("store error")
-
-	// quietCtx returns a context whose sentinel logger discards everything (at the sentinel log level, or
-	// logging.GetLogComponent replaces it)
-	quietCtx := func() context.Context {
-		_, def := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
-		return zerolog.New(io.Discard).Level(def.GetLevel()).WithContext(context.Background())
-	}
 
 	// checkCD returns the cluster data of a converged cluster: db1 on keeper1 is its primary
 	checkCD := func() *cluster.Data {

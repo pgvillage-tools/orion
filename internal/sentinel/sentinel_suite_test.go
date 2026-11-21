@@ -15,14 +15,25 @@
 package sentinel
 
 import (
+	"context"
+	"io"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/pgvillage-tools/orion/internal/logging"
+	"github.com/rs/zerolog"
 )
 
 // TestSentinel runs the Ginkgo specs of the package; the plain tests run next to them
 func TestSentinel(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Sentinel Suite")
+}
+
+// quietCtx returns a context whose sentinel logger discards everything (at the sentinel log level, or
+// logging.GetLogComponent replaces it)
+func quietCtx() context.Context {
+	_, def := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
+	return zerolog.New(io.Discard).Level(def.GetLevel()).WithContext(context.Background())
 }
