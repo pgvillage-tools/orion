@@ -16,15 +16,13 @@
 package sentinel
 
 import (
-	"reflect"
-	"testing"
-
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
-
 	"github.com/pgvillage-tools/orion/internal/timer"
 )
 
-func TestActiveProxiesInfos(t *testing.T) {
+var _ = Describe("activeProxiesInfos", func() {
 	const (
 		pr1 = "proxy01"
 		pr2 = "proxy02"
@@ -38,103 +36,95 @@ func TestActiveProxiesInfos(t *testing.T) {
 		td15ns = 15 * secToNanoSecondMultiplier
 		td45ns = 45 * secToNanoSecondMultiplier
 	)
-	tests := []struct {
-		name                       string
-		proxyInfoHistories         ProxyInfoHistories
-		proxiesInfos               cluster.ProxiesInfo
-		expectedActiveProxies      cluster.ProxiesInfo
-		expectedProxyInfoHistories ProxyInfoHistories
-	}{
-		{
-			name:                       "should do nothing when called with empty proxyInfos",
-			proxyInfoHistories:         nil,
-			proxiesInfos:               cluster.ProxiesInfo{},
-			expectedActiveProxies:      cluster.ProxiesInfo{},
-			expectedProxyInfoHistories: nil,
-		},
-		{
-			name:                  "should append to histories when called with proxyInfos",
-			proxyInfoHistories:    make(ProxyInfoHistories),
-			proxiesInfos:          cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfo2},
-			expectedActiveProxies: cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfo2},
-			expectedProxyInfoHistories: ProxyInfoHistories{
-				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1},
-				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2},
-			},
-		},
-		{
-			name: "should update to histories if infoUID is different",
-			proxyInfoHistories: ProxyInfoHistories{
-				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1, Timer: timer.Now()},
-				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2, Timer: timer.Now()},
-			},
-			proxiesInfos:          cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfoWithDifferentInfoUID},
-			expectedActiveProxies: cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfoWithDifferentInfoUID},
-			expectedProxyInfoHistories: ProxyInfoHistories{
-				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1},
-				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfoWithDifferentInfoUID},
-			},
-		},
-		{
-			name: "should remove from active proxies if is not updated for twice the DefaultProxyTimeout",
-			proxyInfoHistories: ProxyInfoHistories{
-				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1, Timer: timer.Now() - (td45ns)},
-				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2, Timer: timer.Now() - (td15ns)},
-			},
-			proxiesInfos:          cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfo2},
-			expectedActiveProxies: cluster.ProxiesInfo{pr2: &proxyInfo2},
-			expectedProxyInfoHistories: ProxyInfoHistories{
-				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1},
-				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2},
-			},
-		},
-		{
-			name: "should remove proxy from sentinel's local history if the proxy is removed in store",
-			proxyInfoHistories: ProxyInfoHistories{
-				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1, Timer: timer.Now()},
-				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2, Timer: timer.Now()},
-			},
-			proxiesInfos:               cluster.ProxiesInfo{pr2: &proxyInfo2},
-			expectedActiveProxies:      cluster.ProxiesInfo{pr2: &proxyInfo2},
-			expectedProxyInfoHistories: ProxyInfoHistories{pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2}},
-		},
+
+	isProxyInfoHistoriesEqual := func(actualProxyInfoHistories ProxyInfoHistories,
+		expectedProxyInfoHistories ProxyInfoHistories) bool {
+		if len(actualProxyInfoHistories) != len(expectedProxyInfoHistories) {
+			return false
+		}
+		for k, expectedProxyInfoHistory := range expectedProxyInfoHistories {
+			actualProxyInfoHistory, ok := actualProxyInfoHistories[k]
+			if !ok {
+				return false
+			}
+			if actualProxyInfoHistory.ProxyInfo.InfoUID != expectedProxyInfoHistory.ProxyInfo.InfoUID ||
+				actualProxyInfoHistory.ProxyInfo.UID != expectedProxyInfoHistory.ProxyInfo.UID {
+				return false
+			}
+		}
+		return true
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+
+	DescribeTable("keeps the proxy info histories and returns the active proxies",
+		// proxyInfoHistories is a func, so the timers are set when the spec runs
+		func(proxyInfoHistories func() ProxyInfoHistories, proxiesInfos cluster.ProxiesInfo,
+			expectedActiveProxies cluster.ProxiesInfo, expectedProxyInfoHistories ProxyInfoHistories) {
 			s := &Sentinel{
 				uid:                "sentinel01",
 				UIDFn:              testUIDFn,
 				RandFn:             testRandFn,
 				dbConvergenceInfos: map[string]*DBConvergenceInfo{},
-				proxyInfoHistories: test.proxyInfoHistories,
+				proxyInfoHistories: proxyInfoHistories(),
 			}
-			actualActiveProxies := s.activeProxiesInfos(test.proxiesInfos)
+			actualActiveProxies := s.activeProxiesInfos(proxiesInfos)
 
-			if !reflect.DeepEqual(actualActiveProxies, test.expectedActiveProxies) {
-				t.Errorf("Expected proxiesInfos to be %v but got %v", test.expectedActiveProxies, actualActiveProxies)
-			}
-			if !isProxyInfoHistoriesEqual(s.proxyInfoHistories, test.expectedProxyInfoHistories) {
-				t.Errorf("Expected proxyInfoHistories to be %v but got %v",
-					test.expectedProxyInfoHistories, s.proxyInfoHistories)
-			}
-		})
-	}
-}
-
-func isProxyInfoHistoriesEqual(actualProxyInfoHistories ProxyInfoHistories,
-	expectedProxyInfoHistories ProxyInfoHistories) bool {
-	if len(actualProxyInfoHistories) != len(expectedProxyInfoHistories) {
-		return false
-	}
-	for k, expectedProxyInfoHistory := range expectedProxyInfoHistories {
-		actualProxyInfoHistory, ok := actualProxyInfoHistories[k]
-		if !ok {
-			return false
-		}
-		if actualProxyInfoHistory.ProxyInfo.InfoUID != expectedProxyInfoHistory.ProxyInfo.InfoUID ||
-			actualProxyInfoHistory.ProxyInfo.UID != expectedProxyInfoHistory.ProxyInfo.UID {
-			return false
-		}
-	}
-	return true
-}
+			Ω(actualActiveProxies).To(Equal(expectedActiveProxies), "proxiesInfos")
+			Ω(isProxyInfoHistoriesEqual(s.proxyInfoHistories, expectedProxyInfoHistories)).To(BeTrue(),
+				"Expected proxyInfoHistories to be %v but got %v", expectedProxyInfoHistories, s.proxyInfoHistories)
+		},
+		Entry("does nothing when called with empty proxyInfos",
+			func() ProxyInfoHistories { return nil },
+			cluster.ProxiesInfo{},
+			cluster.ProxiesInfo{},
+			nil,
+		),
+		Entry("appends to histories when called with proxyInfos",
+			func() ProxyInfoHistories { return make(ProxyInfoHistories) },
+			cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfo2},
+			cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfo2},
+			ProxyInfoHistories{
+				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1},
+				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2},
+			},
+		),
+		Entry("updates the histories if infoUID is different",
+			func() ProxyInfoHistories {
+				return ProxyInfoHistories{
+					pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1, Timer: timer.Now()},
+					pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2, Timer: timer.Now()},
+				}
+			},
+			cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfoWithDifferentInfoUID},
+			cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfoWithDifferentInfoUID},
+			ProxyInfoHistories{
+				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1},
+				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfoWithDifferentInfoUID},
+			},
+		),
+		Entry("removes from active proxies if is not updated for twice the DefaultProxyTimeout",
+			func() ProxyInfoHistories {
+				return ProxyInfoHistories{
+					pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1, Timer: timer.Now() - (td45ns)},
+					pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2, Timer: timer.Now() - (td15ns)},
+				}
+			},
+			cluster.ProxiesInfo{pr1: &proxyInfo1, pr2: &proxyInfo2},
+			cluster.ProxiesInfo{pr2: &proxyInfo2},
+			ProxyInfoHistories{
+				pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1},
+				pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2},
+			},
+		),
+		Entry("removes a proxy from sentinel's local history if the proxy is removed in store",
+			func() ProxyInfoHistories {
+				return ProxyInfoHistories{
+					pr1: &ProxyInfoHistory{ProxyInfo: &proxyInfo1, Timer: timer.Now()},
+					pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2, Timer: timer.Now()},
+				}
+			},
+			cluster.ProxiesInfo{pr2: &proxyInfo2},
+			cluster.ProxiesInfo{pr2: &proxyInfo2},
+			ProxyInfoHistories{pr2: &ProxyInfoHistory{ProxyInfo: &proxyInfo2}},
+		),
+	)
+})

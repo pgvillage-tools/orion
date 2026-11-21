@@ -15,34 +15,30 @@
 package sentinel
 
 import (
-	"reflect"
-	"testing"
-
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 )
 
-func TestInfoHistoriesDeepCopy(t *testing.T) {
-	if KeeperInfoHistories(nil).DeepCopy() != nil || ProxyInfoHistories(nil).DeepCopy() != nil {
-		t.Error("a copy of nil isn't nil")
-	}
+var _ = Describe("DeepCopy of info histories", func() {
+	It("copies nil to nil", func() {
+		Ω(KeeperInfoHistories(nil).DeepCopy()).To(BeNil(), "a copy of nil isn't nil")
+		Ω(ProxyInfoHistories(nil).DeepCopy()).To(BeNil(), "a copy of nil isn't nil")
+	})
 
-	kih := KeeperInfoHistories{"keeper1": {KeeperInfo: &cluster.KeeperInfo{UID: "keeper1"}, Seen: true, Timer: 5}}
-	kc := kih.DeepCopy()
-	if !reflect.DeepEqual(kc, kih) {
-		t.Fatalf("copy %+v differs from %+v", kc, kih)
-	}
-	kc["keeper1"].KeeperInfo.UID = "changed"
-	if kih["keeper1"].KeeperInfo.UID != "keeper1" {
-		t.Error("the keeper info history copy shares its keeper info")
-	}
+	It("copies keeper info histories without sharing their keeper info", func() {
+		kih := KeeperInfoHistories{"keeper1": {KeeperInfo: &cluster.KeeperInfo{UID: "keeper1"}, Seen: true, Timer: 5}}
+		kc := kih.DeepCopy()
+		Ω(kc).To(Equal(kih))
+		kc["keeper1"].KeeperInfo.UID = "changed"
+		Ω(kih["keeper1"].KeeperInfo.UID).To(Equal("keeper1"), "the keeper info history copy shares its keeper info")
+	})
 
-	pih := ProxyInfoHistories{"proxy1": {ProxyInfo: &cluster.ProxyInfo{UID: "proxy1"}, Timer: 5}}
-	pc := pih.DeepCopy()
-	if !reflect.DeepEqual(pc, pih) {
-		t.Fatalf("copy %+v differs from %+v", pc, pih)
-	}
-	pc["proxy1"].ProxyInfo.UID = "changed"
-	if pih["proxy1"].ProxyInfo.UID != "proxy1" {
-		t.Error("the proxy info history copy shares its proxy info")
-	}
-}
+	It("copies proxy info histories without sharing their proxy info", func() {
+		pih := ProxyInfoHistories{"proxy1": {ProxyInfo: &cluster.ProxyInfo{UID: "proxy1"}, Timer: 5}}
+		pc := pih.DeepCopy()
+		Ω(pc).To(Equal(pih))
+		pc["proxy1"].ProxyInfo.UID = "changed"
+		Ω(pih["proxy1"].ProxyInfo.UID).To(Equal("proxy1"), "the proxy info history copy shares its proxy info")
+	})
+})

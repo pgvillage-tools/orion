@@ -19,83 +19,73 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// etcdConfig returns a Config with an etcd endpoint where nothing listens: the store client connects on its first
-// call, so a sentinel can be created and run without a store
-func etcdConfig() Config {
-	var cfg Config
-	cfg.ClusterName = "cluster1"
-	cfg.StoreBackend = "etcdv3"
-	cfg.StoreEndpoints = "http://127.0.0.1:1"
-	cfg.StorePrefix = "orion/cluster"
-	cfg.StoreTimeout = 100 * time.Millisecond
-	return cfg
-}
-
-func TestNewSentinelInitialClusterSpec(t *testing.T) {
-	dir := t.TempDir()
-	file := func(name, content string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return p
+var _ = Describe("creating and running a sentinel", func() {
+	// etcdConfig returns a Config with an etcd endpoint where nothing listens: the store client connects on its first
+	// call, so a sentinel can be created and run without a store
+	etcdConfig := func() Config {
+		var cfg Config
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "etcdv3"
+		cfg.StoreEndpoints = "http://127.0.0.1:1"
+		cfg.StorePrefix = "orion/cluster"
+		cfg.StoreTimeout = 100 * time.Millisecond
+		return cfg
 	}
-	for name, tc := range map[string]struct {
-		file string
-		want string // the error, or "" when the sentinel is created
-	}{
-		"no initial spec": {},
-		"a valid spec":    {file: file("valid.json", `{"initMode":"new"}`)},
-		"a missing file":  {file: filepath.Join(dir, "missing.json"), want: "cannot read provided initial cluster"},
-		"not json":        {file: file("bad.json", `{`), want: "cannot parse provided initial cluster"},
-		"an invalid spec": {file: file("invalid.json", `{"initMode":"bogus"}`), want: "invalid initial cluster"},
-	} {
-		t.Run(name, func(t *testing.T) {
+
+	DescribeTable("reads the initial cluster spec file",
+		// name is the file in a temporary dir, "" for no initial spec, and the file is only written with content; want
+		// is the error, or "" when the sentinel is created
+		func(ctx SpecContext, name, content, want string) {
 			cfg := etcdConfig()
-			cfg.InitialClusterSpecFile = tc.file
-			s, err := NewSentinel(t.Context(), "sentinel1", &cfg, make(chan bool))
-			if tc.want != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.want) {
-					t.Fatalf("got %v, want an error containing %q", err, tc.want)
+			if name != "" {
+				cfg.InitialClusterSpecFile = filepath.Join(GinkgoT().TempDir(), name)
+				if content != "" {
+					Ω(os.WriteFile(cfg.InitialClusterSpecFile, []byte(content), 0o600)).To(Succeed())
 				}
+			}
+			s, err := NewSentinel(ctx, "sentinel1", &cfg, make(chan bool))
+			if want != "" {
+				Ω(err).To(MatchError(ContainSubstring(want)))
 				return
 			}
-			if err != nil {
-				t.Fatal(err)
+			Ω(err).NotTo(HaveOccurred())
+			Ω(s.uid).To(Equal("sentinel1"))
+			if name != "" {
+				Ω(s.initialClusterSpec).NotTo(BeNil())
+			} else {
+				Ω(s.initialClusterSpec).To(BeNil())
 			}
-			if s.uid != "sentinel1" || (tc.file != "") != (s.initialClusterSpec != nil) {
-				t.Errorf("unexpected sentinel: uid %q, initial spec %v", s.uid, s.initialClusterSpec)
-			}
-		})
-	}
-}
+		},
+		Entry("creates a sentinel without an initial spec", "", "", ""),
+		Entry("creates a sentinel with a valid spec", "valid.json", `{"initMode":"new"}`, ""),
+		Entry("fails on a missing file", "missing.json", "", "cannot read provided initial cluster"),
+		Entry("fails on a file that isn't json", "bad.json", `{`, "cannot parse provided initial cluster"),
+		Entry("fails on an invalid spec", "invalid.json", `{"initMode":"bogus"}`, "invalid initial cluster"),
+	)
 
-func TestNewSentinelWithoutAStore(t *testing.T) {
-	// the kubernetes backend needs POD_NAME (and a cluster)
-	t.Setenv("POD_NAME", "")
-	var cfg Config
-	cfg.ClusterName = "cluster1"
-	cfg.StoreBackend = "kubernetes"
-	if _, err := NewSentinel(t.Context(), "sentinel1", &cfg, make(chan bool)); err == nil {
-		t.Fatal("expected an error without a store")
-	}
-	if err := Run(t.Context(), cfg); err == nil {
-		t.Fatal("expected Run to fail without a store")
-	}
-}
+	It("fails to create or run without a store", func(ctx SpecContext) {
+		// the kubernetes backend needs POD_NAME (and a cluster)
+		GinkgoT().Setenv("POD_NAME", "")
+		var cfg Config
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "kubernetes"
+		_, err := NewSentinel(ctx, "sentinel1", &cfg, make(chan bool))
+		Ω(err).To(HaveOccurred(), "expected an error without a store")
+		Ω(Run(ctx, cfg)).NotTo(Succeed(), "expected Run to fail without a store")
+	})
 
-func TestRunUntilTheContextIsDone(t *testing.T) {
-	cfg := etcdConfig()
-	cfg.MetricsListenAddress = "127.0.0.1:0"
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer cancel()
-	// the store doesn't answer, so the sentinel never leads; Run returns when ctx is done
-	if err := Run(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-}
+	It("runs until the context is done", func(ctx SpecContext) {
+		cfg := etcdConfig()
+		cfg.MetricsListenAddress = "127.0.0.1:0"
+		runCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		DeferCleanup(cancel)
+		// the store doesn't answer, so the sentinel never leads; Run returns when ctx is done
+		Ω(Run(runCtx, cfg)).To(Succeed())
+	})
+})

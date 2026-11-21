@@ -21,13 +21,13 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"testing"
 	"time"
-
-	cluster "github.com/pgvillage-tools/orion/api/v1"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
@@ -54,7 +54,7 @@ const (
 	g4 = 4
 )
 
-// Fixtures for the focused election tests below. They build a cluster in the
+// Fixtures for the focused election tests. They build a cluster in the
 // Normal phase with db1 (on keeper1) as master and a configurable set of
 // standbys, all healthy and converged, so each test only has to change the
 // fields it is about.
@@ -201,7 +201,7 @@ func etSyncSpec() *cluster.Spec {
 	return spec
 }
 
-// etSentinel returns a sentinel set up like the TestUpdateCluster loop does:
+// etSentinel returns a sentinel set up like checkUpdateCluster does:
 // reproducible UIDs (continuing after the highest dbN in cd) and convergence
 // timers far in the past, so a db that has not converged counts as failed.
 func etSentinel(cd *cluster.Data) *Sentinel {
@@ -226,13 +226,12 @@ func etSentinel(cd *cluster.Data) *Sentinel {
 	return s
 }
 
-func etUpdateCluster(t *testing.T, cd *cluster.Data) *cluster.Data {
-	t.Helper()
+// etUpdateCluster runs updateCluster on cd with a sentinel of etSentinel, and fails on an error
+func etUpdateCluster(cd *cluster.Data) *cluster.Data {
+	GinkgoHelper()
 	s := etSentinel(cd)
 	outcd, err := s.updateCluster(context.Background(), cd, cluster.ProxiesInfo{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	Ω(err).NotTo(HaveOccurred())
 	return outcd
 }
 
@@ -251,46 +250,48 @@ type updateClusterCase struct {
 	err   error
 }
 
-// runUpdateClusterCases runs updateCluster on every case of tests and compares the result
-func runUpdateClusterCases(t *testing.T, tests []updateClusterCase) {
-	ctx := context.Background()
+// checkUpdateCluster runs updateCluster on the cd of tt and compares the result with its outcd, or its error
+func checkUpdateCluster(tt updateClusterCase) {
+	GinkgoHelper()
+	s := &Sentinel{uid: "sentinel01", UIDFn: testUIDFn, RandFn: testRandFn,
+		dbConvergenceInfos: map[string]*DBConvergenceInfo{}}
 
-	for i, tt := range tests {
-		s := &Sentinel{uid: "sentinel01", UIDFn: testUIDFn, RandFn: testRandFn,
-			dbConvergenceInfos: map[string]*DBConvergenceInfo{}}
-
-		// reset curUID func value to latest db uid
-		curUID = 0
-		for _, db := range tt.cd.DBs {
-			uid, _ := strconv.Atoi(strings.TrimPrefix(db.UID, "db"))
-			if uid > curUID {
-				curUID = uid
-			}
-		}
-
-		// Populate db convergence timers, these are populated with a negative
-		// timer to make them result like not converged.
-		for _, db := range tt.cd.DBs {
-			s.dbConvergenceInfos[db.UID] = &DBConvergenceInfo{Generation: 0, Timer: int64(-1000 * time.Hour)}
-		}
-
-		fmt.Printf("test #%d\n", i)
-		t.Logf("test #%d", i)
-
-		outcd, err := s.updateCluster(ctx, tt.cd, cluster.ProxiesInfo{})
-		if tt.err != nil {
-			if err == nil {
-				t.Errorf("got no error, wanted error: %v", tt.err)
-			} else if tt.err.Error() != err.Error() {
-				t.Errorf("got error: %v, wanted error: %v", err, tt.err)
-			}
-		} else {
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			} else if !testEqualCD(outcd, tt.outcd) {
-				t.Errorf("wrong outcd: got:\n%s\nwant:\n%s", spew.Sdump(outcd), spew.Sdump(tt.outcd))
-				t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(tt.outcd, outcd))
-			}
+	// reset curUID func value to latest db uid
+	curUID = 0
+	for _, db := range tt.cd.DBs {
+		uid, _ := strconv.Atoi(strings.TrimPrefix(db.UID, "db"))
+		if uid > curUID {
+			curUID = uid
 		}
 	}
+
+	// Populate db convergence timers, these are populated with a negative
+	// timer to make them result like not converged.
+	for _, db := range tt.cd.DBs {
+		s.dbConvergenceInfos[db.UID] = &DBConvergenceInfo{Generation: 0, Timer: int64(-1000 * time.Hour)}
+	}
+
+	outcd, err := s.updateCluster(context.Background(), tt.cd, cluster.ProxiesInfo{})
+	if tt.err != nil {
+		Ω(err).To(MatchError(tt.err.Error()))
+		return
+	}
+	Ω(err).NotTo(HaveOccurred())
+	Ω(testEqualCD(outcd, tt.outcd)).To(BeTrue(), func() string {
+		return fmt.Sprintf("wrong outcd: got:\n%s\nwant:\n%s\nmismatch (-want +got):\n%s",
+			spew.Sdump(outcd), spew.Sdump(tt.outcd), cmp.Diff(tt.outcd, outcd))
+	})
+}
+
+// initSpec returns a spec with init mode mode
+func initSpec(mode cluster.InitMode) *cluster.Spec {
+	spec := etAsyncSpec()
+	spec.InitMode = util.ToPtr(mode)
+	switch mode {
+	case cluster.ExistingCluster:
+		spec.ExistingConfig = &cluster.ExistingConfig{KeeperUID: "keeper2"}
+	case cluster.PITR:
+		spec.PITRConfig = &cluster.PITRConfig{DataRestoreCommand: "restore"}
+	}
+	return spec
 }
