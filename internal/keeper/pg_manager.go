@@ -42,7 +42,7 @@ type pgManager interface {
 	Init(ctx context.Context, initConfig *pg.InitConfig) error
 	Restore(ctx context.Context, command string) error
 	RemoveAllIfInitialized(ctx context.Context) error
-	SyncFromFollowed(ctx context.Context, followedConnParams pg.ConnParams, replSlot string) error
+	SyncFromFollowed(ctx context.Context, followedConnParams pg.ConnParams, replSlot string, fastCheckpoint bool) error
 	SyncFromFollowedPGRewind(ctx context.Context, followedConnParams pg.ConnParams, password string) error
 
 	// the instance

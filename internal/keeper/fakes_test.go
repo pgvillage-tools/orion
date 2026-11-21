@@ -60,6 +60,8 @@ type fakePG struct {
 	slots        []string
 	// replSlot is the replication slot of the last SyncFromFollowed
 	replSlot string
+	// fastCheckpoint is what the last SyncFromFollowed got for it
+	fastCheckpoint bool
 
 	// waitReady, when set, answers WaitReady instead of errs
 	waitReady func() error
@@ -159,8 +161,8 @@ func (f *fakePG) RemoveAllIfInitialized(_ context.Context) error {
 	return nil
 }
 
-func (f *fakePG) SyncFromFollowed(_ context.Context, _ pg.ConnParams, replSlot string) error {
-	f.replSlot = replSlot
+func (f *fakePG) SyncFromFollowed(_ context.Context, _ pg.ConnParams, replSlot string, fastCheckpoint bool) error {
+	f.replSlot, f.fastCheckpoint = replSlot, fastCheckpoint
 	if err := f.call("SyncFromFollowed"); err != nil {
 		return err
 	}

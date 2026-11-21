@@ -59,6 +59,7 @@ var _ = Describe("Cluster", func() {
 			Ω(*spec.MaxStandbyLag).To(Equal(uint32(1<<20)), "1MiB")
 			Ω(spec.SynchronousReplication).To(Equal(util.ToPtr(DefaultSynchronousReplication)))
 			Ω(spec.UsePgrewind).To(Equal(util.ToPtr(DefaultUsePgrewind)))
+			Ω(spec.ResyncFastCheckpoint).To(Equal(util.ToPtr(DefaultResyncFastCheckpoint)))
 			Ω(spec.MinSynchronousStandbys).To(Equal(util.ToPtr(DefaultMinSynchronousStandbys)))
 			Ω(spec.MaxSynchronousStandbys).To(Equal(util.ToPtr(DefaultMaxSynchronousStandbys)))
 			Ω(spec.AdditionalWalSenders).To(Equal(util.ToPtr(uint16(DefaultAdditionalWalSenders))))

@@ -38,6 +38,7 @@ run anywhere, come and go, and change their addresses.
   the proxies, and replaces a standby that can't catch up.
 - [Standby cluster](operations/standby-cluster.md): replicate from the primary of another cluster, and promote into a
   primary cluster of its own.
+- [Standby resync](operations/resync.md): how a keeper gets a new standby, and `resyncFastCheckpoint`.
 
 !!! note
     The rest of the documentation still comes from stolon and describes stolon's behaviour. Until it is reviewed and

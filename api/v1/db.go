@@ -33,6 +33,8 @@ type DBSpec struct {
 	SynchronousReplication bool `json:"synchronousReplication,omitempty"`
 	// Whether to use pg_rewind
 	UsePgrewind bool `json:"usePgrewind,omitempty"`
+	// See Spec ResyncFastCheckpoint description
+	ResyncFastCheckpoint bool `json:"resyncFastCheckpoint,omitempty"`
 	// AdditionalWalSenders defines the number of additional wal_senders in
 	// addition to the ones internally defined by orion
 	AdditionalWalSenders uint16 `json:"additionalWalSenders"`

@@ -148,6 +148,10 @@ type Spec struct {
 	AdditionalMasterReplicationSlots []string `json:"additionalMasterReplicationSlots"`
 	// Whether to use pg_rewind
 	UsePgrewind *bool `json:"usePgrewind,omitempty"`
+	// Whether a resync (pg_basebackup) asks the primary for an immediate checkpoint (--checkpoint=fast) instead of
+	// waiting for a spread one (up to checkpoint_completion_target x checkpoint_timeout): the standby is back sooner,
+	// at the cost of an IO spike on the primary
+	ResyncFastCheckpoint *bool `json:"resyncFastCheckpoint,omitempty"`
 	// InitMode defines the cluster initialization mode. Current modes are: new, existing, pitr
 	InitMode *InitMode `json:"initMode,omitempty"`
 	// Whether to merge pgParameters of the initialized db cluster, useful
@@ -233,6 +237,9 @@ func (s *Spec) WithDefaults() *Spec {
 	}
 	if s.UsePgrewind == nil {
 		s.UsePgrewind = util.ToPtr(DefaultUsePgrewind)
+	}
+	if s.ResyncFastCheckpoint == nil {
+		s.ResyncFastCheckpoint = util.ToPtr(DefaultResyncFastCheckpoint)
 	}
 	if s.MinSynchronousStandbys == nil {
 		s.MinSynchronousStandbys = util.ToPtr(DefaultMinSynchronousStandbys)

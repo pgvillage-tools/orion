@@ -18,16 +18,15 @@ import (
 // which the keeper manages (and then sets to 128MB). A write to the paused standby fails after 10s
 // (tcp_user_timeout): its walsender, which the checkpoint must end to invalidate its slot, otherwise stays blocked on
 // the write while the standby is paused (13 minutes in a run without it, until the standby was unpaused; it may never
-// end), and the checkpoint with it. The resync
-// (pg_basebackup) waits for a spread checkpoint: with a checkpoint_timeout of 30s that takes about 27s instead of 4.5
-// minutes.
+// end), and the checkpoint with it. The resync (pg_basebackup) asks for a fast checkpoint (resyncFastCheckpoint),
+// instead of waiting for a spread one (4.5 minutes with the default checkpoint_timeout).
 func walRecycledSpec() *apiv1.Spec {
 	spec := helpers.DefaultSpec()
 	spec.PGParameters["wal_keep_size"] = "0"
 	spec.PGParameters["max_slot_wal_keep_size"] = "32"
 	spec.PGParameters["tcp_user_timeout"] = "10000"
-	spec.PGParameters["checkpoint_timeout"] = "30s"
 	spec.MergePgParameters = util.ToPtr(false)
+	spec.ResyncFastCheckpoint = util.ToPtr(true)
 	return spec
 }
 

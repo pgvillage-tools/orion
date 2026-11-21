@@ -719,7 +719,7 @@ var _ = Describe("Manager", func() {
 			saveArgsAndPgPass("pg_basebackup")
 			m = newManager(walDir)
 			fcp := followed()
-			Ω(m.SyncFromFollowed(ctx, fcp, "slot1")).To(Succeed())
+			Ω(m.SyncFromFollowed(ctx, fcp, "slot1", false)).To(Succeed())
 			Ω(fcp).To(Equal(followed()))
 			Ω(readFile(filepath.Join(binDir, "pg_basebackup.pgpass"))).To(Equal("db1:5433:*:repl:replpass\n"))
 			args := readFile(filepath.Join(binDir, "pg_basebackup.args"))
@@ -730,17 +730,23 @@ var _ = Describe("Manager", func() {
 		})
 		It("runs pg_basebackup without slot and wal dir", func() {
 			saveArgsAndPgPass("pg_basebackup")
-			Ω(m.SyncFromFollowed(ctx, followed(), "")).To(Succeed())
+			Ω(m.SyncFromFollowed(ctx, followed(), "", false)).To(Succeed())
 			args := readFile(filepath.Join(binDir, "pg_basebackup.args"))
 			Ω(args).NotTo(ContainSubstring("--slot"))
 			Ω(args).NotTo(ContainSubstring("--waldir"))
+			Ω(args).NotTo(ContainSubstring("--checkpoint"))
+		})
+		It("asks the followed db for a fast checkpoint", func() {
+			saveArgsAndPgPass("pg_basebackup")
+			Ω(m.SyncFromFollowed(ctx, followed(), "", true)).To(Succeed())
+			Ω(readFile(filepath.Join(binDir, "pg_basebackup.args"))).To(HaveSuffix(" --checkpoint=fast\n"))
 		})
 		It("fails when pg_basebackup fails", func() {
 			fakeBin("pg_basebackup", "exit 1")
-			Ω(m.SyncFromFollowed(ctx, followed(), "")).NotTo(Succeed())
+			Ω(m.SyncFromFollowed(ctx, followed(), "", false)).NotTo(Succeed())
 		})
 		It("fails without pg_basebackup", func() {
-			Ω(m.SyncFromFollowed(ctx, followed(), "")).NotTo(Succeed())
+			Ω(m.SyncFromFollowed(ctx, followed(), "", false)).NotTo(Succeed())
 		})
 
 		It("runs pg_rewind after removing postgresql.auto.conf", func() {

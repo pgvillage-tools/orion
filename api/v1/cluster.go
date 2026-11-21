@@ -99,6 +99,9 @@ const (
 	// TODO: enable pgrewind by default
 	DefaultUsePgrewind = false
 
+	// DefaultResyncFastCheckpoint sets the default for an immediate checkpoint on the primary when a resync starts
+	DefaultResyncFastCheckpoint = false
+
 	// DefaultMergePGParameter sets the default for merging parameters from local cluster to config after initialization
 	DefaultMergePGParameter = true
 
