@@ -1026,8 +1026,10 @@ func (p *Manager) SyncFromFollowedPGRewind(ctx context.Context, followedConnPara
 	return nil
 }
 
-// SyncFromFollowed runs pg_basebackup to resync a broken replica
-func (p *Manager) SyncFromFollowed(ctx context.Context, followedConnParams ConnParams, replSlot string) error {
+// SyncFromFollowed runs pg_basebackup to resync a broken replica. With fastCheckpoint, the followed db does an
+// immediate checkpoint for the backup instead of a spread one.
+func (p *Manager) SyncFromFollowed(
+	ctx context.Context, followedConnParams ConnParams, replSlot string, fastCheckpoint bool) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
 	fcp := followedConnParams.Copy()
 
@@ -1063,6 +1065,9 @@ func (p *Manager) SyncFromFollowed(ctx context.Context, followedConnParams ConnP
 	}
 	if p.walDir != "" {
 		args = append(args, "--waldir", p.walDir)
+	}
+	if fastCheckpoint {
+		args = append(args, "--checkpoint=fast")
 	}
 	cmd := exec.Command(name, args...)
 

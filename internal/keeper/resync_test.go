@@ -64,6 +64,13 @@ var _ = Describe("resync", func() {
 			Expect(f.sequence("RemoveAllIfInitialized", "SyncFromFollowed")).
 				To(Equal("RemoveAllIfInitialized,SyncFromFollowed"))
 			Expect(f.replSlot).To(Equal(common.OrionName("db1")))
+			Expect(f.fastCheckpoint).To(BeFalse())
+		})
+		It("asks for a fast checkpoint when the db spec says so", func() {
+			p, f, _ := smKeeper(GinkgoTB())
+			db.Spec.ResyncFastCheckpoint = true
+			Expect(p.resync(ctx, db, master, master, false)).To(Succeed())
+			Expect(f.fastCheckpoint).To(BeTrue())
 		})
 		It("uses no replication slot before 9.6", func() {
 			p, f, _ := smKeeper(GinkgoTB())

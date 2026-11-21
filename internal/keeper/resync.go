@@ -88,7 +88,7 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 			Msg("syncing from followed db")
 	}
 
-	if err := pgm.SyncFromFollowed(ctx, replConnParams, replSlot); err != nil {
+	if err := pgm.SyncFromFollowed(ctx, replConnParams, replSlot, db.Spec.ResyncFastCheckpoint); err != nil {
 		return fmt.Errorf("sync error: %v", err)
 	}
 	logger.Info().Msg("sync succeeded")
