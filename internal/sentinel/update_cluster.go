@@ -145,7 +145,8 @@ func (s *Sentinel) initNewCluster(ctx context.Context, cd, newcd *cluster.Data, 
 
 				// Replace reported pg parameters in cluster spec
 				if *clusterSpec.MergePgParameters {
-					newcd.Cluster.Spec.PGParameters = db.Status.PGParameters
+					newcd.Cluster.Spec.PGParameters =
+						mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
 				}
 				// Cluster initialized, switch to Normal state
 				newcd.Cluster.Status.Phase = cluster.Normal
@@ -218,7 +219,7 @@ func (s *Sentinel) initExistingCluster(ctx context.Context, cd, newcd *cluster.D
 			db.Spec.IncludeConfig = false
 			// Replace reported pg parameters in cluster spec
 			if *clusterSpec.MergePgParameters {
-				newcd.Cluster.Spec.PGParameters = db.Status.PGParameters
+				newcd.Cluster.Spec.PGParameters = mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
 			}
 			// Cluster initialized, switch to Normal state
 			newcd.Cluster.Status.Phase = cluster.Normal
@@ -288,7 +289,8 @@ func (s *Sentinel) initPITRCluster(ctx context.Context, cd, newcd *cluster.Data,
 
 				// Replace reported pg parameters in cluster spec
 				if *clusterSpec.MergePgParameters {
-					newcd.Cluster.Spec.PGParameters = db.Status.PGParameters
+					newcd.Cluster.Spec.PGParameters =
+						mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
 				}
 				// Cluster initialized, switch to Normal state
 				newcd.Cluster.Status.Phase = cluster.Normal
@@ -1182,6 +1184,20 @@ func (s *Sentinel) updateMasterFollowers(newcd *cluster.Data, curMasterDBUID, wa
 	}
 	// Sort followers so the slice won't be considered changed due to different order of the same entries.
 	sort.Strings(masterDB.Spec.Followers)
+}
+
+// mergedPGParameters returns the parameters an initialized db reports (from its configuration, without the ones the
+// keeper manages) with the ones of the spec on top, as the keeper applies them: a parameter of the spec that the
+// keeper manages (e.g. wal_keep_size) isn't in the reported ones, and would otherwise be lost
+func mergedPGParameters(spec, reported cluster.PGParameters) cluster.PGParameters {
+	merged := cluster.PGParameters{}
+	for k, v := range reported {
+		merged[k] = v
+	}
+	for k, v := range spec {
+		merged[k] = v
+	}
+	return merged
 }
 
 // setDBSpecFromClusterSpec updates dbSpec values with the related clusterSpec ones
