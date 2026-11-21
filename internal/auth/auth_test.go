@@ -14,6 +14,8 @@ import (
 	"github.com/pgvillage-tools/orion/internal/auth"
 )
 
+// staticAuthenticator is an authenticator that returns identity or err. It is the only declaration outside the
+// Describes: Go doesn't allow methods on a type declared in a function.
 type staticAuthenticator struct {
 	identity *auth.Identity
 	err      error
@@ -23,29 +25,30 @@ func (s staticAuthenticator) Authenticate(_ *http.Request) (*auth.Identity, erro
 	return s.identity, s.err
 }
 
-// serve serves r with the middleware and authenticators, and returns the response and the identity the handler saw
-func serve(r *http.Request, authenticators ...auth.Authenticator) (*httptest.ResponseRecorder, *auth.Identity) {
-	var seen *auth.Identity
-	handler := auth.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		seen, _ = auth.FromContext(r.Context())
-	}), authenticators...)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
-	return w, seen
-}
-
-// requestWithCert returns a request with a verified client certificate for cn, in the groups ou
-func requestWithCert(cn string, ou ...string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	cert := &x509.Certificate{Subject: pkix.Name{CommonName: cn, OrganizationalUnit: ou}}
-	r.TLS = &tls.ConnectionState{
-		PeerCertificates: []*x509.Certificate{cert},
-		VerifiedChains:   [][]*x509.Certificate{{cert}},
-	}
-	return r
-}
-
 var _ = Describe("Middleware", func() {
+	// serve serves r with the middleware and authenticators, and returns the response and the identity the handler
+	// saw
+	serve := func(r *http.Request, authenticators ...auth.Authenticator) (*httptest.ResponseRecorder, *auth.Identity) {
+		var seen *auth.Identity
+		handler := auth.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen, _ = auth.FromContext(r.Context())
+		}), authenticators...)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w, seen
+	}
+
+	// requestWithCert returns a request with a verified client certificate for cn, in the groups ou
+	requestWithCert := func(cn string, ou ...string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		cert := &x509.Certificate{Subject: pkix.Name{CommonName: cn, OrganizationalUnit: ou}}
+		r.TLS = &tls.ConnectionState{
+			PeerCertificates: []*x509.Certificate{cert},
+			VerifiedChains:   [][]*x509.Certificate{{cert}},
+		}
+		return r
+	}
+
 	Context("with client certificates", func() {
 		It("authenticates the common name, with the organizational units as groups", func() {
 			w, identity := serve(requestWithCert("orion-cli", "admins"), auth.ClientCertAuthenticator{})
