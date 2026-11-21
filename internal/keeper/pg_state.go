@@ -216,7 +216,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 		if err != nil {
 			logger.Warn().AnErr(logging.KeyErr, err).Msg("error getting older wal file")
 		} else {
-			logger.Warn().Str("filename", ow).Msg("older wal file")
+			logger.Debug().Str("filename", ow).Msg("older wal file")
 			pgState.OlderWalFile = ow
 		}
 		pgState.Healthy = true
