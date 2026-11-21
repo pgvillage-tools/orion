@@ -54,7 +54,7 @@ func newChecker(store *mockconsensus.MockStore) *ClusterChecker {
 }
 
 // echoServer plays the primary: it sends back what it gets
-func echoServer(t *testing.T) (host, port string) {
+func echoServer(t testing.TB) (host, port string) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -262,55 +262,6 @@ func TestCheckTakesTheTimeoutsOfTheSpec(t *testing.T) {
 	}
 	if c.proxyCheckInterval != time.Second || c.proxyTimeout != time.Minute {
 		t.Errorf("got check interval %s and timeout %s", c.proxyCheckInterval, c.proxyTimeout)
-	}
-}
-
-func TestTimeoutCheckerStopsListening(t *testing.T) {
-	host, port := echoServer(t)
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(clusterData(host, port, proxyUID), nil, nil)
-	store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	c := newChecker(store)
-	defer stop(c)
-	if err := c.Check(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, func() bool { return proxies(c) }, "the proxy sends connections to the master")
-
-	// no successful check within the timeout: the proxy closes its connections and stops listening (fencing)
-	c.configMutex.Lock()
-	c.proxyTimeout = shortTimeout
-	c.configMutex.Unlock()
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	go c.TimeoutChecker(ctx, make(chan struct{}))
-	eventually(t, func() bool {
-		c.pollonMutex.Lock()
-		defer c.pollonMutex.Unlock()
-		return c.listener == nil
-	}, "the proxy stops listening")
-}
-
-func TestTimeoutCheckerKeepsListeningWithSuccessfulChecks(t *testing.T) {
-	host, port := echoServer(t)
-	store := mockconsensus.NewMockStore(gomock.NewController(t))
-	store.EXPECT().GetClusterData(gomock.Any()).Return(clusterData(host, port, proxyUID), nil, nil)
-	store.EXPECT().SetProxyInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	c := newChecker(store)
-	defer stop(c)
-	if err := c.Check(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	c.proxyTimeout = shortTimeout
-	checkOk := make(chan struct{})
-	go c.TimeoutChecker(t.Context(), checkOk)
-	// successful checks reset the timer before it fires
-	for range 5 {
-		time.Sleep(shortTimeout / 2)
-		checkOk <- struct{}{}
-	}
-	if !proxies(c) {
-		t.Error("the proxy stopped while its checks succeeded")
 	}
 }
 

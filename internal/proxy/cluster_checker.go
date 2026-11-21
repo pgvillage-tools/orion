@@ -262,68 +262,59 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 	return nil
 }
 
-// TimeoutChecker is a function that checks the timeouts
-func (c *ClusterChecker) TimeoutChecker(ctx context.Context, checkOkCh chan struct{}) {
+// fence closes all connections and, with stopListening, stops listening (for example to avoid load balancers forward
+// connections to us since we aren't ready or in a bad state): without a successful check the proxy can't know whether
+// its master is still the master
+func (c *ClusterChecker) fence(ctx context.Context) {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
-	c.configMutex.Lock()
-	timeoutTimer := time.NewTimer(c.proxyTimeout)
-	c.configMutex.Unlock()
-
-	for {
-		select {
-		case <-timeoutTimer.C:
-			logger.Info().Msg("check timeout timer fired")
-			// if the check timeouts close all connections and stop listening
-			// (for example to avoid load balancers forward connections to us
-			// since we aren't ready or in a bad state)
-			c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
-			if c.stopListening {
-				c.stopPollonProxy(ctx)
-			}
-
-		case <-checkOkCh:
-			logger.Debug().Msg("check ok message received")
-
-			// ignore if stop succeeded or not due to timer already expired
-			timeoutTimer.Stop()
-
-			c.configMutex.Lock()
-			timeoutTimer = time.NewTimer(c.proxyTimeout)
-			c.configMutex.Unlock()
-		}
+	logger.Info().Msg("check timeout timer fired")
+	c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+	if c.stopListening {
+		c.stopPollonProxy(ctx)
 	}
 }
 
-// Start runs the checks of the proxy until ctx is done or the proxy fails
+// timeout returns the proxy timeout
+func (c *ClusterChecker) timeout() time.Duration {
+	c.configMutex.Lock()
+	defer c.configMutex.Unlock()
+	return c.proxyTimeout
+}
+
+// Start runs the checks of the proxy until ctx is done or the proxy fails. When no check succeeded for the proxy
+// timeout (a check failed, or still runs), the proxy fences itself; a check that runs longer than the proxy timeout is
+// canceled.
 func (c *ClusterChecker) Start(ctx context.Context) error {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
-	checkOkCh := make(chan struct{})
-	checkCh := make(chan error)
+	// buffered, so a check that ends after Start returned doesn't block
+	checkCh := make(chan error, 1)
 	timerCh := time.NewTimer(0).C
-
-	// TODO(sgotti) TimeoutCecker is needed to forcefully close connection also
-	// if the Check method is blocked somewhere.
-	// The idomatic/cleaner solution will be to use a context instead of this
-	// TimeoutChecker but we have to change the libkv stores to support contexts.
-	go c.TimeoutChecker(ctx, checkOkCh)
+	fenceTimer := time.NewTimer(c.timeout())
+	defer fenceTimer.Stop()
 
 	for {
 		select {
 		case <-timerCh:
 			go func() {
-				checkCh <- c.Check(ctx)
+				checkCtx, cancel := context.WithTimeout(ctx, c.timeout())
+				defer cancel()
+				checkCh <- c.Check(checkCtx)
 			}()
 		case err := <-checkCh:
 			if err != nil {
 				// don't report check ok since it returned an error
 				logger.Info().AnErr(logging.KeyErr, err).Msg("check function error")
 			} else {
-				// report that check was ok
-				checkOkCh <- struct{}{}
+				logger.Debug().Msg("check ok")
+				// the check was ok: the proxy timeout starts again (from the timeout of the cluster spec)
+				fenceTimer.Reset(c.timeout())
 			}
 			c.configMutex.Lock()
 			timerCh = time.NewTimer(c.proxyCheckInterval).C
 			c.configMutex.Unlock()
+
+		case <-fenceTimer.C:
+			c.fence(ctx)
 
 		case err := <-c.endPollonProxyCh:
 			if err != nil {
