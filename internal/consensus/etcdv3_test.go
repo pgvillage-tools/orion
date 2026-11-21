@@ -383,23 +383,23 @@ var _ = Describe("etcdV3Store", func() {
 	})
 })
 
-func newTestEtcdv3Election(c *etcdclientv3.Client) *etcdv3Election {
-	e, ok := NewKVBackedElection(&etcdV3Store{c: c}, "/c/leader", "keeper1", time.Second).(*etcdv3Election)
-	if !ok {
-		panic("expected an etcdv3 election")
-	}
-	return e
-}
-
-// expectError waits for the next error of a campaign, which must be the expected one.
-func expectError(errCh <-chan error, expected error) {
-	GinkgoHelper()
-	var err error
-	Eventually(errCh).WithTimeout(testTimeout).Should(Receive(&err), "waiting for an error")
-	Ω(err).Should(MatchError(expected))
-}
-
 var _ = Describe("etcdv3Election", func() {
+	newTestEtcdv3Election := func(c *etcdclientv3.Client) *etcdv3Election {
+		election, ok := NewKVBackedElection(&etcdV3Store{c: c}, "/c/leader", "keeper1", time.Second).(*etcdv3Election)
+		if !ok {
+			panic("expected an etcdv3 election")
+		}
+		return election
+	}
+
+	// expectError waits for the next error of a campaign, which must be the expected one.
+	expectError := func(errCh <-chan error, expected error) {
+		GinkgoHelper()
+		var err error
+		Eventually(errCh).WithTimeout(testTimeout).Should(Receive(&err), "waiting for an error")
+		Ω(err).Should(MatchError(expected))
+	}
+
 	var (
 		kv    *fakeEtcdKV
 		lease *fakeEtcdLease

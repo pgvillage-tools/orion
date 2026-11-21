@@ -333,16 +333,16 @@ func (a *fakeKubeAPI) servePod(w http.ResponseWriter, r *http.Request, name stri
 	}
 }
 
-func newTestKubeStore() (*fakeKubeAPI, *KubeStore) {
-	GinkgoHelper()
-	api, client := newFakeKubeAPI()
-	s, err := NewKubeStore(client, testPod, testNamespace, testCluster)
-	Ω(err).ShouldNot(HaveOccurred())
-	Ω(s.resourceName).Should(Equal(testConfigMap))
-	return api, s
-}
-
 var _ = Describe("KubeStore", func() {
+	newTestKubeStore := func() (*fakeKubeAPI, *KubeStore) {
+		GinkgoHelper()
+		fakeAPI, client := newFakeKubeAPI()
+		store, err := NewKubeStore(client, testPod, testNamespace, testCluster)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(store.resourceName).Should(Equal(testConfigMap))
+		return fakeAPI, store
+	}
+
 	var (
 		ctx context.Context
 		api *fakeKubeAPI
