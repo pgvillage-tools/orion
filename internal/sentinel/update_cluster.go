@@ -1183,3 +1183,28 @@ func (s *Sentinel) updateMasterFollowers(newcd *cluster.Data, curMasterDBUID, wa
 	// Sort followers so the slice won't be considered changed due to different order of the same entries.
 	sort.Strings(masterDB.Spec.Followers)
 }
+
+// setDBSpecFromClusterSpec updates dbSpec values with the related clusterSpec ones
+func (s *Sentinel) setDBSpecFromClusterSpec(cd *cluster.Data) {
+	clusterSpec := cd.Cluster.DefSpec()
+	for _, db := range cd.DBs {
+		db.Spec.RequestTimeout = *clusterSpec.RequestTimeout
+		db.Spec.MaxStandbys = *clusterSpec.MaxStandbys
+		db.Spec.UsePgrewind = *clusterSpec.UsePgrewind
+		db.Spec.PGParameters = clusterSpec.PGParameters
+		db.Spec.PGHBA = clusterSpec.PGHBA
+		if db.Spec.FollowConfig != nil && db.Spec.FollowConfig.Type == cluster.FollowTypeExternal {
+			db.Spec.FollowConfig.StandbySettings = clusterSpec.StandbyConfig.StandbySettings
+			db.Spec.FollowConfig.ArchiveRecoverySettings = clusterSpec.StandbyConfig.ArchiveRecoverySettings
+		}
+		db.Spec.AdditionalWalSenders = *clusterSpec.AdditionalWalSenders
+		switch s.dbType(cd, db.UID) {
+		case dbTypeMaster:
+			db.Spec.AdditionalReplicationSlots = clusterSpec.AdditionalMasterReplicationSlots
+		case dbTypeStandby:
+			db.Spec.AdditionalReplicationSlots = nil
+			// TODO(sgotti). Update when there'll be an option to define
+			// additional replication slots on standbys
+		}
+	}
+}
