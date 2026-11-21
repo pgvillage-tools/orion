@@ -320,49 +320,49 @@ var _ = Describe("getTimeLinesHistory", func() {
 	})
 })
 
-// hbaTestKeeper returns a keeper with the user and auth settings used by the hba tests.
-func hbaTestKeeper() *PostgresKeeper {
-	return &PostgresKeeper{
-		pgSUConnType:          connTypeHost,
-		pgSULocalAuthMethod:   authMd5,
-		pgSUAuthMethod:        authMd5,
-		pgSUUsername:          "superuser",
-		pgReplConnType:        connTypeHost,
-		pgReplLocalAuthMethod: authMd5,
-		pgReplAuthMethod:      authMd5,
-		pgReplUsername:        "repluser",
-	}
-}
-
-// hbaTestClusterData returns a cluster with a primary (db1) and two replicas (db2, db3).
-func hbaTestClusterData(mode cluster.SUReplAccessMode) *cluster.Data {
-	replica := func(uid, address string) *cluster.DB {
-		return &cluster.DB{
-			UID: uid,
-			Spec: &cluster.DBSpec{
-				Role:         common.RoleReplica,
-				FollowConfig: &cluster.FollowConfig{Type: cluster.FollowTypeInternal, DBUID: "db1"},
-			},
-			Status: cluster.DBStatus{ListenAddress: address},
-		}
-	}
-	return &cluster.Data{
-		Cluster: &cluster.Cluster{Spec: &cluster.Spec{DefaultSUReplAccessMode: &mode}},
-		DBs: cluster.DBs{
-			"db1": &cluster.DB{
-				UID:    "db1",
-				Spec:   &cluster.DBSpec{Role: common.RolePrimary},
-				Status: cluster.DBStatus{ListenAddress: "192.168.0.1"},
-			},
-			"db2": replica("db2", "192.168.0.2"),
-			"db3": replica("db3", "192.168.0.3"),
-		},
-	}
-}
-
 // the hba used while a synchronous primary waits for its sync standbys (onlyInternal=true): only the superuser and
 // replication user entries are generated, so normal users are locked out, and the spec PGHBA entries are left out.
 var _ = Describe("generateHBA with only internal users", func() {
+	// hbaTestKeeper returns a keeper with the user and auth settings used by the hba tests.
+	hbaTestKeeper := func() *PostgresKeeper {
+		return &PostgresKeeper{
+			pgSUConnType:          connTypeHost,
+			pgSULocalAuthMethod:   authMd5,
+			pgSUAuthMethod:        authMd5,
+			pgSUUsername:          "superuser",
+			pgReplConnType:        connTypeHost,
+			pgReplLocalAuthMethod: authMd5,
+			pgReplAuthMethod:      authMd5,
+			pgReplUsername:        "repluser",
+		}
+	}
+
+	// hbaTestClusterData returns a cluster with a primary (db1) and two replicas (db2, db3).
+	hbaTestClusterData := func(mode cluster.SUReplAccessMode) *cluster.Data {
+		replica := func(uid, address string) *cluster.DB {
+			return &cluster.DB{
+				UID: uid,
+				Spec: &cluster.DBSpec{
+					Role:         common.RoleReplica,
+					FollowConfig: &cluster.FollowConfig{Type: cluster.FollowTypeInternal, DBUID: "db1"},
+				},
+				Status: cluster.DBStatus{ListenAddress: address},
+			}
+		}
+		return &cluster.Data{
+			Cluster: &cluster.Cluster{Spec: &cluster.Spec{DefaultSUReplAccessMode: &mode}},
+			DBs: cluster.DBs{
+				"db1": &cluster.DB{
+					UID:    "db1",
+					Spec:   &cluster.DBSpec{Role: common.RolePrimary},
+					Status: cluster.DBStatus{ListenAddress: "192.168.0.1"},
+				},
+				"db2": replica("db2", "192.168.0.2"),
+				"db3": replica("db3", "192.168.0.3"),
+			},
+		}
+	}
+
 	const (
 		local1 = "local postgres superuser md5"
 		local2 = "local replication repluser md5"
@@ -443,13 +443,6 @@ var _ = DescribeTable("localAuthMethod",
 	Entry(nil, authIdent, authIdent),
 )
 
-// keeperLogCtx returns a context whose keeper logger writes to buf, so a test can check the warnings.
-func keeperLogCtx(buf *bytes.Buffer) context.Context {
-	_, def := logging.GetLogComponent(context.Background(), logging.KeeperComponent)
-	l := zerolog.New(buf).Level(def.GetLevel())
-	return l.WithContext(context.Background())
-}
-
 func writeFile(t testing.TB, path, content string, mode os.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), mode); err != nil {
@@ -462,6 +455,13 @@ func writeFile(t testing.TB, path, content string, mode os.FileMode) {
 }
 
 var _ = Describe("readPasswordFromFile", func() {
+	// keeperLogCtx returns a context whose keeper logger writes to buf, so a test can check the warnings.
+	keeperLogCtx := func(buf *bytes.Buffer) context.Context {
+		_, def := logging.GetLogComponent(context.Background(), logging.KeeperComponent)
+		l := zerolog.New(buf).Level(def.GetLevel())
+		return l.WithContext(context.Background())
+	}
+
 	const (
 		tooOpen  = "password file permissions are too open"
 		password = "secret"

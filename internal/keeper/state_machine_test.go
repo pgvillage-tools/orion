@@ -40,67 +40,67 @@ func quietCtx() context.Context {
 	return zerolog.New(io.Discard).Level(def.GetLevel()).WithContext(context.Background())
 }
 
-// converged tells if a pass of the state machine completed: the db local state has the db uid and generation
-func converged(p *PostgresKeeper, db *cluster.DB) bool {
-	dbls := p.dbLocalStateCopy()
-	return dbls.UID == db.UID && dbls.Generation == db.Generation && !dbls.Initializing
-}
-
-func pitrDB(external bool) *cluster.DB {
-	db := smDB("db1", common.RolePrimary, cluster.PITRDB)
-	db.Spec.IncludeConfig = true
-	db.Spec.PITRConfig = &cluster.PITRConfig{
-		DataRestoreCommand:      "restore %d",
-		ArchiveRecoverySettings: &cluster.ArchiveRecoverySettings{RestoreCommand: "cp /archive/%f %p"},
-	}
-	if external {
-		db.Spec.FollowConfig = &cluster.FollowConfig{
-			Type:            cluster.FollowTypeExternal,
-			StandbySettings: &cluster.StandbySettings{PrimaryConninfo: "host=elsewhere"},
-		}
-	}
-	return db
-}
-
-// resyncKeeper returns a keeper with a replica db1 of "primary" to resync; initialized tells if there is an instance
-// of the same system (sys1) already
-func resyncKeeper(t testing.TB, initialized bool) (*PostgresKeeper, *fakePG, *cluster.DB) {
-	p, f, s := smKeeper(t)
-	db := smDB("db1", common.RoleReplica, cluster.ResyncDB)
-	db.Spec.UsePgrewind = true
-	s.cd = smClusterData(db)
-	if initialized {
-		f.initialized, f.role, f.systemID = true, common.RoleReplica, "sys1"
-	}
-	f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 1, XLogPos: 100}
-	return p, f, db
-}
-
-// primaryKeeper returns a keeper with an initialized, converged instance of db1, with the given local role, that
-// should be primary
-func primaryKeeper(t testing.TB, localRole common.Role) (*PostgresKeeper, *fakePG, *cluster.DB) {
-	p, f, s := smKeeper(t)
-	db := smDB("db1", common.RolePrimary, cluster.NewDB)
-	s.cd = smClusterData(db)
-	delete(s.cd.DBs, "primary")
-	s.cd.Cluster.Status.Master = db.UID
-	p.dbLocalState = &DBLocalState{UID: db.UID, Generation: 1}
-	f.initialized, f.role = true, localRole
-	return p, f, db
-}
-
-// replicaKeeper returns a keeper with an initialized, converged instance of db1, with the given local role, that
-// should follow db "primary"
-func replicaKeeper(t testing.TB, localRole common.Role) (*PostgresKeeper, *fakePG, *cluster.DB) {
-	p, f, s := smKeeper(t)
-	db := smDB("db1", common.RoleReplica, cluster.ResyncDB)
-	s.cd = smClusterData(db)
-	p.dbLocalState = &DBLocalState{UID: db.UID, Generation: 1}
-	f.initialized, f.role = true, localRole
-	return p, f, db
-}
-
 var _ = Describe("the keeper state machine", func() {
+	// converged tells if a pass of the state machine completed: the db local state has the db uid and generation
+	converged := func(p *PostgresKeeper, db *cluster.DB) bool {
+		dbls := p.dbLocalStateCopy()
+		return dbls.UID == db.UID && dbls.Generation == db.Generation && !dbls.Initializing
+	}
+
+	pitrDB := func(external bool) *cluster.DB {
+		db := smDB("db1", common.RolePrimary, cluster.PITRDB)
+		db.Spec.IncludeConfig = true
+		db.Spec.PITRConfig = &cluster.PITRConfig{
+			DataRestoreCommand:      "restore %d",
+			ArchiveRecoverySettings: &cluster.ArchiveRecoverySettings{RestoreCommand: "cp /archive/%f %p"},
+		}
+		if external {
+			db.Spec.FollowConfig = &cluster.FollowConfig{
+				Type:            cluster.FollowTypeExternal,
+				StandbySettings: &cluster.StandbySettings{PrimaryConninfo: "host=elsewhere"},
+			}
+		}
+		return db
+	}
+
+	// resyncKeeper returns a keeper with a replica db1 of "primary" to resync; initialized tells if there is an
+	// instance of the same system (sys1) already
+	resyncKeeper := func(t testing.TB, initialized bool) (*PostgresKeeper, *fakePG, *cluster.DB) {
+		p, f, s := smKeeper(t)
+		db := smDB("db1", common.RoleReplica, cluster.ResyncDB)
+		db.Spec.UsePgrewind = true
+		s.cd = smClusterData(db)
+		if initialized {
+			f.initialized, f.role, f.systemID = true, common.RoleReplica, "sys1"
+		}
+		f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 1, XLogPos: 100}
+		return p, f, db
+	}
+
+	// primaryKeeper returns a keeper with an initialized, converged instance of db1, with the given local role, that
+	// should be primary
+	primaryKeeper := func(t testing.TB, localRole common.Role) (*PostgresKeeper, *fakePG, *cluster.DB) {
+		p, f, s := smKeeper(t)
+		db := smDB("db1", common.RolePrimary, cluster.NewDB)
+		s.cd = smClusterData(db)
+		delete(s.cd.DBs, "primary")
+		s.cd.Cluster.Status.Master = db.UID
+		p.dbLocalState = &DBLocalState{UID: db.UID, Generation: 1}
+		f.initialized, f.role = true, localRole
+		return p, f, db
+	}
+
+	// replicaKeeper returns a keeper with an initialized, converged instance of db1, with the given local role, that
+	// should follow db "primary"
+	replicaKeeper := func(t testing.TB, localRole common.Role) (*PostgresKeeper, *fakePG, *cluster.DB) {
+		p, f, s := smKeeper(t)
+		db := smDB("db1", common.RoleReplica, cluster.ResyncDB)
+		s.cd = smClusterData(db)
+		p.dbLocalState = &DBLocalState{UID: db.UID, Generation: 1}
+		f.initialized, f.role = true, localRole
+		return p, f, db
+	}
+
 	var ctx context.Context
 
 	BeforeEach(func() {

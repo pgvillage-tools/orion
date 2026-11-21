@@ -26,23 +26,23 @@ import (
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
 )
 
-// statePG returns a keeper with an initialized instance on timeline 3 of system sys1
-func statePG(t testing.TB) (*PostgresKeeper, *fakePG, *fakeStore) {
-	p, f, s := smKeeper(t)
-	p.dbLocalState = &DBLocalState{UID: "db1", Generation: 4}
-	f.initialized = true
-	f.configParams = common.Parameters{"work_mem": "8MB", "port": "5432", "primary_conninfo": "host=x"}
-	f.syncStandbys = []string{common.OrionName("db2"), "external"}
-	f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 3, XLogPos: 1000}
-	f.timelines = []*pg.TimelineHistory{
-		{TimelineID: 1, SwitchPoint: 100, Reason: "a"},
-		{TimelineID: 2, SwitchPoint: 200, Reason: "b"},
-	}
-	f.olderWalFile = "000000030000000000000001"
-	return p, f, s
-}
-
 var _ = Describe("the PostgreSQL state", func() {
+	// statePG returns a keeper with an initialized instance on timeline 3 of system sys1
+	statePG := func(t testing.TB) (*PostgresKeeper, *fakePG, *fakeStore) {
+		p, f, s := smKeeper(t)
+		p.dbLocalState = &DBLocalState{UID: "db1", Generation: 4}
+		f.initialized = true
+		f.configParams = common.Parameters{"work_mem": "8MB", "port": "5432", "primary_conninfo": "host=x"}
+		f.syncStandbys = []string{common.OrionName("db2"), "external"}
+		f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 3, XLogPos: 1000}
+		f.timelines = []*pg.TimelineHistory{
+			{TimelineID: 1, SwitchPoint: 100, Reason: "a"},
+			{TimelineID: 2, SwitchPoint: 200, Reason: "b"},
+		}
+		f.olderWalFile = "000000030000000000000001"
+		return p, f, s
+	}
+
 	var ctx context.Context
 
 	BeforeEach(func() {
