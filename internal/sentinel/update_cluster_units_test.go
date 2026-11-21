@@ -168,7 +168,11 @@ var _ = Describe("updateProxySpec", func() {
 	expectProxy := func(proxy *cluster.Proxy, masterDBUID string, enabled []string, gen int64) {
 		GinkgoHelper()
 		Ω(proxy.Spec.MasterDBUID).To(Equal(masterDBUID))
-		Ω(proxy.Spec.EnabledProxies).To(Equal(enabled))
+		if enabled == nil {
+			Ω(proxy.Spec.EnabledProxies).To(BeNil())
+		} else {
+			Ω(proxy.Spec.EnabledProxies).To(Equal(enabled))
+		}
 		Ω(proxy.Generation).To(Equal(gen))
 	}
 
@@ -205,9 +209,8 @@ var _ = Describe("updateProxySpec", func() {
 				[]string{}, proxies(etGen2), []string{}, int64(etGen2)),
 			Entry("enables proxies that haven't converged yet",
 				[]string{}, proxies(etGen1, px1), []string{px1}, int64(etGen2+1)),
-			// nil and an empty list differ for reflect.DeepEqual, so a nil list bumps the generation once
-			Entry("bumps the generation once to replace no enabled proxies with an empty list",
-				nil, proxies(etGen2), []string{}, int64(etGen2+1)),
+			Entry("keeps the generation when no proxies were enabled (nil) and none are left",
+				nil, proxies(etGen2), nil, int64(etGen2)),
 		)
 
 		It("keeps the master in the proxy spec, also when another master is passed", func() {
@@ -291,11 +294,11 @@ var _ = Describe("removeUnsyncableDBs", func() {
 			}, []string{etD1, etD2, etD4}),
 	)
 
-	It("panics on a db in the new cluster data that the current one doesn't have", func() {
+	It("leaves a db that only the new cluster data has alone", func() {
 		cd := clusterData(olderWal7)
 		newcd := cd.DeepCopy()
 		newcd.DBs["db5"] = standby("db5", "keeper5", behindPos)
-		s := etSentinel(cd)
-		Ω(func() { s.removeUnsyncableDBs(quietCtx(), cd, newcd) }).To(Panic())
+		etSentinel(cd).removeUnsyncableDBs(quietCtx(), cd, newcd)
+		Ω(newcd.DBs).To(HaveKey("db5"))
 	})
 })

@@ -128,6 +128,9 @@ func etMaster(uid, keeperUID string, xlogPos uint64, followers ...string) *clust
 	}
 }
 
+// etStandby returns a healthy standby db of masterUID on keeperUID at xlogPos. Its generation (etGen1) is
+// cluster.InitialGeneration, which dbCanSync (and so removeUnsyncableDBs) treats as a db that is still initializing:
+// set a later Generation to test a standby that can't sync.
 func etStandby(uid, keeperUID, masterUID string, xlogPos uint64) *cluster.DB {
 	return &cluster.DB{
 		UID:        uid,

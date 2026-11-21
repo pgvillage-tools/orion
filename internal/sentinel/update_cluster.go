@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"time"
 
@@ -564,7 +565,8 @@ func (s *Sentinel) updateProxySpec(ctx context.Context, newcd *cluster.Data, pis
 			enabledProxies = append(enabledProxies, pi.UID)
 		}
 		sort.Strings(enabledProxies)
-		if !reflect.DeepEqual(newcd.Proxy.Spec.EnabledProxies, enabledProxies) {
+		// slices.Equal: no enabled proxies (nil) and an empty list are the same, so that's no change
+		if !slices.Equal(newcd.Proxy.Spec.EnabledProxies, enabledProxies) {
 			newcd.Proxy.Spec.EnabledProxies = enabledProxies
 			newcd.Proxy.Generation++
 		}
@@ -664,8 +666,9 @@ func (s *Sentinel) removeInvalidDBs(ctx context.Context, newcd *cluster.Data, wa
 func (s *Sentinel) removeUnsyncableDBs(ctx context.Context, cd, newcd *cluster.Data) {
 	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
 	toRemove := []*cluster.DB{}
-	for _, db := range newcd.DBs {
-		if s.dbCanSync(ctx, cd, db.UID) {
+	// judge the dbs of the current cluster data (dbCanSync looks them up there) that the new one still has
+	for _, db := range cd.DBs {
+		if _, ok := newcd.DBs[db.UID]; !ok || s.dbCanSync(ctx, cd, db.UID) {
 			continue
 		}
 		logger.Info().
