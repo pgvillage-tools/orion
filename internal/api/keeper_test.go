@@ -33,23 +33,6 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// keeperTestData returns cluster data with 3 keepers: keeper1 runs the primary (db1), keeper2 a standby (db2), and
-// keeper3 has no db
-func keeperTestData() *apiv1.Data {
-	initMode := apiv1.New
-	cd := apiv1.NewClusterData(&apiv1.Cluster{
-		UID:    "cluster1",
-		Spec:   &apiv1.Spec{InitMode: &initMode},
-		Status: apiv1.ClusterStatus{Master: "db1"},
-	})
-	for _, uid := range []string{"keeper1", "keeper2", "keeper3"} {
-		cd.Keepers[uid] = &apiv1.Keeper{UID: uid}
-	}
-	cd.DBs["db1"] = &apiv1.DB{UID: "db1", Spec: &apiv1.DBSpec{KeeperUID: "keeper1"}}
-	cd.DBs["db2"] = &apiv1.DB{UID: "db2", Spec: &apiv1.DBSpec{KeeperUID: "keeper2"}}
-	return cd
-}
-
 // sortedKeys returns the keys of m, sorted
 func sortedKeys[V any](m map[string]V) string {
 	keys := make([]string, 0, len(m))
@@ -63,6 +46,22 @@ func sortedKeys[V any](m map[string]V) string {
 var _ = Describe("DELETE /v1/cluster/keepers/{uid}", func() {
 	errBoom := errors.New("boom")
 	modified := fmt.Errorf("put: %w", consensus.ErrKeyModified)
+	// keeperTestData returns cluster data with 3 keepers: keeper1 runs the primary (db1), keeper2 a standby (db2),
+	// and keeper3 has no db
+	keeperTestData := func() *apiv1.Data {
+		initMode := apiv1.New
+		cd := apiv1.NewClusterData(&apiv1.Cluster{
+			UID:    "cluster1",
+			Spec:   &apiv1.Spec{InitMode: &initMode},
+			Status: apiv1.ClusterStatus{Master: "db1"},
+		})
+		for _, uid := range []string{"keeper1", "keeper2", "keeper3"} {
+			cd.Keepers[uid] = &apiv1.Keeper{UID: uid}
+		}
+		cd.DBs["db1"] = &apiv1.DB{UID: "db1", Spec: &apiv1.DBSpec{KeeperUID: "keeper1"}}
+		cd.DBs["db2"] = &apiv1.DB{UID: "db2", Spec: &apiv1.DBSpec{KeeperUID: "keeper2"}}
+		return cd
+	}
 
 	type deleteCase struct {
 		keeper    string
