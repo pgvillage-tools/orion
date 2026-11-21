@@ -16,58 +16,52 @@ package cmd
 
 import (
 	"context"
-	"strings"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
 
-func TestTheKubeResourceKindFlagIsGone(t *testing.T) {
-	c := &cobra.Command{Use: "test"}
-	AddCommonFlags(c, &store.CommonConfig{})
-	if c.PersistentFlags().Lookup("kube-resource-kind") != nil {
-		t.Error("--kube-resource-kind is still there")
-	}
-}
+var _ = Describe("AddCommonFlags", func() {
+	It("no longer has --kube-resource-kind", func() {
+		c := &cobra.Command{Use: "test"}
+		AddCommonFlags(c, &store.CommonConfig{})
+		Ω(c.PersistentFlags().Lookup("kube-resource-kind")).To(BeNil())
+	})
+})
 
-func TestSetupLogging(t *testing.T) {
+var _ = Describe("SetupLogging", func() {
+	// level returns the log level of component comp
 	level := func(comp logging.Component) zerolog.Level {
 		_, logger := logging.GetLogComponent(context.Background(), comp)
 		return logger.GetLevel()
 	}
-	setup := func(t *testing.T, args ...string) error {
-		t.Helper()
+	// setup sets up the logging from the common flags args
+	setup := func(args ...string) error {
 		cfg := &store.CommonConfig{}
 		c := &cobra.Command{Use: "test"}
 		AddCommonFlags(c, cfg)
-		if err := c.PersistentFlags().Parse(args); err != nil {
-			t.Fatal(err)
-		}
+		Ω(c.PersistentFlags().Parse(args)).To(Succeed())
 		return SetupLogging(c, cfg, false)
 	}
-	t.Cleanup(func() {
+
+	AfterEach(func() {
 		logging.SetStaticLevel("info")
 		logging.SetStaticComponents(nil)
 	})
 
-	if err := setup(t, "--log-level=warn", "--log-components=keeper=debug,kv-store=error"); err != nil {
-		t.Fatal(err)
-	}
-	for comp, want := range map[logging.Component]zerolog.Level{
-		logging.KeeperComponent:   zerolog.DebugLevel,
-		logging.StoreComponent:    zerolog.ErrorLevel,
-		logging.SentinelComponent: zerolog.WarnLevel,
-	} {
-		if got := level(comp); got != want {
-			t.Errorf("level of component %d = %v, want %v", comp, got, want)
-		}
-	}
+	It("sets the log level, and the levels of the components in --log-components", func() {
+		Ω(setup("--log-level=warn", "--log-components=keeper=debug,kv-store=error")).To(Succeed())
+		Ω(level(logging.KeeperComponent)).To(Equal(zerolog.DebugLevel))
+		Ω(level(logging.StoreComponent)).To(Equal(zerolog.ErrorLevel))
+		Ω(level(logging.SentinelComponent)).To(Equal(zerolog.WarnLevel), "the log level for the others")
+	})
 
-	if err := setup(t, "--log-components=keeper=loud"); err == nil ||
-		!strings.Contains(err.Error(), `invalid --log-components: unknown log level "loud"`) {
-		t.Errorf("expected an invalid level error, got %v", err)
-	}
-}
+	It("refuses an unknown level in --log-components", func() {
+		Ω(setup("--log-components=keeper=loud")).
+			To(MatchError(ContainSubstring(`invalid --log-components: unknown log level "loud"`)))
+	})
+})
