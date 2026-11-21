@@ -309,7 +309,7 @@ const (
 
 // smKeeper returns a keeper (uid keeper1, boot uuid boot1) with its local state in a temporary data dir, a fake
 // PostgreSQL manager and a fake store
-func smKeeper(t *testing.T) (*PostgresKeeper, *fakePG, *fakeStore) {
+func smKeeper(t testing.TB) (*PostgresKeeper, *fakePG, *fakeStore) {
 	t.Helper()
 	f := newFakePG()
 	s := &fakeStore{}

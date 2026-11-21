@@ -15,164 +15,158 @@
 package keeper
 
 import (
-	"reflect"
+	"context"
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/common"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
 )
 
-// statePG returns a keeper with an initialized instance on timeline 3 of system sys1
-func statePG(t *testing.T) (*PostgresKeeper, *fakePG, *fakeStore) {
-	p, f, s := smKeeper(t)
-	p.dbLocalState = &DBLocalState{UID: "db1", Generation: 4}
-	f.initialized = true
-	f.configParams = common.Parameters{"work_mem": "8MB", "port": "5432", "primary_conninfo": "host=x"}
-	f.syncStandbys = []string{common.OrionName("db2"), "external"}
-	f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 3, XLogPos: 1000}
-	f.timelines = []*pg.TimelineHistory{
-		{TimelineID: 1, SwitchPoint: 100, Reason: "a"},
-		{TimelineID: 2, SwitchPoint: 200, Reason: "b"},
-	}
-	f.olderWalFile = "000000030000000000000001"
-	return p, f, s
-}
-
-func TestGetPGState(t *testing.T) {
-	ctx := quietCtx()
-	p, _, _ := statePG(t)
-	got, err := p.GetPGState(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := &cluster.PostgresState{
-		UID:                 "db1",
-		Generation:          4,
-		ListenAddress:       "10.0.0.1",
-		Port:                "5432",
-		Healthy:             true,
-		SystemID:            "sys1",
-		TimelineID:          3,
-		XLogPos:             1000,
-		PGParameters:        common.Parameters{"work_mem": "8MB"},
-		SynchronousStandbys: []string{"db2"},
-		OlderWalFile:        "000000030000000000000001",
-		TimelinesHistory: cluster.PostgresTimelinesHistory{
+var _ = Describe("the PostgreSQL state", func() {
+	// statePG returns a keeper with an initialized instance on timeline 3 of system sys1
+	statePG := func(t testing.TB) (*PostgresKeeper, *fakePG, *fakeStore) {
+		p, f, s := smKeeper(t)
+		p.dbLocalState = &DBLocalState{UID: "db1", Generation: 4}
+		f.initialized = true
+		f.configParams = common.Parameters{"work_mem": "8MB", "port": "5432", "primary_conninfo": "host=x"}
+		f.syncStandbys = []string{common.OrionName("db2"), "external"}
+		f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 3, XLogPos: 1000}
+		f.timelines = []*pg.TimelineHistory{
 			{TimelineID: 1, SwitchPoint: 100, Reason: "a"},
 			{TimelineID: 2, SwitchPoint: 200, Reason: "b"},
-		},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("pg state = %+v\nwant %+v", got, want)
-	}
-
-	// without an older wal file the state is healthy still
-	p, f, _ := statePG(t)
-	f.errs["OlderWalFile"] = errFake
-	if got, err := p.GetPGState(ctx); err != nil || !got.Healthy || got.OlderWalFile != "" {
-		t.Errorf("without older wal file: %+v, %v", got, err)
-	}
-
-	// not initialized: only the local state
-	p, f, _ = statePG(t)
-	f.initialized = false
-	if got, err := p.GetPGState(ctx); err != nil || got.Healthy || got.UID != "db1" || got.SystemID != "" {
-		t.Errorf("not initialized: %+v, %v", got, err)
-	}
-}
-
-func TestGetPGStateErrors(t *testing.T) {
-	ctx := quietCtx()
-	p, f, _ := statePG(t)
-	f.errs["IsInitialized"] = errFake
-	if _, err := p.GetPGState(ctx); err == nil {
-		t.Error("no error when IsInitialized fails")
-	}
-
-	// the other failures give an unhealthy state, without an error
-	for _, method := range []string{"GetConfigFilePGParameters", "GetSyncStandbys", "GetSystemData",
-		"GetTimelinesHistory"} {
-		p, f, _ := statePG(t)
-		f.errs[method] = errFake
-		got, err := p.GetPGState(ctx)
-		if err != nil || got.Healthy || got.UID != "db1" {
-			t.Errorf("%s fails: %+v, %v", method, got, err)
 		}
-	}
-}
-
-func TestUpdatePGState(t *testing.T) {
-	ctx := quietCtx()
-	p, f, _ := statePG(t)
-	p.updatePGState(ctx)
-	last := p.getLastPGState(ctx)
-	if last == nil || !last.Healthy || last.SystemID != "sys1" {
-		t.Fatalf("last pg state = %+v", last)
-	}
-	// a copy
-	last.SystemID = "changed"
-	if p.getLastPGState(ctx).SystemID != "sys1" {
-		t.Error("getLastPGState returns the state itself, not a copy")
+		f.olderWalFile = "000000030000000000000001"
+		return p, f, s
 	}
 
-	f.errs["IsInitialized"] = errFake
-	p.updatePGState(ctx)
-	if last := p.getLastPGState(ctx); last.Healthy {
-		t.Errorf("last pg state after an error = %+v", last)
-	}
-}
+	var ctx context.Context
 
-func TestGetInSyncStandbys(t *testing.T) {
-	ctx := quietCtx()
-	p, f, _ := statePG(t)
-	f.syncStandbys = nil
-	if got, err := p.GetInSyncStandbys(ctx); err != nil || got == nil || len(got) != 0 {
-		t.Errorf("no sync standbys: %#v, %v", got, err)
-	}
-	f.errs["GetSyncStandbys"] = errFake
-	if _, err := p.GetInSyncStandbys(ctx); err == nil {
-		t.Error("no error")
-	}
-}
+	BeforeEach(func() {
+		ctx = quietCtx()
+	})
 
-func TestUpdateKeeperInfo(t *testing.T) {
-	ctx := quietCtx()
-	p, _, s := statePG(t)
+	Describe("GetPGState", func() {
+		It("reports the state of the instance", func() {
+			p, _, _ := statePG(GinkgoTB())
+			got, err := p.GetPGState(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(&cluster.PostgresState{
+				UID:                 "db1",
+				Generation:          4,
+				ListenAddress:       "10.0.0.1",
+				Port:                "5432",
+				Healthy:             true,
+				SystemID:            "sys1",
+				TimelineID:          3,
+				XLogPos:             1000,
+				PGParameters:        common.Parameters{"work_mem": "8MB"},
+				SynchronousStandbys: []string{"db2"},
+				OlderWalFile:        "000000030000000000000001",
+				TimelinesHistory: cluster.PostgresTimelinesHistory{
+					{TimelineID: 1, SwitchPoint: 100, Reason: "a"},
+					{TimelineID: 2, SwitchPoint: 200, Reason: "b"},
+				},
+			}))
+		})
+		It("is healthy still without an older wal file", func() {
+			p, f, _ := statePG(GinkgoTB())
+			f.errs["OlderWalFile"] = errFake
+			got, err := p.GetPGState(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Healthy).To(BeTrue())
+			Expect(got.OlderWalFile).To(BeEmpty())
+		})
+		It("has only the local state when not initialized", func() {
+			p, f, _ := statePG(GinkgoTB())
+			f.initialized = false
+			got, err := p.GetPGState(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Healthy).To(BeFalse())
+			Expect(got.UID).To(Equal("db1"))
+			Expect(got.SystemID).To(BeEmpty())
+		})
+		It("fails when IsInitialized fails", func() {
+			p, f, _ := statePG(GinkgoTB())
+			f.errs["IsInitialized"] = errFake
+			_, err := p.GetPGState(ctx)
+			Expect(err).To(HaveOccurred())
+		})
+		// the other failures give an unhealthy state, without an error
+		DescribeTable("is unhealthy, without an error, when a method fails",
+			func(method string) {
+				p, f, _ := statePG(GinkgoTB())
+				f.errs[method] = errFake
+				got, err := p.GetPGState(ctx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.Healthy).To(BeFalse())
+				Expect(got.UID).To(Equal("db1"))
+			},
+			Entry(nil, "GetConfigFilePGParameters"),
+			Entry(nil, "GetSyncStandbys"),
+			Entry(nil, "GetSystemData"),
+			Entry(nil, "GetTimelinesHistory"),
+		)
+	})
 
-	// without a cluster there is nothing to report
-	if err := p.updateKeeperInfo(ctx); err != nil || s.keeperInfo != nil {
-		t.Fatalf("keeper info without a cluster: %+v, %v", s.keeperInfo, err)
-	}
+	It("updatePGState keeps the last state, and getLastPGState returns a copy", func() {
+		p, f, _ := statePG(GinkgoTB())
+		p.updatePGState(ctx)
+		last := p.getLastPGState(ctx)
+		Expect(last).NotTo(BeNil())
+		Expect(last.Healthy).To(BeTrue())
+		Expect(last.SystemID).To(Equal("sys1"))
+		// a copy
+		last.SystemID = "changed"
+		Expect(p.getLastPGState(ctx).SystemID).To(Equal("sys1"),
+			"getLastPGState returns the state itself, not a copy")
 
-	p.keeperLocalState.ClusterUID = "cluster1"
-	p.sleepInterval = 5 * time.Second
-	p.canBeSynchronousReplica = p.canBeMaster
-	p.updatePGState(ctx)
-	if err := p.updateKeeperInfo(ctx); err != nil {
-		t.Fatal(err)
-	}
-	ki := s.keeperInfo
-	if ki == nil || ki.UID != testKeeperUID || ki.ClusterUID != "cluster1" || ki.BootUUID != testBootUUID ||
-		ki.InfoUID == "" {
-		t.Fatalf("keeper info = %+v", ki)
-	}
-	if ki.PostgresBinaryVersion != (cluster.PostgresBinaryVersion{Maj: 16, Min: 2}) {
-		t.Errorf("binary version = %+v", ki.PostgresBinaryVersion)
-	}
-	if ki.PostgresState == nil || ki.PostgresState.SystemID != "sys1" {
-		t.Errorf("pg state = %+v", ki.PostgresState)
-	}
-	if ki.CanBeMaster == nil || !*ki.CanBeMaster || ki.CanBeSynchronousReplica == nil {
-		t.Errorf("can be master %v, can be sync replica %v", ki.CanBeMaster, ki.CanBeSynchronousReplica)
-	}
-	if s.keeperInfoTTL != 5*time.Second {
-		t.Errorf("ttl = %v", s.keeperInfoTTL)
-	}
+		f.errs["IsInitialized"] = errFake
+		p.updatePGState(ctx)
+		Expect(p.getLastPGState(ctx).Healthy).To(BeFalse(), "last pg state after an error")
+	})
 
-	s.err = errFake
-	if err := p.updateKeeperInfo(ctx); err == nil {
-		t.Error("no error from the store")
-	}
-}
+	It("GetInSyncStandbys", func() {
+		p, f, _ := statePG(GinkgoTB())
+		f.syncStandbys = nil
+		got, err := p.GetInSyncStandbys(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).NotTo(BeNil())
+		Expect(got).To(BeEmpty())
+		f.errs["GetSyncStandbys"] = errFake
+		_, err = p.GetInSyncStandbys(ctx)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("updateKeeperInfo", func() {
+		p, _, s := statePG(GinkgoTB())
+
+		// without a cluster there is nothing to report
+		Expect(p.updateKeeperInfo(ctx)).To(Succeed())
+		Expect(s.keeperInfo).To(BeNil(), "keeper info without a cluster")
+
+		p.keeperLocalState.ClusterUID = "cluster1"
+		p.sleepInterval = 5 * time.Second
+		p.canBeSynchronousReplica = p.canBeMaster
+		p.updatePGState(ctx)
+		Expect(p.updateKeeperInfo(ctx)).To(Succeed())
+		ki := s.keeperInfo
+		Expect(ki).NotTo(BeNil())
+		Expect(ki.UID).To(Equal(testKeeperUID))
+		Expect(ki.ClusterUID).To(Equal("cluster1"))
+		Expect(ki.BootUUID).To(Equal(testBootUUID))
+		Expect(ki.InfoUID).NotTo(BeEmpty())
+		Expect(ki.PostgresBinaryVersion).To(Equal(cluster.PostgresBinaryVersion{Maj: 16, Min: 2}))
+		Expect(ki.PostgresState).NotTo(BeNil())
+		Expect(ki.PostgresState.SystemID).To(Equal("sys1"))
+		Expect(ki.CanBeMaster).To(HaveValue(BeTrue()))
+		Expect(ki.CanBeSynchronousReplica).NotTo(BeNil())
+		Expect(s.keeperInfoTTL).To(Equal(5 * time.Second))
+
+		s.err = errFake
+		Expect(p.updateKeeperInfo(ctx)).NotTo(Succeed(), "no error from the store")
+	})
+})
