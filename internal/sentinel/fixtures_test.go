@@ -1,0 +1,296 @@
+// Copyright 2026 PgVillage
+// Copyright 2015 Sorint.lab
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package sentinel
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/google/go-cmp/cmp"
+	"github.com/pgvillage-tools/orion/internal/common"
+	"github.com/pgvillage-tools/orion/internal/util"
+)
+
+const (
+	p1 = "param01"
+	v1 = "value01"
+	p2 = "param02"
+	v2 = "value02"
+
+	k1 = "keeper1"
+	k2 = "keeper2"
+	k3 = "keeper3"
+
+	c1 = "cluster1"
+
+	d1 = "db1"
+	d2 = "db2"
+	d3 = "db3"
+
+	g1 = 1
+	g2 = 2
+	g3 = 3
+	g4 = 4
+)
+
+// Fixtures for the focused election tests below. They build a cluster in the
+// Normal phase with db1 (on keeper1) as master and a configurable set of
+// standbys, all healthy and converged, so each test only has to change the
+// fields it is about.
+const (
+	etCluster = "cluster1"
+	etK1      = "keeper1"
+	etK2      = "keeper2"
+	etK3      = "keeper3"
+	etD1      = "db1"
+	etD2      = "db2"
+	etD3      = "db3"
+	etD4      = "db4"
+	etGen1    = 1
+	etGen2    = 2
+	etTL1     = 1
+	etTL2     = 2
+	etTL3     = 3
+)
+
+var curUID int
+
+var newCluster = cluster.New
+
+var now = time.Now()
+
+func testUIDFn() string {
+	curUID++
+	return fmt.Sprintf("%s%d", "db", curUID)
+}
+
+func testRandFn(_ int) int {
+	return 0
+}
+
+func testEqualCD(cd1, cd2 *cluster.Data) bool {
+	// ignore times
+	for _, cd := range []*cluster.Data{cd1, cd2} {
+		cd.Cluster.ChangeTime = time.Time{}
+		for _, k := range cd.Keepers {
+			k.ChangeTime = time.Time{}
+		}
+		for _, db := range cd.DBs {
+			db.ChangeTime = time.Time{}
+		}
+		cd.Proxy.ChangeTime = time.Time{}
+	}
+	return reflect.DeepEqual(cd1, cd2)
+}
+
+func etKeeper(uid string) *cluster.Keeper {
+	return &cluster.Keeper{
+		UID:    uid,
+		Spec:   &cluster.KeeperSpec{},
+		Status: cluster.KeeperStatus{Healthy: true, LastHealthyTime: now},
+	}
+}
+
+func etMaster(uid, keeperUID string, xlogPos uint64, followers ...string) *cluster.DB {
+	if followers == nil {
+		followers = []string{}
+	}
+	return &cluster.DB{
+		UID:        uid,
+		Generation: etGen1,
+		Spec: &cluster.DBSpec{
+			KeeperUID: keeperUID,
+			Role:      common.RolePrimary,
+			Followers: followers,
+		},
+		Status: cluster.DBStatus{
+			Healthy:           true,
+			CurrentGeneration: etGen1,
+			TimelineID:        etTL1,
+			XLogPos:           xlogPos,
+		},
+	}
+}
+
+func etStandby(uid, keeperUID, masterUID string, xlogPos uint64) *cluster.DB {
+	return &cluster.DB{
+		UID:        uid,
+		Generation: etGen1,
+		Spec: &cluster.DBSpec{
+			KeeperUID: keeperUID,
+			Role:      common.RoleReplica,
+			Followers: []string{},
+			FollowConfig: &cluster.FollowConfig{
+				Type:  cluster.FollowTypeInternal,
+				DBUID: masterUID,
+			},
+		},
+		Status: cluster.DBStatus{
+			Healthy:           true,
+			CurrentGeneration: etGen1,
+			TimelineID:        etTL1,
+			XLogPos:           xlogPos,
+		},
+	}
+}
+
+// etClusterData returns a Normal phase cluster with the given master and dbs.
+// A keeper is created for every db. Extra keepers without a db can be passed in
+// extraKeepers.
+func etClusterData(spec *cluster.Spec, masterUID string, dbs []*cluster.DB, extraKeepers ...string) *cluster.Data {
+	cd := &cluster.Data{
+		Cluster: &cluster.Cluster{
+			UID:        etCluster,
+			Generation: etGen1,
+			Spec:       spec,
+			Status: cluster.ClusterStatus{
+				CurrentGeneration: etGen1,
+				Phase:             cluster.Normal,
+				Master:            masterUID,
+			},
+		},
+		Keepers: cluster.Keepers{},
+		DBs:     cluster.DBs{},
+		Proxy: &cluster.Proxy{
+			Generation: etGen1,
+			Spec:       cluster.ProxySpec{MasterDBUID: masterUID, EnabledProxies: []string{}},
+		},
+	}
+	for _, db := range dbs {
+		cd.DBs[db.UID] = db
+		cd.Keepers[db.Spec.KeeperUID] = etKeeper(db.Spec.KeeperUID)
+	}
+	for _, k := range extraKeepers {
+		cd.Keepers[k] = etKeeper(k)
+	}
+	return cd
+}
+
+func etAsyncSpec() *cluster.Spec {
+	return &cluster.Spec{
+		ConvergenceTimeout: &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
+		InitTimeout:        &cluster.Duration{Duration: cluster.DefaultInitTimeout},
+		SyncTimeout:        &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
+	}
+}
+
+func etSyncSpec() *cluster.Spec {
+	spec := etAsyncSpec()
+	spec.SynchronousReplication = util.ToPtr(true)
+	return spec
+}
+
+// etSentinel returns a sentinel set up like the TestUpdateCluster loop does:
+// reproducible UIDs (continuing after the highest dbN in cd) and convergence
+// timers far in the past, so a db that has not converged counts as failed.
+func etSentinel(cd *cluster.Data) *Sentinel {
+	s := &Sentinel{
+		uid:                    "sentinel01",
+		UIDFn:                  testUIDFn,
+		RandFn:                 testRandFn,
+		keeperErrorTimers:      map[string]int64{},
+		dbErrorTimers:          map[string]int64{},
+		dbNotIncreasingXLogPos: map[string]int64{},
+		dbConvergenceInfos:     map[string]*DBConvergenceInfo{},
+		keeperInfoHistories:    KeeperInfoHistories{},
+	}
+	curUID = 0
+	for _, db := range cd.DBs {
+		uid, _ := strconv.Atoi(strings.TrimPrefix(db.UID, "db"))
+		if uid > curUID {
+			curUID = uid
+		}
+		s.dbConvergenceInfos[db.UID] = &DBConvergenceInfo{Generation: 0, Timer: int64(-1000 * time.Hour)}
+	}
+	return s
+}
+
+func etUpdateCluster(t *testing.T, cd *cluster.Data) *cluster.Data {
+	t.Helper()
+	s := etSentinel(cd)
+	outcd, err := s.updateCluster(context.Background(), cd, cluster.ProxiesInfo{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return outcd
+}
+
+func etUIDs(dbs []*cluster.DB) []string {
+	uids := []string{}
+	for _, db := range dbs {
+		uids = append(uids, db.UID)
+	}
+	return uids
+}
+
+// updateClusterCase is a case of the updateCluster table: cd goes in, outcd (or err) is expected
+type updateClusterCase struct {
+	cd    *cluster.Data
+	outcd *cluster.Data
+	err   error
+}
+
+// runUpdateClusterCases runs updateCluster on every case of tests and compares the result
+func runUpdateClusterCases(t *testing.T, tests []updateClusterCase) {
+	ctx := context.Background()
+
+	for i, tt := range tests {
+		s := &Sentinel{uid: "sentinel01", UIDFn: testUIDFn, RandFn: testRandFn,
+			dbConvergenceInfos: map[string]*DBConvergenceInfo{}}
+
+		// reset curUID func value to latest db uid
+		curUID = 0
+		for _, db := range tt.cd.DBs {
+			uid, _ := strconv.Atoi(strings.TrimPrefix(db.UID, "db"))
+			if uid > curUID {
+				curUID = uid
+			}
+		}
+
+		// Populate db convergence timers, these are populated with a negative
+		// timer to make them result like not converged.
+		for _, db := range tt.cd.DBs {
+			s.dbConvergenceInfos[db.UID] = &DBConvergenceInfo{Generation: 0, Timer: int64(-1000 * time.Hour)}
+		}
+
+		fmt.Printf("test #%d\n", i)
+		t.Logf("test #%d", i)
+
+		outcd, err := s.updateCluster(ctx, tt.cd, cluster.ProxiesInfo{})
+		if tt.err != nil {
+			if err == nil {
+				t.Errorf("got no error, wanted error: %v", tt.err)
+			} else if tt.err.Error() != err.Error() {
+				t.Errorf("got error: %v, wanted error: %v", err, tt.err)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			} else if !testEqualCD(outcd, tt.outcd) {
+				t.Errorf("wrong outcd: got:\n%s\nwant:\n%s", spew.Sdump(outcd), spew.Sdump(tt.outcd))
+				t.Errorf("mismatch (-want +got):\n%s", cmp.Diff(tt.outcd, outcd))
+			}
+		}
+	}
+}
