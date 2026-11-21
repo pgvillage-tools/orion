@@ -933,26 +933,43 @@ func (s *Sentinel) pruneSynchronousStandbys(ctx context.Context, newcd *cluster.
 		delete(synchronousStandbys, dbUID)
 	}
 
-	// Remove synchronous standbys in excess
+	// Remove synchronous standbys in excess: keep the best ones
 	if len(synchronousStandbys) > maxSynchronousStandbys {
-		rc := len(synchronousStandbys) - maxSynchronousStandbys
-		removedCount := 0
-		toRemove = map[string]struct{}{}
-		for dbUID := range synchronousStandbys {
-			if removedCount >= rc {
-				break
-			}
+		ranked := rankSynchronousStandbys(masterDB, goodStandbys, synchronousStandbys)
+		for _, dbUID := range ranked[maxSynchronousStandbys:] {
 			logger.Info().
 				Str(logMasterDB, masterDB.UID).
 				Str(logDB, dbUID).
 				Msg("removing synchronous standby in excess")
-			toRemove[dbUID] = struct{}{}
-			removedCount++
-		}
-		for dbUID := range toRemove {
 			delete(synchronousStandbys, dbUID)
 		}
 	}
+}
+
+// rankSynchronousStandbys returns the uids of the synchronous standbys, the ones to keep first: those the master
+// reports in sync, then the furthest along in the WAL, then by uid, so the order doesn't change from one check to the
+// next. All synchronous standbys must be in goodStandbys.
+func rankSynchronousStandbys(masterDB *cluster.DB, goodStandbys map[string]*cluster.DB,
+	synchronousStandbys map[string]struct{}) []string {
+	inSync := map[string]bool{}
+	for _, dbUID := range masterDB.Status.SynchronousStandbys {
+		inSync[dbUID] = true
+	}
+	ranked := make([]string, 0, len(synchronousStandbys))
+	for dbUID := range synchronousStandbys {
+		ranked = append(ranked, dbUID)
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		a, b := ranked[i], ranked[j]
+		if inSync[a] != inSync[b] {
+			return inSync[a]
+		}
+		if pa, pb := goodStandbys[a].Status.XLogPos, goodStandbys[b].Status.XLogPos; pa != pb {
+			return pa > pb
+		}
+		return a < b
+	})
+	return ranked
 }
 
 // addSynchronousStandbys adds the best standbys up to maxSynchronousStandbys, and previous synchronous standbys up to

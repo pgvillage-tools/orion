@@ -128,14 +128,42 @@ var _ = Describe("pruneSynchronousStandbys", func() {
 			[]string{etD2}, []string{etD2, etD3, etD4}, nil, 3, []string{etD2}),
 	)
 
-	It("removes any of the good standbys in excess of the maximum", func() {
-		sync := []string{etD2, etD3, etD4}
-		got := prune(sync, sync, nil, 1)
-		Ω(got).To(HaveLen(1))
-		for uid := range got {
-			Ω(sync).To(ContainElement(uid))
-		}
-	})
+	// trim runs pruneSynchronousStandbys on synchronous standbys db2, db3 and db4, all good, at the WAL positions in
+	// pos, with inSync the ones the master reports in sync, and a maximum of maxSync
+	trim := func(pos map[string]uint64, inSync []string, maxSync int) map[string]struct{} {
+		GinkgoHelper()
+		cd := etClusterData(etSyncSpec(), etD1, []*cluster.DB{
+			etMaster(etD1, etK1, 0, etD2, etD3, etD4),
+			etStandby(etD2, etK2, etD1, pos[etD2]),
+			etStandby(etD3, etK3, etD1, pos[etD3]),
+			etStandby(etD4, etK4, etD1, pos[etD4]),
+		})
+		master := cd.DBs[etD1]
+		master.Status.SynchronousStandbys = inSync
+		goodStandbys := map[string]*cluster.DB{etD2: cd.DBs[etD2], etD3: cd.DBs[etD3], etD4: cd.DBs[etD4]}
+		synchronousStandbys := set(etD2, etD3, etD4)
+		etSentinel(cd).pruneSynchronousStandbys(quietCtx(), cd, master, goodStandbys, synchronousStandbys, maxSync)
+		return synchronousStandbys
+	}
+
+	DescribeTable("the synchronous standbys it keeps when there are too many",
+		func(pos map[string]uint64, inSync []string, maxSync int, want []string) {
+			// the same on every run: not dependent on map order
+			for range 20 {
+				Ω(trim(pos, inSync, maxSync)).To(Equal(set(want...)))
+			}
+		},
+		Entry("keeps the ones the master reports in sync, also when another one is further along",
+			map[string]uint64{etD2: 100, etD3: 200, etD4: 300}, []string{etD2, etD3}, 2, []string{etD2, etD3}),
+		Entry("keeps the furthest along among the ones in sync",
+			map[string]uint64{etD2: 100, etD3: 200, etD4: 300}, []string{etD2, etD3, etD4}, 1, []string{etD4}),
+		Entry("keeps the furthest along when none is in sync",
+			map[string]uint64{etD2: 300, etD3: 200, etD4: 100}, nil, 2, []string{etD2, etD3}),
+		Entry("keeps the in sync one, then the furthest along",
+			map[string]uint64{etD2: 100, etD3: 200, etD4: 300}, []string{etD2}, 2, []string{etD2, etD4}),
+		Entry("keeps the lowest uids when the rest is equal",
+			map[string]uint64{}, nil, 2, []string{etD2, etD3}),
+	)
 })
 
 var _ = Describe("updateProxySpec", func() {
