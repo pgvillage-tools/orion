@@ -26,24 +26,6 @@ import (
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
-// kubeconfig is a kubeconfig for a server that isn't there: the kubernetes clients only connect on their first request
-const kubeconfig = `apiVersion: v1
-kind: Config
-clusters:
-- name: c
-  cluster:
-    server: https://127.0.0.1:1
-users:
-- name: u
-contexts:
-- name: c
-  context:
-    cluster: c
-    user: u
-    namespace: orion
-current-context: c
-`
-
 var _ = Describe("CheckCommonConfig", func() {
 	DescribeTable("accepts the supported store backends",
 		func(backend string) {
@@ -73,6 +55,25 @@ var _ = Describe("CheckCommonConfig", func() {
 })
 
 var _ = Describe("the store and the election", func() {
+	// kubeconfig is a kubeconfig for a server that isn't there: the kubernetes clients only connect on their first
+	// request
+	const kubeconfig = `apiVersion: v1
+kind: Config
+clusters:
+- name: c
+  cluster:
+    server: https://127.0.0.1:1
+users:
+- name: u
+contexts:
+- name: c
+  context:
+    cluster: c
+    user: u
+    namespace: orion
+current-context: c
+`
+
 	var (
 		ctx  context.Context
 		etcd *CommonConfig
