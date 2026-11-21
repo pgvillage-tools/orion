@@ -17,7 +17,6 @@ package sentinel
 import (
 	"context"
 	"errors"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -231,374 +230,63 @@ var _ = Describe("updateCluster in the Initializing phase", func() {
 		Entry("of an existing cluster", cluster.ExistingCluster),
 		Entry("of a PITR cluster", cluster.PITR),
 	)
-})
 
-var _ = DescribeTable("updateCluster in the Initializing phase (#0-#3)",
-	checkUpdateCluster,
-	// Init phase, also test dbSpec parameters copied from clusterSpec.
-	Entry("#0 cluster initialization, no keepers", updateClusterCase{
-		cd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:     &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:            &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:            &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					RequestTimeout:         &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-					MaxStandbys:            util.ToPtr(cluster.DefaultMaxStandbys * 2),
-					MaxStandbysPerSender:   util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					AdditionalWalSenders:   util.ToPtr(uint16(cluster.DefaultAdditionalWalSenders) * 2),
-					SynchronousReplication: util.ToPtr(true),
-					UsePgrewind:            util.ToPtr(true),
-					PGParameters:           cluster.PGParameters{p1: v1, p2: v2},
-					InitMode:               &newCluster,
-					MergePgParameters:      util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-				},
-			},
-			Keepers: cluster.Keepers{},
-			DBs:     cluster.DBs{},
-			Proxy:   &cluster.Proxy{},
-		},
-		outcd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:     &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:            &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:            &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					RequestTimeout:         &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-					MaxStandbys:            util.ToPtr(cluster.DefaultMaxStandbys * 2),
-					MaxStandbysPerSender:   util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					AdditionalWalSenders:   util.ToPtr(uint16(cluster.DefaultAdditionalWalSenders) * 2),
-					SynchronousReplication: util.ToPtr(true),
-					UsePgrewind:            util.ToPtr(true),
-					PGParameters:           cluster.PGParameters{p1: v1, p2: v2},
-					InitMode:               &newCluster,
-					MergePgParameters:      util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-				},
-			},
-			Keepers: cluster.Keepers{},
-			DBs:     cluster.DBs{},
-			Proxy:   &cluster.Proxy{},
-		},
-		err: errors.New("cannot choose initial master: no keepers registered"),
-	}),
-	Entry("#1 cluster initialization, one keeper", updateClusterCase{
-		cd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:     &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:            &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:            &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					RequestTimeout:         &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-					MaxStandbys:            util.ToPtr(cluster.DefaultMaxStandbys * 2),
-					MaxStandbysPerSender:   util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					AdditionalWalSenders:   util.ToPtr(uint16(cluster.DefaultAdditionalWalSenders) * 2),
-					SynchronousReplication: util.ToPtr(true),
-					UsePgrewind:            util.ToPtr(true),
-					PGParameters:           cluster.PGParameters{p1: v1, p2: v2},
-					InitMode:               &newCluster,
-					MergePgParameters:      util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-				},
-			},
-			Keepers: cluster.Keepers{
-				k1: &cluster.Keeper{
-					UID:  k1,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-			},
-			DBs:   cluster.DBs{},
-			Proxy: &cluster.Proxy{},
-		},
-		outcd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:     &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:            &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:            &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					RequestTimeout:         &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-					MaxStandbys:            util.ToPtr(cluster.DefaultMaxStandbys * 2),
-					MaxStandbysPerSender:   util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					AdditionalWalSenders:   util.ToPtr(uint16(cluster.DefaultAdditionalWalSenders) * 2),
-					SynchronousReplication: util.ToPtr(true),
-					UsePgrewind:            util.ToPtr(true),
-					PGParameters:           cluster.PGParameters{p1: v1, p2: v2},
-					InitMode:               &newCluster,
-					MergePgParameters:      util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-					Master:            d1,
-				},
-			},
-			Keepers: cluster.Keepers{
-				k1: &cluster.Keeper{
-					UID:  k1,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-			},
-			DBs: cluster.DBs{
-				d1: &cluster.DB{
-					UID:        d1,
-					Generation: g1,
-					ChangeTime: time.Time{},
-					Spec: &cluster.DBSpec{
-						KeeperUID:              k1,
-						RequestTimeout:         cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-						MaxStandbys:            cluster.DefaultMaxStandbys * 2,
-						AdditionalWalSenders:   cluster.DefaultAdditionalWalSenders * 2,
-						SynchronousReplication: false,
-						UsePgrewind:            true,
-						// revive:disable-next-line
-						PGParameters:                cluster.PGParameters{p1: v1, p2: v2},
-						InitMode:                    cluster.NewDB,
-						Role:                        common.RolePrimary,
-						Followers:                   []string{},
-						IncludeConfig:               true,
-						SynchronousStandbys:         nil,
-						ExternalSynchronousStandbys: nil,
-					},
-				},
-			},
-			Proxy: &cluster.Proxy{},
-		},
-	}),
-	Entry("#2 cluster initialization, more than one keeper, the first will be chosen to be the new "+
-		"master.", updateClusterCase{
-		cd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:     &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:            &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:            &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					RequestTimeout:         &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-					MaxStandbys:            util.ToPtr(cluster.DefaultMaxStandbys * 2),
-					MaxStandbysPerSender:   util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					SynchronousReplication: util.ToPtr(true),
-					UsePgrewind:            util.ToPtr(true),
-					PGParameters:           cluster.PGParameters{p1: v1, p2: v2},
-					InitMode:               &newCluster,
-					MergePgParameters:      util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-				},
-			},
-			Keepers: cluster.Keepers{
-				k1: &cluster.Keeper{
-					UID:  k1,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-				k2: &cluster.Keeper{
-					UID:  k2,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-			},
-			DBs:   cluster.DBs{},
-			Proxy: &cluster.Proxy{},
-		},
-		outcd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:     &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:            &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:            &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					RequestTimeout:         &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-					MaxStandbys:            util.ToPtr(cluster.DefaultMaxStandbys * 2),
-					SynchronousReplication: util.ToPtr(true),
-					MaxStandbysPerSender:   util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					UsePgrewind:            util.ToPtr(true),
-					PGParameters:           cluster.PGParameters{p1: v1, p2: v2},
-					InitMode:               &newCluster,
-					MergePgParameters:      util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-					Master:            d1,
-				},
-			},
-			Keepers: cluster.Keepers{
-				k1: &cluster.Keeper{
-					UID:  k1,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-				k2: &cluster.Keeper{
-					UID:  k2,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-			},
-			DBs: cluster.DBs{
-				d1: &cluster.DB{
-					UID:        d1,
-					Generation: g1,
-					ChangeTime: time.Time{},
-					Spec: &cluster.DBSpec{
-						KeeperUID:              k1,
-						RequestTimeout:         cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2},
-						MaxStandbys:            cluster.DefaultMaxStandbys * 2,
-						AdditionalWalSenders:   cluster.DefaultAdditionalWalSenders,
-						SynchronousReplication: false,
-						UsePgrewind:            true,
-						PGParameters: cluster.PGParameters{
-							p1: v1,
-							p2: v2,
-						},
-						InitMode:                    cluster.NewDB,
-						Role:                        common.RolePrimary,
-						Followers:                   []string{},
-						IncludeConfig:               true,
-						SynchronousStandbys:         nil,
-						ExternalSynchronousStandbys: nil,
-					},
-				},
-			},
-			Proxy: &cluster.Proxy{},
-		},
-	}),
-	Entry("#3 cluster initialization, keeper initialization failed", updateClusterCase{
-		cd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:   &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:          &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:          &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					MaxStandbysPerSender: util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					InitMode:             &newCluster,
-					MergePgParameters:    util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-					Master:            d1,
-				},
-			},
-			Keepers: cluster.Keepers{
-				k1: &cluster.Keeper{
-					UID:  k1,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-				k2: &cluster.Keeper{
-					UID:  k2,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-			},
-			DBs: cluster.DBs{
-				d1: &cluster.DB{
-					UID:        d1,
-					Generation: g1,
-					ChangeTime: time.Time{},
-					Spec: &cluster.DBSpec{
-						KeeperUID:                   k1,
-						InitMode:                    cluster.NewDB,
-						SynchronousReplication:      false,
-						Role:                        common.RolePrimary,
-						Followers:                   []string{},
-						SynchronousStandbys:         nil,
-						ExternalSynchronousStandbys: nil,
-					},
-					Status: cluster.DBStatus{
-						CurrentGeneration: 0,
-					},
-				},
-			},
-			Proxy: &cluster.Proxy{},
-		},
-		outcd: &cluster.Data{
-			Cluster: &cluster.Cluster{
-				UID:        c1,
-				Generation: g1,
-				Spec: &cluster.Spec{
-					ConvergenceTimeout:   &cluster.Duration{Duration: cluster.DefaultConvergenceTimeout},
-					InitTimeout:          &cluster.Duration{Duration: cluster.DefaultInitTimeout},
-					SyncTimeout:          &cluster.Duration{Duration: cluster.DefaultSyncTimeout},
-					MaxStandbysPerSender: util.ToPtr(cluster.DefaultMaxStandbysPerSender),
-					InitMode:             &newCluster,
-					MergePgParameters:    util.ToPtr(true),
-				},
-				Status: cluster.ClusterStatus{
-					CurrentGeneration: g1,
-					Phase:             cluster.Initializing,
-				},
-			},
-			Keepers: cluster.Keepers{
-				k1: &cluster.Keeper{
-					UID:  k1,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-				k2: &cluster.Keeper{
-					UID:  k2,
-					Spec: &cluster.KeeperSpec{},
-					Status: cluster.KeeperStatus{
-						Healthy:         true,
-						LastHealthyTime: now,
-					},
-				},
-			},
-			DBs:   cluster.DBs{},
-			Proxy: &cluster.Proxy{},
-		},
-	}),
-)
+	// withNewInit sets the init mode of spec to a new cluster, merging the parameters of initdb, and returns spec
+	withNewInit := func(spec *cluster.Spec) *cluster.Spec {
+		spec.InitMode = util.ToPtr(cluster.New)
+		spec.MergePgParameters = util.ToPtr(true)
+		return spec
+	}
+
+	// tableInitCD returns an Initializing cluster with spec, master, the keepers and no dbs nor proxy spec
+	tableInitCD := func(spec *cluster.Spec, master string, keepers ...string) *cluster.Data {
+		cd := etClusterData(spec, master, nil, keepers...)
+		cd.Cluster.Status.Phase = cluster.Initializing
+		cd.Proxy = &cluster.Proxy{}
+		return cd
+	}
+
+	// createdDB returns db1 on keeper1 as the sentinel creates it to initialize a cluster of etOverridingSpec
+	createdDB := func() *cluster.DB {
+		db := etOverridden(etTableMaster(d1, k1))
+		db.Spec.InitMode = cluster.NewDB
+		db.Spec.IncludeConfig = true
+		db.Status = cluster.DBStatus{}
+		return db
+	}
+
+	DescribeTable("(#0-#3)",
+		checkUpdateCluster,
+		// Init phase, also test dbSpec parameters copied from clusterSpec.
+		Entry("#0 cluster initialization, no keepers", func() updateClusterCase {
+			cd := func() *cluster.Data { return tableInitCD(withNewInit(etOverridingSpec()), "") }
+			return updateClusterCase{cd: cd(), outcd: cd(), err: errors.New(noKeepersErr)}
+		}()),
+		Entry("#1 cluster initialization, one keeper", func() updateClusterCase {
+			outcd := tableInitCD(withNewInit(etOverridingSpec()), d1, k1)
+			outcd.DBs[d1] = createdDB()
+			return updateClusterCase{cd: tableInitCD(withNewInit(etOverridingSpec()), "", k1), outcd: outcd}
+		}()),
+		Entry("#2 cluster initialization, more than one keeper, the first will be chosen to be the new "+
+			"master.", func() updateClusterCase {
+			spec := func() *cluster.Spec {
+				spec := withNewInit(etOverridingSpec())
+				spec.AdditionalWalSenders = nil
+				return spec
+			}
+			outcd := tableInitCD(spec(), d1, k1, k2)
+			outcd.DBs[d1] = createdDB()
+			outcd.DBs[d1].Spec.AdditionalWalSenders = cluster.DefaultAdditionalWalSenders
+			return updateClusterCase{cd: tableInitCD(spec(), "", k1, k2), outcd: outcd}
+		}()),
+		Entry("#3 cluster initialization, keeper initialization failed", func() updateClusterCase {
+			// db1 was chosen to initialize the cluster, but failed to converge
+			cd := tableInitCD(withNewInit(etTableSpec()), d1, k1, k2)
+			db := etMaster(d1, k1, 0)
+			db.Spec.InitMode = cluster.NewDB
+			db.Status = cluster.DBStatus{}
+			cd.DBs[d1] = db
+			return updateClusterCase{cd: cd, outcd: tableInitCD(withNewInit(etTableSpec()), "", k1, k2)}
+		}()),
+	)
+})

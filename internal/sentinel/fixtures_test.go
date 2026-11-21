@@ -32,6 +32,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
+// Parameters, keepers, dbs and generations of the updateCluster table cases
 const (
 	p1 = "param01"
 	v1 = "value01"
@@ -42,16 +43,12 @@ const (
 	k2 = "keeper2"
 	k3 = "keeper3"
 
-	c1 = "cluster1"
-
 	d1 = "db1"
 	d2 = "db2"
 	d3 = "db3"
 
-	g1 = 1
 	g2 = 2
 	g3 = 3
-	g4 = 4
 )
 
 // Fixtures for the focused election tests. They build a cluster in the
@@ -75,8 +72,6 @@ const (
 )
 
 var curUID int
-
-var newCluster = cluster.New
 
 var now = time.Now()
 
@@ -199,6 +194,110 @@ func etSyncSpec() *cluster.Spec {
 	spec := etAsyncSpec()
 	spec.SynchronousReplication = util.ToPtr(true)
 	return spec
+}
+
+// etTableSpec returns the cluster spec of the updateCluster table cases: etAsyncSpec with the default
+// MaxStandbysPerSender
+func etTableSpec() *cluster.Spec {
+	spec := etAsyncSpec()
+	spec.MaxStandbysPerSender = util.ToPtr(cluster.DefaultMaxStandbysPerSender)
+	return spec
+}
+
+// etTableSyncSpec returns etTableSpec with synchronous replication
+func etTableSyncSpec() *cluster.Spec {
+	spec := etTableSpec()
+	spec.SynchronousReplication = util.ToPtr(true)
+	return spec
+}
+
+// etOverridingSpec returns etTableSpec overriding the db spec defaults: doubled request timeout, max standbys and
+// additional wal senders, synchronous replication, pg_rewind and the parameters p1 and p2
+func etOverridingSpec() *cluster.Spec {
+	spec := etTableSyncSpec()
+	spec.RequestTimeout = &cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2}
+	spec.MaxStandbys = util.ToPtr(cluster.DefaultMaxStandbys * 2)
+	spec.AdditionalWalSenders = util.ToPtr(uint16(cluster.DefaultAdditionalWalSenders) * 2)
+	spec.UsePgrewind = util.ToPtr(true)
+	spec.PGParameters = cluster.PGParameters{p1: v1, p2: v2}
+	return spec
+}
+
+// etTableDB gives db (of etMaster or etStandby) the db spec defaults of etTableSpec and no timeline, and returns it
+func etTableDB(db *cluster.DB) *cluster.DB {
+	db.Spec.RequestTimeout = cluster.Duration{Duration: cluster.DefaultRequestTimeout}
+	db.Spec.MaxStandbys = cluster.DefaultMaxStandbys
+	db.Spec.AdditionalWalSenders = cluster.DefaultAdditionalWalSenders
+	db.Status.TimelineID = 0
+	return db
+}
+
+// etOverridden gives db the db spec values of etOverridingSpec but synchronous replication, and returns it
+func etOverridden(db *cluster.DB) *cluster.DB {
+	db.Spec.RequestTimeout = cluster.Duration{Duration: cluster.DefaultRequestTimeout * 2}
+	db.Spec.MaxStandbys = cluster.DefaultMaxStandbys * 2
+	db.Spec.AdditionalWalSenders = cluster.DefaultAdditionalWalSenders * 2
+	db.Spec.UsePgrewind = true
+	db.Spec.PGParameters = cluster.PGParameters{p1: v1, p2: v2}
+	return db
+}
+
+// etTableMaster returns a healthy master of the updateCluster table cases, converged to generation 1
+func etTableMaster(uid, keeperUID string, followers ...string) *cluster.DB {
+	return etTableDB(etMaster(uid, keeperUID, 0, followers...))
+}
+
+// etTableStandby returns a healthy standby of the updateCluster table cases, converged to generation 1
+func etTableStandby(uid, keeperUID, masterUID string) *cluster.DB {
+	return etTableDB(etStandby(uid, keeperUID, masterUID, 0))
+}
+
+// etTableCluster returns a Normal phase cluster with spec, master db1 on keeper1 and its standbys (dbN on keeperN),
+// of etTableMaster and etTableStandby
+func etTableCluster(spec *cluster.Spec, standbys ...string) *cluster.Data {
+	dbs := []*cluster.DB{etTableMaster(d1, k1, standbys...)}
+	for _, uid := range standbys {
+		dbs = append(dbs, etTableStandby(uid, "keeper"+strings.TrimPrefix(uid, "db"), d1))
+	}
+	return etClusterData(spec, d1, dbs)
+}
+
+// etInitModeNone sets the init mode of all dbs of cd to NoDB, and returns cd
+func etInitModeNone(cd *cluster.Data) *cluster.Data {
+	for _, db := range cd.DBs {
+		db.Spec.InitMode = cluster.NoDB
+	}
+	return cd
+}
+
+// etSyncStandbys enables synchronous replication on db, with standbys and no external synchronous standbys, and
+// returns db
+func etSyncStandbys(db *cluster.DB, standbys ...string) *cluster.DB {
+	if standbys == nil {
+		standbys = []string{}
+	}
+	db.Spec.SynchronousReplication = true
+	db.Spec.SynchronousStandbys = standbys
+	db.Spec.ExternalSynchronousStandbys = []string{}
+	return db
+}
+
+// etElected changes cd as electing newMaster does: the old master and newMaster go to a new generation without
+// followers, newMaster becomes a primary and the master of the cluster, and the proxy (at a new generation) points to
+// no db until it converged
+func etElected(cd *cluster.Data, newMaster string) *cluster.Data {
+	old := cd.DBs[cd.Cluster.Status.Master]
+	old.Generation++
+	old.Spec.Followers = []string{}
+	db := cd.DBs[newMaster]
+	db.Generation++
+	db.Spec.Role = common.RolePrimary
+	db.Spec.FollowConfig = nil
+	db.Spec.Followers = []string{}
+	cd.Cluster.Status.Master = newMaster
+	cd.Proxy.Generation++
+	cd.Proxy.Spec.MasterDBUID = ""
+	return cd
 }
 
 // etSentinel returns a sentinel set up like checkUpdateCluster does:
