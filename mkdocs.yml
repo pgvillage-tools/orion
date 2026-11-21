@@ -91,3 +91,4 @@ nav:
   - Operations:
       - Point in time recovery: operations/pitr.md
       - Standby cluster: operations/standby-cluster.md
+      - Standby resync: operations/resync.md
