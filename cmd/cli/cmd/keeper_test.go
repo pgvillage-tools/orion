@@ -23,16 +23,7 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-const (
-	failKeeper1Path = "/v1/cluster/keepers/keeper1/actions/fail"
-	keeper1Path     = "/v1/cluster/keepers/keeper1"
-	promotePath     = "/v1/cluster/actions/promote"
-)
-
-var (
-	failKeeperRoute   = endpoints.FailKeeperEndPoint.Route(endpoints.MethodPost)
-	removeKeeperRoute = endpoints.KeeperEndPoint.Route(endpoints.MethodDelete)
-)
+var removeKeeperRoute = endpoints.KeeperEndPoint.Route(endpoints.MethodDelete)
 
 // expectOnlyRequest fails the spec unless api received one request, with method to path
 func expectOnlyRequest(api *fakeAPI, method, path string) {
@@ -43,19 +34,26 @@ func expectOnlyRequest(api *fakeAPI, method, path string) {
 	})), "expected one %s of %s", method, path)
 }
 
-// keeperArgsEntries returns an entry for failkeeper and removekeeper with no and with two keepers
-func keeperArgsEntries() []TableEntry {
-	var entries []TableEntry
-	for _, command := range []string{"failkeeper", "removekeeper"} {
-		entries = append(entries,
-			Entry(command+" no keeper", command, nil, "keeper uid required"),
-			Entry(command+" two keepers", command, []string{"keeper1", "keeper2"}, "too many arguments"),
-		)
-	}
-	return entries
-}
-
 var _ = Describe("keeper commands", func() {
+	const (
+		failKeeper1Path = "/v1/cluster/keepers/keeper1/actions/fail"
+		keeper1Path     = "/v1/cluster/keepers/keeper1"
+	)
+
+	failKeeperRoute := endpoints.FailKeeperEndPoint.Route(endpoints.MethodPost)
+
+	// keeperArgsEntries returns an entry for failkeeper and removekeeper with no and with two keepers
+	keeperArgsEntries := func() []TableEntry {
+		var entries []TableEntry
+		for _, command := range []string{"failkeeper", "removekeeper"} {
+			entries = append(entries,
+				Entry(command+" no keeper", command, nil, "keeper uid required"),
+				Entry(command+" two keepers", command, []string{"keeper1", "keeper2"}, "too many arguments"),
+			)
+		}
+		return entries
+	}
+
 	var api *fakeAPI
 
 	BeforeEach(func() {
@@ -130,6 +128,8 @@ var _ = Describe("keeper commands", func() {
 })
 
 var _ = Describe("promote", func() {
+	const promotePath = "/v1/cluster/actions/promote"
+
 	var api *fakeAPI
 
 	BeforeEach(func() {

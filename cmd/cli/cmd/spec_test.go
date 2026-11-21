@@ -29,41 +29,17 @@ import (
 
 const specPath = "/v1/cluster/spec"
 
-// handleSpec lets api answer GET /v1/cluster/spec with spec and ETag "abc"
-func handleSpec(api *fakeAPI, spec string) {
-	api.handle(endpoints.ClusterSpecEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("ETag", `"abc"`)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(spec))
-	})
-}
-
-// handleSpecUpdates lets api accept PUT and PATCH of /v1/cluster/spec
-func handleSpecUpdates(api *fakeAPI) {
-	for _, method := range []endpoints.Method{endpoints.MethodPut, endpoints.MethodPatch} {
-		api.handle(endpoints.ClusterSpecEndPoint.Route(method), accepted)
-	}
-}
-
-// expectSpecUpdate fails the spec unless api got one method request of the spec, and returns it
-func expectSpecUpdate(api *fakeAPI, method string) recordedRequest {
-	GinkgoHelper()
-	reqs := api.requests()
-	Ω(reqs).To(HaveLen(1), "expected one %s of %s, got %v", method, specPath, reqs)
-	Ω(reqs[0].Method).To(Equal(method))
-	Ω(reqs[0].Path).To(Equal(specPath))
-	return reqs[0]
-}
-
-// expectMaxStandbys fails the spec unless req has a spec with maxStandbys expected
-func expectMaxStandbys(req recordedRequest, expected uint16) {
-	GinkgoHelper()
-	var spec apiv1.Spec
-	Ω(json.Unmarshal([]byte(req.Body), &spec)).To(Succeed())
-	Ω(spec.MaxStandbys).To(HaveValue(Equal(expected)), "expected maxStandbys %d, got %s", expected, req.Body)
-}
-
 var _ = Describe("spec", func() {
+	// handleSpec lets api answer GET /v1/cluster/spec with spec and ETag "abc"
+	handleSpec := func(api *fakeAPI, spec string) {
+		api.handle(endpoints.ClusterSpecEndPoint.Route(endpoints.MethodGet),
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("ETag", `"abc"`)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(spec))
+			})
+	}
+
 	var api *fakeAPI
 
 	BeforeEach(func() {
@@ -105,6 +81,31 @@ var _ = Describe("spec", func() {
 })
 
 var _ = Describe("update", func() {
+	// handleSpecUpdates lets api accept PUT and PATCH of /v1/cluster/spec
+	handleSpecUpdates := func(api *fakeAPI) {
+		for _, method := range []endpoints.Method{endpoints.MethodPut, endpoints.MethodPatch} {
+			api.handle(endpoints.ClusterSpecEndPoint.Route(method), accepted)
+		}
+	}
+
+	// expectSpecUpdate fails the spec unless api got one method request of the spec, and returns it
+	expectSpecUpdate := func(api *fakeAPI, method string) recordedRequest {
+		GinkgoHelper()
+		reqs := api.requests()
+		Ω(reqs).To(HaveLen(1), "expected one %s of %s, got %v", method, specPath, reqs)
+		Ω(reqs[0].Method).To(Equal(method))
+		Ω(reqs[0].Path).To(Equal(specPath))
+		return reqs[0]
+	}
+
+	// expectMaxStandbys fails the spec unless req has a spec with maxStandbys expected
+	expectMaxStandbys := func(req recordedRequest, expected uint16) {
+		GinkgoHelper()
+		var spec apiv1.Spec
+		Ω(json.Unmarshal([]byte(req.Body), &spec)).To(Succeed())
+		Ω(spec.MaxStandbys).To(HaveValue(Equal(expected)), "expected maxStandbys %d, got %s", expected, req.Body)
+	}
+
 	var api *fakeAPI
 
 	BeforeEach(func() {

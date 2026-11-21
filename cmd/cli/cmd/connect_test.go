@@ -27,26 +27,14 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// handleWhoAmI lets api answer GET /v1/whoami with the identity of the cli
-func handleWhoAmI(api *fakeAPI) {
-	api.handle(endpoints.WhoAmIEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, endpoints.WhoAmIResponse{Name: "orion-cli", Method: "certificate"}, "")
-	})
-}
-
-// apiCommandEntries returns an entry for every command that uses the api
-func apiCommandEntries() []TableEntry {
-	var entries []TableEntry
-	for _, command := range [][]string{
-		{"clusterdata", "read"}, {"clusterdata", "write", "{}"}, {"connect"}, {"failkeeper", "keeper1"},
-		{"init", "{}"}, {"promote"}, {"removekeeper", "keeper1"}, {"spec"}, {"status"}, {"update", "{}"},
-	} {
-		entries = append(entries, Entry(strings.Join(command, " "), command))
-	}
-	return entries
-}
-
 var _ = Describe("connect", func() {
+	// handleWhoAmI lets api answer GET /v1/whoami with the identity of the cli
+	handleWhoAmI := func(api *fakeAPI) {
+		api.handle(endpoints.WhoAmIEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, endpoints.WhoAmIResponse{Name: "orion-cli", Method: "certificate"}, "")
+		})
+	}
+
 	var api *fakeAPI
 
 	BeforeEach(func() {
@@ -106,17 +94,31 @@ var _ = Describe("connect", func() {
 	})
 })
 
-var _ = DescribeTable("every api command needs the client certificate",
-	func(command []string) {
-		api := newFakeAPI()
-		usePKIDir(GinkgoT().TempDir())
-		stdout, stderr, err := api.run(command...)
-		expectError(err, "client certificate not found", "create it with `orion-cli pki init`")
-		expectNoUsage(stdout, stderr)
-		Ω(api.requests()).To(BeEmpty(), "expected no requests without a client certificate")
-	},
-	apiCommandEntries(),
-)
+var _ = Describe("every api command", func() {
+	// apiCommandEntries returns an entry for every command that uses the api
+	apiCommandEntries := func() []TableEntry {
+		var entries []TableEntry
+		for _, command := range [][]string{
+			{"clusterdata", "read"}, {"clusterdata", "write", "{}"}, {"connect"}, {"failkeeper", "keeper1"},
+			{"init", "{}"}, {"promote"}, {"removekeeper", "keeper1"}, {"spec"}, {"status"}, {"update", "{}"},
+		} {
+			entries = append(entries, Entry(strings.Join(command, " "), command))
+		}
+		return entries
+	}
+
+	DescribeTable("needs the client certificate",
+		func(command []string) {
+			api := newFakeAPI()
+			usePKIDir(GinkgoT().TempDir())
+			stdout, stderr, err := api.run(command...)
+			expectError(err, "client certificate not found", "create it with `orion-cli pki init`")
+			expectNoUsage(stdout, stderr)
+			Ω(api.requests()).To(BeEmpty(), "expected no requests without a client certificate")
+		},
+		apiCommandEntries(),
+	)
+})
 
 var _ = Describe("orion-cli", func() {
 	It("has no store options anymore", func() {

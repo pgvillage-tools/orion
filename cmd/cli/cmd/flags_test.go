@@ -25,21 +25,21 @@ import (
 	"github.com/spf13/viper"
 )
 
-// apiFlagsEntries returns an entry per command that uses the api, with its index (to make its values unique)
-func apiFlagsEntries() []TableEntry {
-	var entries []TableEntry
-	for i, command := range [][]string{
-		{"clusterdata", "read"}, {"clusterdata", "write"}, {"connect"}, {"failkeeper"}, {"init"}, {"promote"},
-		{"removekeeper"}, {"spec"}, {"status"}, {"update"},
-	} {
-		entries = append(entries, Entry(strings.Join(command, " "), i, command))
-	}
-	return entries
-}
-
 // The api flags --host, --port and --timeout must reach viper (where the api client reads them) for every command
 // that uses the api. They used to be defined and bound per command, so only the last bound one worked.
 var _ = Describe("The api flags", func() {
+	// apiFlagsEntries returns an entry per command that uses the api, with its index (to make its values unique)
+	apiFlagsEntries := func() []TableEntry {
+		var entries []TableEntry
+		for i, command := range [][]string{
+			{"clusterdata", "read"}, {"clusterdata", "write"}, {"connect"}, {"failkeeper"}, {"init"}, {"promote"},
+			{"removekeeper"}, {"spec"}, {"status"}, {"update"},
+		} {
+			entries = append(entries, Entry(strings.Join(command, " "), i, command))
+		}
+		return entries
+	}
+
 	BeforeEach(func() {
 		// ParseFlags leaves the values on the flags: don't let them reach other specs
 		resetCommands(CmdCLI)

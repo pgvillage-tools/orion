@@ -27,70 +27,70 @@ import (
 
 const statusPath = "/v1/cluster/status"
 
-// testStatus is the status of a cluster with a primary on keeper1 and a standby on keeper2, as the api returns it
-func testStatus() *apiv1.InfoCluster {
-	return &apiv1.InfoCluster{
-		Sentinels: apiv1.InfoSentinels{{UID: "sentinel1", Leader: true}, {UID: "sentinel2"}},
-		Proxies:   apiv1.InfoProxies{{UID: "proxy1", Generation: 4}},
-		Keepers: apiv1.InfoKeepers{
-			{UID: "keeper1", ListenAddress: "10.0.0.1:5432", Healthy: true, PgHealthy: true, PgWantedGeneration: 3,
-				PgCurrentGeneration: 3},
-			{UID: "keeper2", ListenAddress: "10.0.0.2:5432", Healthy: false, PgHealthy: false, PgWantedGeneration: 2,
-				PgCurrentGeneration: 1},
-		},
-		Status: apiv1.InfoGenericStatus{"available": true, "primaryDB": "db1", "primaryKeeper": "keeper1",
-			"role": "primary"},
-	}
-}
-
-// handleStatus lets api answer GET /v1/cluster/status with ic
-func handleStatus(api *fakeAPI, ic *apiv1.InfoCluster) {
-	api.handle(endpoints.StatusEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, ic, "")
-	})
-}
-
-// lines returns the lines of s, with the trailing spaces and tabs of every line removed
-func lines(s string) []string {
-	result := strings.Split(s, "\n")
-	for i, l := range result {
-		result[i] = strings.TrimRight(l, " \t")
-	}
-	return result
-}
-
-// expectLines fails the spec unless output has expected as consecutive lines
-func expectLines(output string, expected ...string) {
-	GinkgoHelper()
-	Ω(strings.Join(lines(output), "\n")).To(ContainSubstring(strings.Join(expected, "\n")))
-}
-
-// columns returns the line of output that starts with first, split on whitespace
-func columns(output, first string) []string {
-	GinkgoHelper()
-	for _, l := range lines(output) {
-		if f := strings.Fields(l); len(f) > 0 && f[0] == first {
-			return f
-		}
-	}
-	Fail("no line starting with " + first + " in\n" + output)
-	return nil
-}
-
-// expandTabs replaces the tabs in line with spaces up to the next tab stop, like a terminal
-func expandTabs(line string, width int) string {
-	var b strings.Builder
-	for _, r := range line {
-		if r == '\t' {
-			b.WriteString(strings.Repeat(" ", width-b.Len()%width))
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
 var _ = Describe("status", func() {
+	// testStatus is the status of a cluster with a primary on keeper1 and a standby on keeper2, as the api returns it
+	testStatus := func() *apiv1.InfoCluster {
+		return &apiv1.InfoCluster{
+			Sentinels: apiv1.InfoSentinels{{UID: "sentinel1", Leader: true}, {UID: "sentinel2"}},
+			Proxies:   apiv1.InfoProxies{{UID: "proxy1", Generation: 4}},
+			Keepers: apiv1.InfoKeepers{
+				{UID: "keeper1", ListenAddress: "10.0.0.1:5432", Healthy: true, PgHealthy: true,
+					PgWantedGeneration: 3, PgCurrentGeneration: 3},
+				{UID: "keeper2", ListenAddress: "10.0.0.2:5432", Healthy: false, PgHealthy: false,
+					PgWantedGeneration: 2, PgCurrentGeneration: 1},
+			},
+			Status: apiv1.InfoGenericStatus{"available": true, "primaryDB": "db1", "primaryKeeper": "keeper1",
+				"role": "primary"},
+		}
+	}
+
+	// handleStatus lets api answer GET /v1/cluster/status with ic
+	handleStatus := func(api *fakeAPI, ic *apiv1.InfoCluster) {
+		api.handle(endpoints.StatusEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, ic, "")
+		})
+	}
+
+	// lines returns the lines of s, with the trailing spaces and tabs of every line removed
+	lines := func(s string) []string {
+		result := strings.Split(s, "\n")
+		for i, l := range result {
+			result[i] = strings.TrimRight(l, " \t")
+		}
+		return result
+	}
+
+	// expectLines fails the spec unless output has expected as consecutive lines
+	expectLines := func(output string, expected ...string) {
+		GinkgoHelper()
+		Ω(strings.Join(lines(output), "\n")).To(ContainSubstring(strings.Join(expected, "\n")))
+	}
+
+	// columns returns the line of output that starts with first, split on whitespace
+	columns := func(output, first string) []string {
+		GinkgoHelper()
+		for _, l := range lines(output) {
+			if f := strings.Fields(l); len(f) > 0 && f[0] == first {
+				return f
+			}
+		}
+		Fail("no line starting with " + first + " in\n" + output)
+		return nil
+	}
+
+	// expandTabs replaces the tabs in line with spaces up to the next tab stop, like a terminal
+	expandTabs := func(line string, width int) string {
+		var b strings.Builder
+		for _, r := range line {
+			if r == '\t' {
+				b.WriteString(strings.Repeat(" ", width-b.Len()%width))
+				continue
+			}
+			b.WriteRune(r)
+		}
+		return b.String()
+	}
+
 	var api *fakeAPI
 
 	BeforeEach(func() {

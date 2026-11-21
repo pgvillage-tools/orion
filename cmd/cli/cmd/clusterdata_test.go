@@ -66,27 +66,27 @@ func handleClusterData(api *fakeAPI, cd *apiv1.Data) {
 	})
 }
 
-// handlePutClusterData lets api accept PUT /v1/cluster
-func handlePutClusterData(api *fakeAPI) {
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPut), func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("ETag", `"8"`)
-		w.WriteHeader(http.StatusNoContent)
-	})
-}
-
-// expectPutClusterData fails the spec unless api got one PUT of cluster data with cluster uid and ifMatch
-func expectPutClusterData(api *fakeAPI, uid, ifMatch string) {
-	GinkgoHelper()
-	puts := api.requestsTo(http.MethodPut, clusterPath)
-	Ω(puts).To(HaveLen(1), "expected one PUT, got %v", api.requests())
-	Ω(puts[0].IfMatch).To(Equal(ifMatch))
-	var cd apiv1.Data
-	Ω(json.Unmarshal([]byte(puts[0].Body), &cd)).To(Succeed())
-	Ω(cd.Cluster).NotTo(BeNil(), "expected cluster %s, got %s", uid, puts[0].Body)
-	Ω(cd.Cluster.UID).To(Equal(uid))
-}
-
 var _ = Describe("clusterdata", func() {
+	// handlePutClusterData lets api accept PUT /v1/cluster
+	handlePutClusterData := func(api *fakeAPI) {
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPut), func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("ETag", `"8"`)
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
+
+	// expectPutClusterData fails the spec unless api got one PUT of cluster data with cluster uid and ifMatch
+	expectPutClusterData := func(api *fakeAPI, uid, ifMatch string) {
+		GinkgoHelper()
+		puts := api.requestsTo(http.MethodPut, clusterPath)
+		Ω(puts).To(HaveLen(1), "expected one PUT, got %v", api.requests())
+		Ω(puts[0].IfMatch).To(Equal(ifMatch))
+		var cd apiv1.Data
+		Ω(json.Unmarshal([]byte(puts[0].Body), &cd)).To(Succeed())
+		Ω(cd.Cluster).NotTo(BeNil(), "expected cluster %s, got %s", uid, puts[0].Body)
+		Ω(cd.Cluster.UID).To(Equal(uid))
+	}
+
 	var api *fakeAPI
 
 	BeforeEach(func() {

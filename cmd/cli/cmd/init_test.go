@@ -27,27 +27,27 @@ import (
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// newInitAPI returns a fake api without a cluster, that accepts POST /v1/cluster
-func newInitAPI() *fakeAPI {
-	api := newFakeAPI()
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
-	})
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPost), accepted)
-	return api
-}
-
-// expectPostedSpec fails the spec unless api got one POST of a spec, and returns that spec
-func expectPostedSpec(api *fakeAPI) apiv1.Spec {
-	GinkgoHelper()
-	posts := api.requestsTo(http.MethodPost, clusterPath)
-	Ω(posts).To(HaveLen(1), "expected one POST, got %v", api.requests())
-	var spec apiv1.Spec
-	Ω(json.Unmarshal([]byte(posts[0].Body), &spec)).To(Succeed())
-	return spec
-}
-
 var _ = Describe("init", func() {
+	// newInitAPI returns a fake api without a cluster, that accepts POST /v1/cluster
+	newInitAPI := func() *fakeAPI {
+		api := newFakeAPI()
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
+		})
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPost), accepted)
+		return api
+	}
+
+	// expectPostedSpec fails the spec unless api got one POST of a spec, and returns that spec
+	expectPostedSpec := func(api *fakeAPI) apiv1.Spec {
+		GinkgoHelper()
+		posts := api.requestsTo(http.MethodPost, clusterPath)
+		Ω(posts).To(HaveLen(1), "expected one POST, got %v", api.requests())
+		var spec apiv1.Spec
+		Ω(json.Unmarshal([]byte(posts[0].Body), &spec)).To(Succeed())
+		return spec
+	}
+
 	Context("without a cluster", func() {
 		var api *fakeAPI
 
