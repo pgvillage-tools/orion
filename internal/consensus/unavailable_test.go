@@ -18,8 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,42 +28,34 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func TestIsUnavailable(t *testing.T) {
+var _ = Describe("IsUnavailable", func() {
 	lease := schema.GroupResource{Group: "coordination.k8s.io", Resource: "leases"}
-	for _, tc := range []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{name: "no error"},
-		{name: "another error", err: errors.New("boom")},
-		{name: "deadline exceeded", err: context.DeadlineExceeded, want: true},
-		{name: "canceled", err: context.Canceled},
-		{name: "etcd request timed out", err: rpctypes.ErrTimeout, want: true},
-		{name: "etcd no leader", err: rpctypes.ErrNoLeader, want: true},
-		{name: "etcd leader changed", err: rpctypes.ErrLeaderChanged, want: true},
-		{name: "etcd key not found", err: rpctypes.ErrKeyNotFound},
-		{name: "etcd permission denied", err: rpctypes.ErrPermissionDenied},
-		{name: "grpc unavailable", err: status.Error(codes.Unavailable, "connection refused"), want: true},
-		{name: "grpc deadline exceeded", err: status.Error(codes.DeadlineExceeded, "slow"), want: true},
-		{name: "grpc invalid argument", err: status.Error(codes.InvalidArgument, "bad")},
-		{name: "kubernetes timeout", err: apierrors.NewTimeoutError("slow", 1), want: true},
-		{name: "kubernetes server timeout", err: apierrors.NewServerTimeout(lease, "update", 1), want: true},
-		{name: "kubernetes service unavailable", err: apierrors.NewServiceUnavailable("busy"), want: true},
-		{name: "kubernetes too many requests", err: apierrors.NewTooManyRequests("busy", 1), want: true},
-		{name: "kubernetes conflict", err: apierrors.NewConflict(lease, "orion", errors.New("modified"))},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := IsUnavailable(tc.err); got != tc.want {
-				t.Errorf("IsUnavailable(%v) = %v, want %v", tc.err, got, tc.want)
-			}
+
+	DescribeTable("tells an unavailable consensus store from other errors",
+		func(err error, want bool) {
+			Ω(IsUnavailable(err)).Should(Equal(want), "IsUnavailable(%v)", err)
 			// also when it is wrapped, as the api wraps store errors
-			if tc.err != nil {
-				wrapped := fmt.Errorf("cannot store updated cluster spec: %w", tc.err)
-				if got := IsUnavailable(wrapped); got != tc.want {
-					t.Errorf("IsUnavailable(wrapped %v) = %v, want %v", tc.err, got, tc.want)
-				}
+			if err != nil {
+				wrapped := fmt.Errorf("cannot store updated cluster spec: %w", err)
+				Ω(IsUnavailable(wrapped)).Should(Equal(want), "IsUnavailable(wrapped %v)", err)
 			}
-		})
-	}
-}
+		},
+		Entry("no error", nil, false),
+		Entry("another error", errors.New("boom"), false),
+		Entry("deadline exceeded", context.DeadlineExceeded, true),
+		Entry("canceled", context.Canceled, false),
+		Entry("etcd request timed out", rpctypes.ErrTimeout, true),
+		Entry("etcd no leader", rpctypes.ErrNoLeader, true),
+		Entry("etcd leader changed", rpctypes.ErrLeaderChanged, true),
+		Entry("etcd key not found", rpctypes.ErrKeyNotFound, false),
+		Entry("etcd permission denied", rpctypes.ErrPermissionDenied, false),
+		Entry("grpc unavailable", status.Error(codes.Unavailable, "connection refused"), true),
+		Entry("grpc deadline exceeded", status.Error(codes.DeadlineExceeded, "slow"), true),
+		Entry("grpc invalid argument", status.Error(codes.InvalidArgument, "bad"), false),
+		Entry("kubernetes timeout", apierrors.NewTimeoutError("slow", 1), true),
+		Entry("kubernetes server timeout", apierrors.NewServerTimeout(lease, "update", 1), true),
+		Entry("kubernetes service unavailable", apierrors.NewServiceUnavailable("busy"), true),
+		Entry("kubernetes too many requests", apierrors.NewTooManyRequests("busy", 1), true),
+		Entry("kubernetes conflict", apierrors.NewConflict(lease, "orion", errors.New("modified")), false),
+	)
+})

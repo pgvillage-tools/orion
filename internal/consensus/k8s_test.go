@@ -24,10 +24,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	jsonpatch "github.com/evanphx/json-patch"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/util"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -65,8 +66,9 @@ type fakeKubeAPI struct {
 	version    int
 }
 
-func newFakeKubeAPI(t *testing.T) (*fakeKubeAPI, *kubernetes.Clientset) {
-	t.Helper()
+// newFakeKubeAPI starts a fakeKubeAPI for the current spec, and returns a clientset for it
+func newFakeKubeAPI() (*fakeKubeAPI, *kubernetes.Clientset) {
+	GinkgoHelper()
 	api := &fakeKubeAPI{
 		configMaps: map[string]*corev1.ConfigMap{},
 		leases:     map[string]*coordinationv1.Lease{},
@@ -74,7 +76,7 @@ func newFakeKubeAPI(t *testing.T) (*fakeKubeAPI, *kubernetes.Clientset) {
 		failures:   map[string]int{},
 	}
 	srv := httptest.NewServer(api)
-	t.Cleanup(srv.Close)
+	DeferCleanup(srv.Close)
 	client, err := kubernetes.NewForConfig(&rest.Config{
 		Host: srv.URL,
 		ContentConfig: rest.ContentConfig{
@@ -82,9 +84,7 @@ func newFakeKubeAPI(t *testing.T) (*fakeKubeAPI, *kubernetes.Clientset) {
 			AcceptContentTypes: "application/json",
 		},
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	Ω(err).ShouldNot(HaveOccurred())
 	return api, client
 }
 
@@ -333,388 +333,230 @@ func (a *fakeKubeAPI) servePod(w http.ResponseWriter, r *http.Request, name stri
 	}
 }
 
-func newTestKubeStore(t *testing.T) (*fakeKubeAPI, *KubeStore) {
-	t.Helper()
-	api, client := newFakeKubeAPI(t)
-	s, err := NewKubeStore(client, testPod, testNamespace, testCluster)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+var _ = Describe("KubeStore", func() {
+	newTestKubeStore := func() (*fakeKubeAPI, *KubeStore) {
+		GinkgoHelper()
+		fakeAPI, client := newFakeKubeAPI()
+		store, err := NewKubeStore(client, testPod, testNamespace, testCluster)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(store.resourceName).Should(Equal(testConfigMap))
+		return fakeAPI, store
 	}
-	if s.resourceName != testConfigMap {
-		t.Fatalf("expected resource name %q, got %q", testConfigMap, s.resourceName)
-	}
-	return api, s
-}
 
-func TestKubeStoreHealthy(t *testing.T) {
-	api, s := newTestKubeStore(t)
-	if err := s.Healthy(context.Background()); err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	api.fail("GET version", http.StatusInternalServerError)
-	if err := s.Healthy(context.Background()); err == nil {
-		t.Error("expected an error")
-	}
-}
+	var (
+		ctx context.Context
+		api *fakeKubeAPI
+		s   *KubeStore
+	)
 
-func TestKubeStoreGetClusterData(t *testing.T) {
-	ctx := context.Background()
-	for _, tc := range []struct {
-		name    string
-		setup   func(*fakeKubeAPI)
-		wantCD  bool
-		wantErr bool
-	}{
-		{name: "no configmap", setup: func(*fakeKubeAPI) {}},
-		{name: "no annotation", setup: func(a *fakeKubeAPI) { a.addConfigMap(nil) }},
-		{
-			name: "cluster data",
-			setup: func(a *fakeKubeAPI) {
-				a.addConfigMap(map[string]string{util.KubeClusterDataAnnotation: `{"formatVersion":1}`})
-			},
-			wantCD: true,
-		},
-		{
-			name: "invalid cluster data",
-			setup: func(a *fakeKubeAPI) {
-				a.addConfigMap(map[string]string{util.KubeClusterDataAnnotation: "{"})
-			},
-			wantErr: true,
-		},
-		{
-			name:    "api error",
-			setup:   func(a *fakeKubeAPI) { a.fail("GET configmaps", http.StatusInternalServerError) },
-			wantErr: true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			api, s := newTestKubeStore(t)
-			tc.setup(api)
+	BeforeEach(func() {
+		ctx = context.Background()
+		api, s = newTestKubeStore()
+	})
+
+	It("is healthy when the api server is", func() {
+		Ω(s.Healthy(ctx)).Should(Succeed())
+		api.fail("GET version", http.StatusInternalServerError)
+		Ω(s.Healthy(ctx)).ShouldNot(Succeed())
+	})
+
+	DescribeTable("GetClusterData",
+		func(setup func(*fakeKubeAPI), wantCD, wantErr bool) {
+			setup(api)
 			cd, pair, err := s.GetClusterData(ctx)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("expected error %t, got %v", tc.wantErr, err)
+			if wantErr {
+				Ω(err).Should(HaveOccurred())
+			} else {
+				Ω(err).ShouldNot(HaveOccurred())
 			}
-			if (cd != nil) != tc.wantCD || (pair != nil) != tc.wantCD {
-				t.Fatalf("expected cluster data %t, got %v, %v", tc.wantCD, cd, pair)
+			if !wantCD {
+				Ω(cd).Should(BeNil())
+				Ω(pair).Should(BeNil())
+				return
 			}
-			if tc.wantCD && (cd.FormatVersion != 1 || string(pair.Value) != `{"formatVersion":1}`) {
-				t.Errorf("unexpected cluster data %v, pair %v", cd, pair)
-			}
-		})
-	}
-}
+			Ω(cd).ShouldNot(BeNil())
+			Ω(pair).ShouldNot(BeNil())
+			Ω(cd.FormatVersion).Should(Equal(uint64(1)))
+			Ω(string(pair.Value)).Should(Equal(`{"formatVersion":1}`))
+		},
+		Entry("no configmap", func(*fakeKubeAPI) {}, false, false),
+		Entry("no annotation", func(a *fakeKubeAPI) { a.addConfigMap(nil) }, false, false),
+		Entry("cluster data", func(a *fakeKubeAPI) {
+			a.addConfigMap(map[string]string{util.KubeClusterDataAnnotation: `{"formatVersion":1}`})
+		}, true, false),
+		Entry("invalid cluster data", func(a *fakeKubeAPI) {
+			a.addConfigMap(map[string]string{util.KubeClusterDataAnnotation: "{"})
+		}, false, true),
+		Entry("api error",
+			func(a *fakeKubeAPI) { a.fail("GET configmaps", http.StatusInternalServerError) }, false, true),
+	)
 
-func TestKubeStorePutClusterData(t *testing.T) {
-	ctx := context.Background()
-	api, s := newTestKubeStore(t)
+	It("puts the cluster data", func() {
+		formatVersion := func() uint64 {
+			GinkgoHelper()
+			cd, _, err := s.GetClusterData(ctx)
+			Ω(err).ShouldNot(HaveOccurred())
+			Ω(cd).ShouldNot(BeNil())
+			return cd.FormatVersion
+		}
 
-	// creates the configmap
-	if err := s.PutClusterData(ctx, &cluster.Data{FormatVersion: 1}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cd, _, err := s.GetClusterData(ctx); err != nil || cd.FormatVersion != 1 {
-		t.Fatalf("unexpected cluster data %v, %v", cd, err)
-	}
-	// updates it, retrying on a conflict
-	api.conflicts = 1
-	if err := s.PutClusterData(ctx, &cluster.Data{FormatVersion: 2}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cd, _, err := s.GetClusterData(ctx); err != nil || cd.FormatVersion != 2 {
-		t.Fatalf("unexpected cluster data %v, %v", cd, err)
-	}
-	// adds the annotation to a configmap without annotations
-	api.addConfigMap(nil)
-	if err := s.PutClusterData(ctx, &cluster.Data{FormatVersion: 3}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cd, _, err := s.GetClusterData(ctx); err != nil || cd.FormatVersion != 3 {
-		t.Fatalf("unexpected cluster data %v, %v", cd, err)
-	}
+		// creates the configmap
+		Ω(s.PutClusterData(ctx, &cluster.Data{FormatVersion: 1})).Should(Succeed())
+		Ω(formatVersion()).Should(Equal(uint64(1)))
+		// updates it, retrying on a conflict
+		api.conflicts = 1
+		Ω(s.PutClusterData(ctx, &cluster.Data{FormatVersion: 2})).Should(Succeed())
+		Ω(formatVersion()).Should(Equal(uint64(2)))
+		// adds the annotation to a configmap without annotations
+		api.addConfigMap(nil)
+		Ω(s.PutClusterData(ctx, &cluster.Data{FormatVersion: 3})).Should(Succeed())
+		Ω(formatVersion()).Should(Equal(uint64(3)))
 
-	api.fail("GET configmaps", http.StatusInternalServerError)
-	if err := s.PutClusterData(ctx, &cluster.Data{}); err == nil {
-		t.Error("expected an error")
-	}
-}
+		api.fail("GET configmaps", http.StatusInternalServerError)
+		Ω(s.PutClusterData(ctx, &cluster.Data{})).ShouldNot(Succeed())
+	})
 
-func TestKubeStoreAtomicPutClusterData(t *testing.T) {
-	ctx := context.Background()
 	cdAnnotation := func(v string) map[string]string {
 		return map[string]string{util.KubeClusterDataAnnotation: v}
 	}
-	for _, tc := range []struct {
-		name     string
-		setup    func(*fakeKubeAPI)
-		previous *KVPair
-		// wantErr is the expected error, nil for success
-		wantErr error
-	}{
-		{name: "create", setup: func(*fakeKubeAPI) {}},
-		{
-			name:     "previous but no configmap",
-			setup:    func(*fakeKubeAPI) {},
-			previous: &KVPair{Value: []byte("{}")},
-			wantErr:  ErrKeyModified,
-		},
-		{
-			name:    "create but cluster data exists",
-			setup:   func(a *fakeKubeAPI) { a.addConfigMap(cdAnnotation("{}")) },
-			wantErr: ErrKeyModified,
-		},
-		{name: "create on a configmap without annotations", setup: func(a *fakeKubeAPI) { a.addConfigMap(nil) }},
-		{
-			name:  "create on a configmap with other annotations",
-			setup: func(a *fakeKubeAPI) { a.addConfigMap(map[string]string{"other": "x"}) },
-		},
-		{
-			name:     "previous but no annotations",
-			setup:    func(a *fakeKubeAPI) { a.addConfigMap(nil) },
-			previous: &KVPair{Value: []byte("{}")},
-			wantErr:  ErrKeyModified,
-		},
-		{
-			name:     "previous but no cluster data",
-			setup:    func(a *fakeKubeAPI) { a.addConfigMap(map[string]string{"other": "x"}) },
-			previous: &KVPair{Value: []byte("{}")},
-			wantErr:  ErrKeyModified,
-		},
-		{
-			name:     "previous differs",
-			setup:    func(a *fakeKubeAPI) { a.addConfigMap(cdAnnotation(`{"formatVersion":2}`)) },
-			previous: &KVPair{Value: []byte("{}")},
-			wantErr:  ErrKeyModified,
-		},
-		{
-			name:     "previous matches",
-			setup:    func(a *fakeKubeAPI) { a.addConfigMap(cdAnnotation("{}")) },
-			previous: &KVPair{Value: []byte("{}")},
-		},
-		{
-			name: "previous matches after a conflict",
-			setup: func(a *fakeKubeAPI) {
-				a.addConfigMap(cdAnnotation("{}"))
-				a.conflicts = 1
-			},
-			previous: &KVPair{Value: []byte("{}")},
-		},
-		{
-			name:    "api error",
-			setup:   func(a *fakeKubeAPI) { a.fail("GET configmaps", http.StatusInternalServerError) },
-			wantErr: errors.New("any"),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			api, s := newTestKubeStore(t)
-			tc.setup(api)
-			pair, err := s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 5}, tc.previous)
-			switch {
-			case tc.wantErr == nil && err != nil:
-				t.Fatalf("unexpected error: %v", err)
-			case tc.wantErr == nil:
-				const expected = `"formatVersion":5`
-				if !strings.Contains(string(pair.Value), expected) {
-					t.Errorf("expected the new cluster data in the pair, got %s", pair.Value)
+	// wantErr is the expected error, nil for success
+	DescribeTable("AtomicPutClusterData",
+		func(setup func(*fakeKubeAPI), previous *KVPair, wantErr error) {
+			setup(api)
+			pair, err := s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 5}, previous)
+			if wantErr != nil {
+				Ω(err).Should(HaveOccurred())
+				if errors.Is(wantErr, ErrKeyModified) {
+					Ω(err).Should(MatchError(ErrKeyModified))
 				}
-				if v, _ := api.configMapAnnotation(); !strings.Contains(v, expected) {
-					t.Errorf("expected the new cluster data in the configmap, got %s", v)
-				}
-			case err == nil:
-				t.Fatalf("expected error %v", tc.wantErr)
-			case errors.Is(tc.wantErr, ErrKeyModified) && !errors.Is(err, ErrKeyModified):
-				t.Errorf("expected ErrKeyModified, got %v", err)
+				return
 			}
-		})
-	}
-}
+			Ω(err).ShouldNot(HaveOccurred())
+			const expected = `"formatVersion":5`
+			Ω(string(pair.Value)).Should(ContainSubstring(expected), "expected the new cluster data in the pair")
+			v, _ := api.configMapAnnotation()
+			Ω(v).Should(ContainSubstring(expected), "expected the new cluster data in the configmap")
+		},
+		Entry("create", func(*fakeKubeAPI) {}, nil, nil),
+		Entry("previous but no configmap", func(*fakeKubeAPI) {}, &KVPair{Value: []byte("{}")}, ErrKeyModified),
+		Entry("create but cluster data exists",
+			func(a *fakeKubeAPI) { a.addConfigMap(cdAnnotation("{}")) }, nil, ErrKeyModified),
+		Entry("create on a configmap without annotations", func(a *fakeKubeAPI) { a.addConfigMap(nil) }, nil, nil),
+		Entry("create on a configmap with other annotations",
+			func(a *fakeKubeAPI) { a.addConfigMap(map[string]string{"other": "x"}) }, nil, nil),
+		Entry("previous but no annotations",
+			func(a *fakeKubeAPI) { a.addConfigMap(nil) }, &KVPair{Value: []byte("{}")}, ErrKeyModified),
+		Entry("previous but no cluster data",
+			func(a *fakeKubeAPI) { a.addConfigMap(map[string]string{"other": "x"}) },
+			&KVPair{Value: []byte("{}")}, ErrKeyModified),
+		Entry("previous differs",
+			func(a *fakeKubeAPI) { a.addConfigMap(cdAnnotation(`{"formatVersion":2}`)) },
+			&KVPair{Value: []byte("{}")}, ErrKeyModified),
+		Entry("previous matches",
+			func(a *fakeKubeAPI) { a.addConfigMap(cdAnnotation("{}")) }, &KVPair{Value: []byte("{}")}, nil),
+		Entry("previous matches after a conflict", func(a *fakeKubeAPI) {
+			a.addConfigMap(cdAnnotation("{}"))
+			a.conflicts = 1
+		}, &KVPair{Value: []byte("{}")}, nil),
+		Entry("api error",
+			func(a *fakeKubeAPI) { a.fail("GET configmaps", http.StatusInternalServerError) },
+			nil, errors.New("any")),
+	)
 
-func TestKubeStoreSetInfo(t *testing.T) {
-	ctx := context.Background()
-	for _, tc := range []struct {
-		name     string
-		set      func(*KubeStore) error
-		expected string
-	}{
-		{
-			name: "keeper",
-			set: func(s *KubeStore) error {
-				return s.SetKeeperInfo(ctx, "k1", &cluster.KeeperInfo{UID: "k1"}, time.Minute)
-			},
-			expected: `"uid":"k1"`,
-		},
-		{
-			name:     "sentinel",
-			set:      func(s *KubeStore) error { return s.SetSentinelInfo(ctx, &cluster.SentinelInfo{UID: "s1"}, time.Minute) },
-			expected: `"UID":"s1"`,
-		},
-		{
-			name:     "proxy",
-			set:      func(s *KubeStore) error { return s.SetProxyInfo(ctx, &cluster.ProxyInfo{UID: "p1"}, time.Minute) },
-			expected: `"UID":"p1"`,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			api, s := newTestKubeStore(t)
-
+	DescribeTable("sets the info of a component in the status annotation of its pod",
+		func(set func(*KubeStore) error, expected string) {
 			// the pod doesn't exist
-			if err := tc.set(s); err == nil {
-				t.Error("expected an error")
-			}
+			Ω(set(s)).ShouldNot(Succeed())
 
 			api.addPod(testPod, KeeperLabelValue, nil)
-			if err := tc.set(s); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got := api.podAnnotation(testPod); !strings.Contains(got, tc.expected) {
-				t.Errorf("expected the status annotation to contain %s, got %s", tc.expected, got)
-			}
+			Ω(set(s)).Should(Succeed())
+			Ω(api.podAnnotation(testPod)).Should(ContainSubstring(expected))
 
 			api.fail("PATCH pods", http.StatusInternalServerError)
-			if err := tc.set(s); err == nil {
-				t.Error("expected an error")
-			}
-		})
-	}
-}
+			Ω(set(s)).ShouldNot(Succeed())
+		},
+		Entry("keeper", func(s *KubeStore) error {
+			return s.SetKeeperInfo(context.Background(), "k1", &cluster.KeeperInfo{UID: "k1"}, time.Minute)
+		}, `"uid":"k1"`),
+		Entry("sentinel", func(s *KubeStore) error {
+			return s.SetSentinelInfo(context.Background(), &cluster.SentinelInfo{UID: "s1"}, time.Minute)
+		}, `"UID":"s1"`),
+		Entry("proxy", func(s *KubeStore) error {
+			return s.SetProxyInfo(context.Background(), &cluster.ProxyInfo{UID: "p1"}, time.Minute)
+		}, `"UID":"p1"`),
+	)
 
-func TestKubeStoreGetKeepersInfo(t *testing.T) {
-	ctx := context.Background()
-	api, s := newTestKubeStore(t)
+	It("gets the keepers info", func() {
+		keepers, err := s.GetKeepersInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(keepers).ShouldNot(BeNil())
+		Ω(keepers).Should(BeEmpty())
 
-	keepers, err := s.GetKeepersInfo(ctx)
-	if err != nil || keepers == nil || len(keepers) != 0 {
-		t.Fatalf("expected an empty keepers info, got %v, %v", keepers, err)
-	}
+		api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
+		api.addPod("keeper2", KeeperLabelValue, &cluster.KeeperInfo{UID: "k2"})
+		// a keeper that didn't publish its status yet
+		api.addPod("keeper3", KeeperLabelValue, nil)
+		api.addPod("sentinel1", SentinelLabelValue, &cluster.SentinelInfo{UID: "s1"})
+		keepers, err = s.GetKeepersInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(keepers).Should(HaveLen(2))
+		Ω(keepers).Should(HaveKeyWithValue("k1", Not(BeNil())))
+		Ω(keepers).Should(HaveKeyWithValue("k2", Not(BeNil())))
 
-	api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
-	api.addPod("keeper2", KeeperLabelValue, &cluster.KeeperInfo{UID: "k2"})
-	// a keeper that didn't publish its status yet
-	api.addPod("keeper3", KeeperLabelValue, nil)
-	api.addPod("sentinel1", SentinelLabelValue, &cluster.SentinelInfo{UID: "s1"})
-	keepers, err = s.GetKeepersInfo(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(keepers) != 2 || keepers["k1"] == nil || keepers["k2"] == nil {
-		t.Errorf("unexpected keepers info %v", keepers)
-	}
+		api.addPod("keeper4", KeeperLabelValue, "{")
+		_, err = s.GetKeepersInfo(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
+		api.fail("GET pods", http.StatusInternalServerError)
+		_, err = s.GetKeepersInfo(ctx)
+		Ω(err).Should(HaveOccurred())
+	})
 
-	api.addPod("keeper4", KeeperLabelValue, "{")
-	if _, err = s.GetKeepersInfo(ctx); err == nil {
-		t.Error("expected a json error")
-	}
-	api.fail("GET pods", http.StatusInternalServerError)
-	if _, err = s.GetKeepersInfo(ctx); err == nil {
-		t.Error("expected an error")
-	}
-}
+	It("gets the sentinels info", func() {
+		sentinels, err := s.GetSentinelsInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(sentinels).ShouldNot(BeNil())
+		Ω(sentinels).Should(BeEmpty())
 
-func TestKubeStoreGetSentinelsInfo(t *testing.T) {
-	ctx := context.Background()
-	api, s := newTestKubeStore(t)
+		api.addPod("sentinel1", SentinelLabelValue, &cluster.SentinelInfo{UID: "s1"})
+		// a sentinel that didn't publish its info yet
+		api.addPod("sentinel0", SentinelLabelValue, nil)
+		api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
+		sentinels, err = s.GetSentinelsInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(sentinels).Should(HaveLen(1))
+		Ω(sentinels[0].UID).Should(Equal("s1"))
 
-	sentinels, err := s.GetSentinelsInfo(ctx)
-	if err != nil || sentinels == nil || len(sentinels) != 0 {
-		t.Fatalf("expected an empty sentinels info, got %v, %v", sentinels, err)
-	}
+		api.addPod("sentinel2", SentinelLabelValue, "{")
+		_, err = s.GetSentinelsInfo(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
+		api.fail("GET pods", http.StatusInternalServerError)
+		_, err = s.GetSentinelsInfo(ctx)
+		Ω(err).Should(HaveOccurred())
+	})
 
-	api.addPod("sentinel1", SentinelLabelValue, &cluster.SentinelInfo{UID: "s1"})
-	// a sentinel that didn't publish its info yet
-	api.addPod("sentinel0", SentinelLabelValue, nil)
-	api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
-	sentinels, err = s.GetSentinelsInfo(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(sentinels) != 1 || sentinels[0].UID != "s1" {
-		t.Errorf("unexpected sentinels info %v", sentinels)
-	}
+	It("gets the proxies info", func() {
+		proxies, err := s.GetProxiesInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(proxies).ShouldNot(BeNil())
+		Ω(proxies).Should(BeEmpty())
 
-	api.addPod("sentinel2", SentinelLabelValue, "{")
-	if _, err = s.GetSentinelsInfo(ctx); err == nil {
-		t.Error("expected a json error")
-	}
-	api.fail("GET pods", http.StatusInternalServerError)
-	if _, err = s.GetSentinelsInfo(ctx); err == nil {
-		t.Error("expected an error")
-	}
-}
+		api.addPod("proxy1", ProxyLabelValue, &cluster.ProxyInfo{UID: "p1"})
+		// a proxy that didn't publish its status yet
+		api.addPod("proxy2", ProxyLabelValue, nil)
+		api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
+		proxies, err = s.GetProxiesInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(proxies).Should(HaveLen(1))
+		Ω(proxies).Should(HaveKeyWithValue("p1", Not(BeNil())))
 
-func TestKubeStoreGetProxiesInfo(t *testing.T) {
-	ctx := context.Background()
-	api, s := newTestKubeStore(t)
-
-	proxies, err := s.GetProxiesInfo(ctx)
-	if err != nil || proxies == nil || len(proxies) != 0 {
-		t.Fatalf("expected an empty proxies info, got %v, %v", proxies, err)
-	}
-
-	api.addPod("proxy1", ProxyLabelValue, &cluster.ProxyInfo{UID: "p1"})
-	// a proxy that didn't publish its status yet
-	api.addPod("proxy2", ProxyLabelValue, nil)
-	api.addPod("keeper1", KeeperLabelValue, &cluster.KeeperInfo{UID: "k1"})
-	proxies, err = s.GetProxiesInfo(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(proxies) != 1 || proxies["p1"] == nil {
-		t.Errorf("unexpected proxies info %v", proxies)
-	}
-
-	api.addPod("proxy3", ProxyLabelValue, "{")
-	if _, err = s.GetProxiesInfo(ctx); err == nil {
-		t.Error("expected a json error")
-	}
-	api.fail("GET pods", http.StatusInternalServerError)
-	if _, err = s.GetProxiesInfo(ctx); err == nil {
-		t.Error("expected an error")
-	}
-}
-
-// TestKubeElectionWithALease runs the election with the client-go Lease lock against the fake api
-func TestKubeElectionWithALease(t *testing.T) {
-	api, client := newFakeKubeAPI(t)
-	e1, err := NewKubeElection(client, testPod, testNamespace, testCluster, "sentinel1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, err = e1.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
-		t.Fatalf("expected no leader before any campaign, got %v", err)
-	}
-
-	electedCh, errCh := e1.RunForElection(t.Context())
-	expectElected(t, electedCh, false)
-	expectElected(t, electedCh, true)
-	if holder := api.leaseHolder(); holder != "sentinel1" {
-		t.Errorf("expected the lease to be held by sentinel1, got %q", holder)
-	}
-
-	// another candidate sees the leader, and doesn't get elected while the lease is renewed
-	e2, err := NewKubeElection(client, "pod2", testNamespace, testCluster, "sentinel2")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if leader, err := e2.Leader(t.Context()); err != nil || leader != "sentinel1" {
-		t.Errorf("expected leader sentinel1, got %q, %v", leader, err)
-	}
-	electedCh2, errCh2 := e2.RunForElection(t.Context())
-	expectElected(t, electedCh2, false)
-	select {
-	case elected := <-electedCh2:
-		t.Errorf("expected no election result while sentinel1 holds the lease, got %t", elected)
-	case <-time.After(2 * retryPeriod):
-	}
-
-	e1.Stop()
-	expectClosed(t, electedCh, errCh)
-	e2.Stop()
-	expectClosed(t, electedCh2, errCh2)
-
-	api.fail("GET leases", http.StatusInternalServerError)
-	if _, err = e1.Leader(t.Context()); err == nil || errors.Is(err, ErrElectionNoLeader) {
-		t.Errorf("expected an error, got %v", err)
-	}
-}
+		api.addPod("proxy3", ProxyLabelValue, "{")
+		_, err = s.GetProxiesInfo(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
+		api.fail("GET pods", http.StatusInternalServerError)
+		_, err = s.GetProxiesInfo(ctx)
+		Ω(err).Should(HaveOccurred())
+	})
+})
 
 // fakeResourceLock is an in-memory leader election lock.
 type fakeResourceLock struct {
@@ -761,65 +603,79 @@ func (l *nilRecordLock) Get(context.Context) (*resourcelock.LeaderElectionRecord
 	return nil, nil, nil
 }
 
-func TestKubeElectionLeader(t *testing.T) {
-	lock := &fakeResourceLock{}
-	e := &KubeElection{rl: lock}
+var _ = Describe("KubeElection", func() {
+	// runs the election with the client-go Lease lock against the fake api
+	It("runs with a lease", func(ctx SpecContext) {
+		api, client := newFakeKubeAPI()
+		e1, err := NewKubeElection(client, testPod, testNamespace, testCluster, "sentinel1")
+		Ω(err).ShouldNot(HaveOccurred())
+		_, err = e1.Leader(ctx)
+		Ω(err).Should(MatchError(ErrElectionNoLeader), "expected no leader before any campaign")
 
-	if _, err := e.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
-		t.Errorf("expected no leader without a lease, got %v", err)
-	}
-	lock.record = &resourcelock.LeaderElectionRecord{}
-	if _, err := e.Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
-		t.Errorf("expected no leader for a lease without a holder, got %v", err)
-	}
-	lock.record = &resourcelock.LeaderElectionRecord{HolderIdentity: "keeper2"}
-	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper2" {
-		t.Errorf("expected leader keeper2, got %q, %v", leader, err)
-	}
-	if _, err := (&KubeElection{rl: &nilRecordLock{}}).Leader(t.Context()); !errors.Is(err, ErrElectionNoLeader) {
-		t.Errorf("expected no leader, got %v", err)
-	}
-	lock.getErr = errors.New("boom")
-	if _, err := e.Leader(t.Context()); err == nil || errors.Is(err, ErrElectionNoLeader) {
-		t.Errorf("expected the error, got %v", err)
-	}
-}
+		electedCh, errCh := e1.RunForElection(ctx)
+		expectElected(electedCh, false)
+		expectElected(electedCh, true)
+		Ω(api.leaseHolder()).Should(Equal("sentinel1"), "expected the lease to be held by sentinel1")
 
-func TestKubeElectionRunForElection(t *testing.T) {
-	e := &KubeElection{rl: &fakeResourceLock{}}
+		// another candidate sees the leader, and doesn't get elected while the lease is renewed
+		e2, err := NewKubeElection(client, "pod2", testNamespace, testCluster, "sentinel2")
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(e2.Leader(ctx)).Should(Equal("sentinel1"))
+		electedCh2, errCh2 := e2.RunForElection(ctx)
+		expectElected(electedCh2, false)
+		Consistently(electedCh2).WithTimeout(2*retryPeriod).ShouldNot(Receive(),
+			"expected no election result while sentinel1 holds the lease")
 
-	electedCh, errCh := e.RunForElection(context.Background())
-	expectElected(t, electedCh, false)
-	expectElected(t, electedCh, true)
-	if leader, err := e.Leader(t.Context()); err != nil || leader != "keeper1" {
-		t.Errorf("expected leader keeper1, got %q, %v", leader, err)
-	}
+		e1.Stop()
+		expectClosed(electedCh, errCh)
+		e2.Stop()
+		expectClosed(electedCh2, errCh2)
 
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("expected a panic when running twice")
-			}
-		}()
-		e.RunForElection(context.Background())
-	}()
+		api.fail("GET leases", http.StatusInternalServerError)
+		_, err = e1.Leader(ctx)
+		Ω(err).Should(HaveOccurred())
+		Ω(err).ShouldNot(MatchError(ErrElectionNoLeader))
+	})
 
-	e.Stop()
-	expectClosed(t, electedCh, errCh)
+	It("reads the leader from the lock", func(ctx SpecContext) {
+		lock := &fakeResourceLock{}
+		e := &KubeElection{rl: lock}
 
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("expected a panic when stopping twice")
-			}
-		}()
+		_, err := e.Leader(ctx)
+		Ω(err).Should(MatchError(ErrElectionNoLeader), "expected no leader without a lease")
+		lock.record = &resourcelock.LeaderElectionRecord{}
+		_, err = e.Leader(ctx)
+		Ω(err).Should(MatchError(ErrElectionNoLeader), "expected no leader for a lease without a holder")
+		lock.record = &resourcelock.LeaderElectionRecord{HolderIdentity: "keeper2"}
+		Ω(e.Leader(ctx)).Should(Equal("keeper2"))
+		_, err = (&KubeElection{rl: &nilRecordLock{}}).Leader(ctx)
+		Ω(err).Should(MatchError(ErrElectionNoLeader))
+		lock.getErr = errors.New("boom")
+		_, err = e.Leader(ctx)
+		Ω(err).Should(HaveOccurred())
+		Ω(err).ShouldNot(MatchError(ErrElectionNoLeader))
+	})
+
+	It("runs for election", func(ctx SpecContext) {
+		e := &KubeElection{rl: &fakeResourceLock{}}
+
+		electedCh, errCh := e.RunForElection(context.Background())
+		expectElected(electedCh, false)
+		expectElected(electedCh, true)
+		Ω(e.Leader(ctx)).Should(Equal("keeper1"))
+
+		Ω(func() { e.RunForElection(context.Background()) }).Should(Panic(), "expected a panic when running twice")
+
 		e.Stop()
-	}()
+		expectClosed(electedCh, errCh)
 
-	// a new campaign after Stop gets new channels; stopping it while nobody reads them ends it too
-	electedCh, errCh = e.RunForElection(context.Background())
-	expectElected(t, electedCh, false)
-	time.Sleep(100 * time.Millisecond) // it is elected, and waits to report that
-	e.Stop()
-	expectClosed(t, electedCh, errCh)
-}
+		Ω(e.Stop).Should(Panic(), "expected a panic when stopping twice")
+
+		// a new campaign after Stop gets new channels; stopping it while nobody reads them ends it too
+		electedCh, errCh = e.RunForElection(context.Background())
+		expectElected(electedCh, false)
+		time.Sleep(100 * time.Millisecond) // it is elected, and waits to report that
+		e.Stop()
+		expectClosed(electedCh, errCh)
+	})
+})

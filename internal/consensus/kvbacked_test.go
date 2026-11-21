@@ -20,9 +20,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 )
 
@@ -139,384 +140,275 @@ func (m *memKVStore) Close() error { return nil }
 
 var errBoom = errors.New("boom")
 
-func TestKVBackedStoreClusterData(t *testing.T) {
-	ctx := context.Background()
-	kv := newMemKVStore()
-	s := NewKVBackedStore(kv, "/orion/cluster/test")
+var _ = Describe("KVBackedStore", func() {
+	var (
+		ctx context.Context
+		kv  *memKVStore
+		s   *KVBackedStore
+	)
 
-	// nothing stored yet: no data, no pair, no error
-	cd, pair, err := s.GetClusterData(ctx)
-	if err != nil || cd != nil || pair != nil {
-		t.Fatalf("expected no cluster data, got %v, %v, %v", cd, pair, err)
-	}
+	BeforeEach(func() {
+		ctx = context.Background()
+		kv = newMemKVStore()
+		s = NewKVBackedStore(kv, "/c")
+	})
 
-	// create only
-	first, err := s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 1}, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if first.Key != "/orion/cluster/test/clusterdata" {
-		t.Errorf("unexpected key %q", first.Key)
-	}
-	// create only again: someone else wrote first
-	if _, err = s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 2}, nil); !errors.Is(err, ErrKeyModified) {
-		t.Errorf("expected ErrKeyModified, got %v", err)
-	}
+	It("gets and (atomically) puts the cluster data", func() {
+		s = NewKVBackedStore(kv, "/orion/cluster/test")
 
-	cd, pair, err = s.GetClusterData(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cd.FormatVersion != 1 || pair.LastIndex != first.LastIndex {
-		t.Errorf("unexpected cluster data %v, pair %v", cd, pair)
-	}
+		// nothing stored yet: no data, no pair, no error
+		cd, pair, err := s.GetClusterData(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(cd).Should(BeNil())
+		Ω(pair).Should(BeNil())
 
-	// compare and swap on the last index
-	second, err := s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 2}, pair)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// a stale previous pair conflicts
-	if _, err = s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 3}, pair); !errors.Is(err, ErrKeyModified) {
-		t.Errorf("expected ErrKeyModified, got %v", err)
-	}
+		// create only
+		first, err := s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 1}, nil)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(first.Key).Should(Equal("/orion/cluster/test/clusterdata"))
+		// create only again: someone else wrote first
+		_, err = s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 2}, nil)
+		Ω(err).Should(MatchError(ErrKeyModified))
 
-	// an unconditional put always wins
-	if err = s.PutClusterData(ctx, &cluster.Data{FormatVersion: 4}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	cd, pair, err = s.GetClusterData(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cd.FormatVersion != 4 || pair.LastIndex <= second.LastIndex {
-		t.Errorf("unexpected cluster data %v, pair %v", cd, pair)
-	}
-}
+		cd, pair, err = s.GetClusterData(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(cd.FormatVersion).Should(Equal(uint64(1)))
+		Ω(pair.LastIndex).Should(Equal(first.LastIndex))
 
-func TestKVBackedStoreClusterDataErrors(t *testing.T) {
-	ctx := context.Background()
-	kv := newMemKVStore()
-	s := NewKVBackedStore(kv, "/c")
+		// compare and swap on the last index
+		second, err := s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 2}, pair)
+		Ω(err).ShouldNot(HaveOccurred())
+		// a stale previous pair conflicts
+		_, err = s.AtomicPutClusterData(ctx, &cluster.Data{FormatVersion: 3}, pair)
+		Ω(err).Should(MatchError(ErrKeyModified))
 
-	kv.getErr = errBoom
-	if _, _, err := s.GetClusterData(ctx); !errors.Is(err, errBoom) {
-		t.Errorf("expected errBoom, got %v", err)
-	}
-	kv.getErr = nil
+		// an unconditional put always wins
+		Ω(s.PutClusterData(ctx, &cluster.Data{FormatVersion: 4})).Should(Succeed())
+		cd, pair, err = s.GetClusterData(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(cd.FormatVersion).Should(Equal(uint64(4)))
+		Ω(pair.LastIndex).Should(BeNumerically(">", second.LastIndex))
+	})
 
-	kv.putErr = errBoom
-	if err := s.PutClusterData(ctx, &cluster.Data{}); !errors.Is(err, errBoom) {
-		t.Errorf("expected errBoom, got %v", err)
-	}
-	kv.putErr = nil
+	It("returns the errors of the kv store for the cluster data", func() {
+		kv.getErr = errBoom
+		_, _, err := s.GetClusterData(ctx)
+		Ω(err).Should(MatchError(errBoom))
+		kv.getErr = nil
 
-	kv.atomicPutErr = errBoom
-	if _, err := s.AtomicPutClusterData(ctx, &cluster.Data{}, nil); !errors.Is(err, errBoom) {
-		t.Errorf("expected errBoom, got %v", err)
-	}
-	kv.atomicPutErr = nil
+		kv.putErr = errBoom
+		Ω(s.PutClusterData(ctx, &cluster.Data{})).Should(MatchError(errBoom))
+		kv.putErr = nil
 
-	// invalid json in the store
-	kv.pairs["/c/clusterdata"] = &KVPair{Key: "/c/clusterdata", Value: []byte("{")}
-	if _, _, err := s.GetClusterData(ctx); err == nil {
-		t.Error("expected a json error")
-	}
-}
+		kv.atomicPutErr = errBoom
+		_, err = s.AtomicPutClusterData(ctx, &cluster.Data{}, nil)
+		Ω(err).Should(MatchError(errBoom))
+		kv.atomicPutErr = nil
 
-func TestKVBackedStoreKeepersInfo(t *testing.T) {
-	ctx := context.Background()
-	kv := newMemKVStore()
-	s := NewKVBackedStore(kv, "/c")
+		// invalid json in the store
+		kv.pairs["/c/clusterdata"] = &KVPair{Key: "/c/clusterdata", Value: []byte("{")}
+		_, _, err = s.GetClusterData(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
+	})
 
-	keepers, err := s.GetKeepersInfo(ctx)
-	if err != nil || keepers == nil || len(keepers) != 0 {
-		t.Fatalf("expected an empty keepers info, got %v, %v", keepers, err)
-	}
+	It("sets and gets the keepers info", func() {
+		keepers, err := s.GetKeepersInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(keepers).ShouldNot(BeNil())
+		Ω(keepers).Should(BeEmpty())
 
-	for _, uid := range []string{"k1", "k2"} {
-		if err = s.SetKeeperInfo(ctx, uid, &cluster.KeeperInfo{UID: uid}, time.Second); err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		for _, uid := range []string{"k1", "k2"} {
+			Ω(s.SetKeeperInfo(ctx, uid, &cluster.KeeperInfo{UID: uid}, time.Second)).Should(Succeed())
 		}
-	}
-	// the ttl is raised to the minimum
-	if ttl := kv.ttls["/c/keepers/info/k1"]; ttl != minTTL {
-		t.Errorf("expected ttl %s, got %s", minTTL, ttl)
-	}
-	if err = s.SetKeeperInfo(ctx, "k3", &cluster.KeeperInfo{UID: "k3"}, time.Minute); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ttl := kv.ttls["/c/keepers/info/k3"]; ttl != time.Minute {
-		t.Errorf("expected ttl %s, got %s", time.Minute, ttl)
-	}
+		// the ttl is raised to the minimum
+		Ω(kv.ttls["/c/keepers/info/k1"]).Should(Equal(minTTL))
+		Ω(s.SetKeeperInfo(ctx, "k3", &cluster.KeeperInfo{UID: "k3"}, time.Minute)).Should(Succeed())
+		Ω(kv.ttls["/c/keepers/info/k3"]).Should(Equal(time.Minute))
 
-	keepers, err = s.GetKeepersInfo(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(keepers) != 3 || keepers["k1"].UID != "k1" || keepers["k3"].UID != "k3" {
-		t.Errorf("unexpected keepers info %v", keepers)
-	}
+		keepers, err = s.GetKeepersInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(keepers).Should(HaveLen(3))
+		Ω(keepers["k1"].UID).Should(Equal("k1"))
+		Ω(keepers["k3"].UID).Should(Equal("k3"))
 
-	kv.pairs["/c/keepers/info/bad"] = &KVPair{Value: []byte("{")}
-	if _, err = s.GetKeepersInfo(ctx); err == nil {
-		t.Error("expected a json error")
-	}
+		kv.pairs["/c/keepers/info/bad"] = &KVPair{Value: []byte("{")}
+		_, err = s.GetKeepersInfo(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
 
-	kv.listErr = errBoom
-	if _, err = s.GetKeepersInfo(ctx); !errors.Is(err, errBoom) {
-		t.Errorf("expected errBoom, got %v", err)
-	}
-}
+		kv.listErr = errBoom
+		_, err = s.GetKeepersInfo(ctx)
+		Ω(err).Should(MatchError(errBoom))
+	})
 
-func TestKVBackedStoreSentinelsInfo(t *testing.T) {
-	ctx := context.Background()
-	kv := newMemKVStore()
-	s := NewKVBackedStore(kv, "/c")
+	It("sets and gets the sentinels info", func() {
+		sentinels, err := s.GetSentinelsInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(sentinels).ShouldNot(BeNil())
+		Ω(sentinels).Should(BeEmpty())
 
-	sentinels, err := s.GetSentinelsInfo(ctx)
-	if err != nil || sentinels == nil || len(sentinels) != 0 {
-		t.Fatalf("expected an empty sentinels info, got %v, %v", sentinels, err)
-	}
+		Ω(s.SetSentinelInfo(ctx, &cluster.SentinelInfo{UID: "s1"}, 0)).Should(Succeed())
+		Ω(s.SetSentinelInfo(ctx, &cluster.SentinelInfo{UID: "s2"}, time.Minute)).Should(Succeed())
+		Ω(kv.ttls["/c/sentinels/info/s1"]).Should(Equal(minTTL))
+		Ω(kv.ttls["/c/sentinels/info/s2"]).Should(Equal(time.Minute))
 
-	if err = s.SetSentinelInfo(ctx, &cluster.SentinelInfo{UID: "s1"}, 0); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if err = s.SetSentinelInfo(ctx, &cluster.SentinelInfo{UID: "s2"}, time.Minute); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ttl := kv.ttls["/c/sentinels/info/s1"]; ttl != minTTL {
-		t.Errorf("expected ttl %s, got %s", minTTL, ttl)
-	}
-	if ttl := kv.ttls["/c/sentinels/info/s2"]; ttl != time.Minute {
-		t.Errorf("expected ttl %s, got %s", time.Minute, ttl)
-	}
+		sentinels, err = s.GetSentinelsInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(sentinels).Should(HaveLen(2))
+		Ω(sentinels[0].UID).Should(Equal("s1"))
+		Ω(sentinels[1].UID).Should(Equal("s2"))
 
-	sentinels, err = s.GetSentinelsInfo(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(sentinels) != 2 || sentinels[0].UID != "s1" || sentinels[1].UID != "s2" {
-		t.Errorf("unexpected sentinels info %v", sentinels)
-	}
+		kv.pairs["/c/sentinels/info/bad"] = &KVPair{Value: []byte("{")}
+		_, err = s.GetSentinelsInfo(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
 
-	kv.pairs["/c/sentinels/info/bad"] = &KVPair{Value: []byte("{")}
-	if _, err = s.GetSentinelsInfo(ctx); err == nil {
-		t.Error("expected a json error")
-	}
+		kv.listErr = errBoom
+		_, err = s.GetSentinelsInfo(ctx)
+		Ω(err).Should(MatchError(errBoom))
+	})
 
-	kv.listErr = errBoom
-	if _, err = s.GetSentinelsInfo(ctx); !errors.Is(err, errBoom) {
-		t.Errorf("expected errBoom, got %v", err)
-	}
-}
+	It("sets and gets the proxies info", func() {
+		proxies, err := s.GetProxiesInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(proxies).ShouldNot(BeNil())
+		Ω(proxies).Should(BeEmpty())
 
-func TestKVBackedStoreProxiesInfo(t *testing.T) {
-	ctx := context.Background()
-	kv := newMemKVStore()
-	s := NewKVBackedStore(kv, "/c")
+		Ω(s.SetProxyInfo(ctx, &cluster.ProxyInfo{UID: "p1"}, 0)).Should(Succeed())
+		Ω(s.SetProxyInfo(ctx, &cluster.ProxyInfo{UID: "p2", Generation: 2}, time.Minute)).Should(Succeed())
+		Ω(kv.ttls["/c/proxies/info/p1"]).Should(Equal(minTTL))
+		Ω(kv.ttls["/c/proxies/info/p2"]).Should(Equal(time.Minute))
 
-	proxies, err := s.GetProxiesInfo(ctx)
-	if err != nil || proxies == nil || len(proxies) != 0 {
-		t.Fatalf("expected an empty proxies info, got %v, %v", proxies, err)
-	}
+		proxies, err = s.GetProxiesInfo(ctx)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(proxies).Should(HaveLen(2))
+		Ω(proxies["p2"].Generation).Should(BeEquivalentTo(2))
 
-	if err = s.SetProxyInfo(ctx, &cluster.ProxyInfo{UID: "p1"}, 0); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if err = s.SetProxyInfo(ctx, &cluster.ProxyInfo{UID: "p2", Generation: 2}, time.Minute); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ttl := kv.ttls["/c/proxies/info/p1"]; ttl != minTTL {
-		t.Errorf("expected ttl %s, got %s", minTTL, ttl)
-	}
-	if ttl := kv.ttls["/c/proxies/info/p2"]; ttl != time.Minute {
-		t.Errorf("expected ttl %s, got %s", time.Minute, ttl)
-	}
+		kv.pairs["/c/proxies/info/bad"] = &KVPair{Value: []byte("{")}
+		_, err = s.GetProxiesInfo(ctx)
+		Ω(err).Should(HaveOccurred(), "expected a json error")
 
-	proxies, err = s.GetProxiesInfo(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(proxies) != 2 || proxies["p2"].Generation != 2 {
-		t.Errorf("unexpected proxies info %v", proxies)
-	}
+		kv.listErr = errBoom
+		_, err = s.GetProxiesInfo(ctx)
+		Ω(err).Should(MatchError(errBoom))
+	})
 
-	kv.pairs["/c/proxies/info/bad"] = &KVPair{Value: []byte("{")}
-	if _, err = s.GetProxiesInfo(ctx); err == nil {
-		t.Error("expected a json error")
-	}
-
-	kv.listErr = errBoom
-	if _, err = s.GetProxiesInfo(ctx); !errors.Is(err, errBoom) {
-		t.Errorf("expected errBoom, got %v", err)
-	}
-}
-
-func TestKVBackedStoreHealthy(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		setup   func(*memKVStore)
-		wantErr bool
-		// whether the marker gets cleaned up
-		wantDelete bool
-	}{
-		{name: "healthy", setup: func(*memKVStore) {}, wantDelete: true},
-		{name: "put fails", setup: func(m *memKVStore) { m.putErr = errBoom }, wantErr: true},
-		{name: "get fails", setup: func(m *memKVStore) { m.getErr = errBoom }, wantErr: true, wantDelete: true},
-		{name: "value mismatch", setup: func(m *memKVStore) { m.corruptGet = true }, wantErr: true, wantDelete: true},
-		// a failing cleanup is only logged
-		{name: "delete fails", setup: func(m *memKVStore) { m.deleteErr = errBoom }, wantDelete: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			kv := newMemKVStore()
-			tc.setup(kv)
-			err := NewKVBackedStore(kv, "/c").Healthy(context.Background())
-			if (err != nil) != tc.wantErr {
-				t.Errorf("expected error %t, got %v", tc.wantErr, err)
+	// wantDelete is whether the health marker gets cleaned up
+	DescribeTable("Healthy",
+		func(setup func(*memKVStore), wantErr, wantDelete bool) {
+			setup(kv)
+			err := s.Healthy(ctx)
+			if wantErr {
+				Ω(err).Should(HaveOccurred())
+			} else {
+				Ω(err).ShouldNot(HaveOccurred())
 			}
-			if got := len(kv.deleted) == 1; got != tc.wantDelete {
-				t.Errorf("expected delete %t, got deletes %v", tc.wantDelete, kv.deleted)
+			if wantDelete {
+				Ω(kv.deleted).Should(HaveLen(1))
+			} else {
+				Ω(kv.deleted).ShouldNot(HaveLen(1))
 			}
 			for _, key := range kv.deleted {
-				if !strings.HasPrefix(key, "/c/health/") {
-					t.Errorf("unexpected health key %q", key)
-				}
+				Ω(key).Should(HavePrefix("/c/health/"), "unexpected health key")
 			}
-		})
-	}
-}
-
-func TestConfigEndpoints(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		cfg        Config
-		wantAddrs  []string
-		wantScheme string
-		wantErr    bool
-	}{
-		{
-			name:       "etcd default",
-			cfg:        Config{Backend: ETCDV3},
-			wantAddrs:  []string{"127.0.0.1:2379"},
-			wantScheme: "http",
 		},
-		{
-			name:       "schemeless",
-			cfg:        Config{Backend: ETCDV3, Endpoints: "a:1,b:2"},
-			wantAddrs:  []string{"a:1", "b:2"},
-			wantScheme: "http",
+		Entry("healthy", func(*memKVStore) {}, false, true),
+		Entry("put fails", func(m *memKVStore) { m.putErr = errBoom }, true, false),
+		Entry("get fails", func(m *memKVStore) { m.getErr = errBoom }, true, true),
+		Entry("value mismatch", func(m *memKVStore) { m.corruptGet = true }, true, true),
+		// a failing cleanup is only logged
+		Entry("delete fails", func(m *memKVStore) { m.deleteErr = errBoom }, false, true),
+	)
+})
+
+var _ = Describe("Config", func() {
+	DescribeTable("endpoints",
+		func(cfg Config, wantAddrs []string, wantScheme string, wantErr bool) {
+			addrs, err := cfg.EndpointAddrs()
+			if wantErr {
+				Ω(err).Should(HaveOccurred())
+			} else {
+				Ω(err).ShouldNot(HaveOccurred())
+			}
+			Ω(strings.Join(addrs, ",")).Should(Equal(strings.Join(wantAddrs, ",")))
+			scheme, err := cfg.EndpointScheme()
+			if wantErr {
+				Ω(err).Should(HaveOccurred())
+			} else {
+				Ω(err).ShouldNot(HaveOccurred())
+			}
+			Ω(scheme).Should(Equal(wantScheme))
 		},
-		{
-			name:       "https",
-			cfg:        Config{Backend: ETCDV3, Endpoints: "https://a:1,https://b:2"},
-			wantAddrs:  []string{"a:1", "b:2"},
-			wantScheme: "https",
+		Entry("etcd default", Config{Backend: ETCDV3}, []string{"127.0.0.1:2379"}, "http", false),
+		Entry("schemeless", Config{Backend: ETCDV3, Endpoints: "a:1,b:2"}, []string{"a:1", "b:2"}, "http", false),
+		Entry("https",
+			Config{Backend: ETCDV3, Endpoints: "https://a:1,https://b:2"}, []string{"a:1", "b:2"}, "https", false),
+		Entry("unknown backend", Config{Backend: "zookeeper"}, nil, "", true),
+		Entry("consul", Config{Backend: "consul"}, nil, "", true),
+		Entry("etcdv2", Config{Backend: "etcdv2"}, nil, "", true),
+		Entry("mixed schemes", Config{Backend: ETCDV3, Endpoints: "https://a:1,http://b:2"}, nil, "", true),
+		Entry("schemeless and https", Config{Backend: ETCDV3, Endpoints: "https://a:1,b:2"}, nil, "", true),
+		Entry("unparsable", Config{Backend: ETCDV3, Endpoints: "http://a b:%zz"}, nil, "", true),
+	)
+
+	DescribeTable("TLSConfig",
+		func(cfg Config, wantTLS, wantErr bool) {
+			tlsConfig, err := cfg.TLSConfig()
+			if wantErr {
+				Ω(err).Should(HaveOccurred())
+			} else {
+				Ω(err).ShouldNot(HaveOccurred())
+			}
+			if wantTLS {
+				Ω(tlsConfig).ShouldNot(BeNil())
+			} else {
+				Ω(tlsConfig).Should(BeNil())
+			}
 		},
-		{name: "unknown backend", cfg: Config{Backend: "zookeeper"}, wantErr: true},
-		{name: "consul", cfg: Config{Backend: "consul"}, wantErr: true},
-		{name: "etcdv2", cfg: Config{Backend: "etcdv2"}, wantErr: true},
-		{name: "mixed schemes", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1,http://b:2"}, wantErr: true},
-		{name: "schemeless and https", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1,b:2"}, wantErr: true},
-		{name: "unparsable", cfg: Config{Backend: ETCDV3, Endpoints: "http://a b:%zz"}, wantErr: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			addrs, err := tc.cfg.EndpointAddrs()
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("expected error %t, got %v", tc.wantErr, err)
-			}
-			if strings.Join(addrs, ",") != strings.Join(tc.wantAddrs, ",") {
-				t.Errorf("expected addrs %v, got %v", tc.wantAddrs, addrs)
-			}
-			scheme, err := tc.cfg.EndpointScheme()
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("expected error %t, got %v", tc.wantErr, err)
-			}
-			if scheme != tc.wantScheme {
-				t.Errorf("expected scheme %q, got %q", tc.wantScheme, scheme)
-			}
-		})
-	}
-}
+		Entry("http", Config{Backend: ETCDV3}, false, false),
+		Entry("https", Config{Backend: ETCDV3, Endpoints: "https://a:1"}, true, false),
+		Entry("other scheme", Config{Backend: ETCDV3, Endpoints: "unix://a"}, false, true),
+		Entry("invalid endpoints", Config{Backend: "zookeeper"}, false, true),
+		Entry("missing ca file",
+			Config{Backend: ETCDV3, Endpoints: "https://a:1", CAFile: "/nonexistent/ca.pem"}, false, true),
+	)
+})
 
-func TestConfigTLSConfig(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		cfg     Config
-		wantTLS bool
-		wantErr bool
-	}{
-		{name: "http", cfg: Config{Backend: ETCDV3}},
-		{name: "https", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1"}, wantTLS: true},
-		{name: "other scheme", cfg: Config{Backend: ETCDV3, Endpoints: "unix://a"}, wantErr: true},
-		{name: "invalid endpoints", cfg: Config{Backend: "zookeeper"}, wantErr: true},
-		{
-			name:    "missing ca file",
-			cfg:     Config{Backend: ETCDV3, Endpoints: "https://a:1", CAFile: "/nonexistent/ca.pem"},
-			wantErr: true,
+var _ = Describe("NewKVStore", func() {
+	It("creates orion's etcd v3 store", func() {
+		// the client connects lazily, so no server is needed
+		cfg := Config{Backend: ETCDV3, Endpoints: "https://127.0.0.1:1", Timeout: time.Second}
+		s, err := NewKVStore(context.Background(), cfg)
+		Ω(err).ShouldNot(HaveOccurred())
+		Ω(s).Should(BeAssignableToTypeOf(&etcdV3Store{}), "expected orion's etcd v3 store")
+		es, _ := s.(*etcdV3Store)
+		Ω(es.c.Endpoints()).Should(Equal([]string{"https://127.0.0.1:1"}))
+		Ω(es.requestTimeout).Should(Equal(time.Second))
+		Ω(s.Close()).Should(Succeed())
+	})
+
+	DescribeTable("fails for an invalid config",
+		func(cfg Config) {
+			_, err := NewKVStore(context.Background(), cfg)
+			Ω(err).Should(HaveOccurred())
 		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tlsConfig, err := tc.cfg.TLSConfig()
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("expected error %t, got %v", tc.wantErr, err)
-			}
-			if (tlsConfig != nil) != tc.wantTLS {
-				t.Errorf("expected tls config %t, got %v", tc.wantTLS, tlsConfig)
-			}
-		})
-	}
-}
+		Entry("invalid endpoints", Config{Backend: ETCDV3, Endpoints: "https://a:1,http://b:2"}),
+		Entry("invalid tls", Config{Backend: ETCDV3, Endpoints: "unix://a"}),
+		Entry("unknown backend", Config{Backend: "zookeeper", Endpoints: "http://a:1"}),
+		Entry("consul", Config{Backend: "consul", Endpoints: "http://a:1"}),
+		Entry("etcdv2", Config{Backend: "etcdv2", Endpoints: "http://a:1"}),
+	)
+})
 
-func TestNewKVStore(t *testing.T) {
-	// the client connects lazily, so no server is needed
-	cfg := Config{Backend: ETCDV3, Endpoints: "https://127.0.0.1:1", Timeout: time.Second}
-	s, err := NewKVStore(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	es, ok := s.(*etcdV3Store)
-	if !ok {
-		t.Fatalf("expected orion's etcd v3 store, got %T", s)
-	}
-	if eps := es.c.Endpoints(); len(eps) != 1 || eps[0] != "https://127.0.0.1:1" || es.requestTimeout != time.Second {
-		t.Errorf("endpoints %v, request timeout %v", eps, es.requestTimeout)
-	}
-	if err = s.Close(); err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
+var _ = Describe("NewKVBackedElection", func() {
+	It("creates an etcdv3 election for the etcd v3 store", func() {
+		e, ok := NewKVBackedElection(&etcdV3Store{}, "/c/leader", "uid", time.Second).(*etcdv3Election)
+		Ω(ok).Should(BeTrue(), "expected an etcdv3 election")
+		Ω(e.path).Should(Equal("/c/leader"))
+		Ω(e.candidateUID).Should(Equal("uid"))
+		Ω(e.requestTimeout).Should(Equal(time.Second))
+		Ω(e.ttl).Should(Equal(minTTL))
+	})
 
-func TestNewKVStoreErrors(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		cfg  Config
-	}{
-		{name: "invalid endpoints", cfg: Config{Backend: ETCDV3, Endpoints: "https://a:1,http://b:2"}},
-		{name: "invalid tls", cfg: Config{Backend: ETCDV3, Endpoints: "unix://a"}},
-		{name: "unknown backend", cfg: Config{Backend: "zookeeper", Endpoints: "http://a:1"}},
-		{name: "consul", cfg: Config{Backend: "consul", Endpoints: "http://a:1"}},
-		{name: "etcdv2", cfg: Config{Backend: "etcdv2", Endpoints: "http://a:1"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewKVStore(context.Background(), tc.cfg); err == nil {
-				t.Error("expected an error")
-			}
-		})
-	}
-}
-
-func TestNewKVBackedElection(t *testing.T) {
-	ekv := &etcdV3Store{}
-	if e, ok := NewKVBackedElection(ekv, "/c/leader", "uid", time.Second).(*etcdv3Election); !ok ||
-		e.path != "/c/leader" || e.candidateUID != "uid" || e.requestTimeout != time.Second || e.ttl != minTTL {
-		t.Errorf("unexpected etcdv3 election %v", e)
-	}
-
-	defer func() {
-		if recover() == nil {
-			t.Error("expected a panic for an unknown kv store")
-		}
-	}()
-	NewKVBackedElection(newMemKVStore(), "/c/leader", "uid", time.Second)
-}
+	It("panics for an unknown kv store", func() {
+		Ω(func() { NewKVBackedElection(newMemKVStore(), "/c/leader", "uid", time.Second) }).Should(Panic())
+	})
+})
