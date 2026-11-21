@@ -28,10 +28,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var errStore = errors.New("store error")
-
 // checkStore is a consensus.Store for clusterSentinelCheck: it serves cd (with pair) and the keepers and proxies info,
-// fails the calls with an error set, and records what the sentinel writes
+// fails the calls with an error set, and records what the sentinel writes. It is the only declaration outside the
+// Describe: Go doesn't allow methods on a type declared in a function.
 type checkStore struct {
 	consensus.Store
 
@@ -79,26 +78,27 @@ func (c *checkStore) GetProxiesInfo(context.Context) (cluster.ProxiesInfo, error
 	return c.proxiesInfo, c.proxiesInfoErr
 }
 
-// quietCtx returns a context whose sentinel logger discards everything (at the sentinel log level, or
-// logging.GetLogComponent replaces it)
-func quietCtx() context.Context {
-	_, def := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
-	return zerolog.New(io.Discard).Level(def.GetLevel()).WithContext(context.Background())
-}
-
-// checkCD returns the cluster data of a converged cluster: db1 on keeper1 is its primary
-func checkCD() *cluster.Data {
-	cd := etClusterData(initSpec(cluster.New), "db1", []*cluster.DB{etMaster("db1", "keeper1", 0)})
-	cd.FormatVersion = cluster.CurrentCDFormatVersion
-	return cd
-}
-
 var _ = Describe("clusterSentinelCheck", func() {
 	var (
 		ctx   context.Context
 		store *checkStore
 		s     *Sentinel
 	)
+	errStore := errors.New("store error")
+
+	// quietCtx returns a context whose sentinel logger discards everything (at the sentinel log level, or
+	// logging.GetLogComponent replaces it)
+	quietCtx := func() context.Context {
+		_, def := logging.GetLogComponent(context.Background(), logging.SentinelComponent)
+		return zerolog.New(io.Discard).Level(def.GetLevel()).WithContext(context.Background())
+	}
+
+	// checkCD returns the cluster data of a converged cluster: db1 on keeper1 is its primary
+	checkCD := func() *cluster.Data {
+		cd := etClusterData(initSpec(cluster.New), "db1", []*cluster.DB{etMaster("db1", "keeper1", 0)})
+		cd.FormatVersion = cluster.CurrentCDFormatVersion
+		return cd
+	}
 
 	BeforeEach(func() {
 		ctx = quietCtx()
