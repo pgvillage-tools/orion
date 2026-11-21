@@ -34,6 +34,7 @@ run anywhere, come and go, and change their addresses.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
+- [Standby resync](operations/resync.md): how a keeper gets a new standby, and `resyncFastCheckpoint`.
 
 !!! note
     The rest of the documentation still comes from stolon and describes stolon's behaviour. Until it is reviewed and
