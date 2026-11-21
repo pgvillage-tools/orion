@@ -63,12 +63,15 @@ type Cluster struct {
 	StoreTLS           bool
 	// KeeperMounts are mounted in every keeper (e.g. a volume with a WAL archive); set them before StartMembers
 	KeeperMounts testcontainers.ContainerMounts
-	store        store
-	API          testcontainers.Container
-	Sentinel     testcontainers.Container
-	Proxy        testcontainers.Container
-	Keepers      []testcontainers.Container
-	all          []testcontainers.Container
+	// KeeperNetworks are networks the keepers join next to the network of the cluster (e.g. the network of another
+	// cluster that a standby cluster replicates from); set them before StartMembers
+	KeeperNetworks []string
+	store          store
+	API            testcontainers.Container
+	Sentinel       testcontainers.Container
+	Proxy          testcontainers.Container
+	Keepers        []testcontainers.Container
+	all            []testcontainers.Container
 	// tmpDir holds the files of the cluster (e.g. the certificates); it is removed with the cluster, when the node
 	// that started it (StartStore) ends
 	tmpDir string
@@ -136,8 +139,14 @@ func (tc *Cluster) StartMembers(ctx context.Context, numKeepers int) {
 			"pg-su-password":    pgPassword,
 			"pg-listen-address": alias,
 		}
+		if len(tc.KeeperNetworks) > 0 {
+			// on more networks, postgres listens on all of them (the published port may reach the keeper on another
+			// network than the one of its alias), and the keeper advertises its alias
+			settings["pg-listen-address"] = "*"
+			settings["pg-advertise-address"] = alias
+		}
 		cnt, keeperErr := runKeeper(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {alias}},
-			maps.Clone(settings), tc.KeeperMounts)
+			maps.Clone(settings), tc.KeeperMounts, tc.KeeperNetworks)
 		tc.add(cnt)
 		Ω(keeperErr).NotTo(HaveOccurred())
 		tc.Keepers = append(tc.Keepers, cnt)
@@ -185,7 +194,7 @@ func (tc *Cluster) StartStore(ctx context.Context) {
 		// certificates for etcd and its clients, like the ones of the api: a server certificate for etcd, and a
 		// client certificate for the orion containers
 		storeTLS = &pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "store-client"),
-			APIDir: filepath.Join(tc.tmpDir, "store-server"), APISANs: []string{"etcd"}}
+			APIDir: filepath.Join(tc.tmpDir, "store-server"), APISANs: []string{etcdHost(tc.Network)}}
 		_, err = pki.Init(*storeTLS)
 		Ω(err).NotTo(HaveOccurred())
 	}
@@ -271,6 +280,16 @@ func (tc *Cluster) KeeperExec(ctx context.Context, i int, user, script string) (
 	output, err := io.ReadAll(out)
 	Ω(err).NotTo(HaveOccurred())
 	return code, string(output)
+}
+
+// KeeperIP returns the address of keeper i on the network of the cluster, for a client on that network that can't use
+// its alias (e.g. a keeper of another cluster, with the same alias on its own network)
+func (tc *Cluster) KeeperIP(ctx context.Context, i int) string {
+	inspect, err := tc.Keepers[i].Inspect(ctx)
+	Ω(err).NotTo(HaveOccurred())
+	settings, ok := inspect.NetworkSettings.Networks[tc.Network.Name]
+	Ω(ok).To(BeTrue(), "keeper %d is not on network %s", i, tc.Network.Name)
+	return settings.IPAddress.String()
 }
 
 // RemoveVolume removes a volume (e.g. of KeeperMounts) once the containers that use it are gone: testcontainers
