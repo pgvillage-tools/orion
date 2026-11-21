@@ -27,13 +27,6 @@ import (
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 )
 
-// listening returns whether the proxy listens
-func listening(c *ClusterChecker) bool {
-	c.pollonMutex.Lock()
-	defer c.pollonMutex.Unlock()
-	return c.listener != nil
-}
-
 var _ = Describe("Start", func() {
 	var (
 		store  *mockconsensus.MockStore
@@ -45,6 +38,13 @@ var _ = Describe("Start", func() {
 		// whether the store answers: once false, GetClusterData fails
 		storeUp atomic.Bool
 	)
+
+	// listening returns whether the proxy listens
+	listening := func(c *ClusterChecker) bool {
+		c.pollonMutex.Lock()
+		defer c.pollonMutex.Unlock()
+		return c.listener != nil
+	}
 
 	BeforeEach(func() {
 		host, port := echoServer(GinkgoTB())
