@@ -20,186 +20,146 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	apiv1 "github.com/pgvillage-tools/orion/api/v1"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 )
 
-// newInitAPI returns a fake api without a cluster, that accepts POST /v1/cluster
-func newInitAPI(t *testing.T) *fakeAPI {
-	api := newFakeAPI(t)
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
-	})
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPost), accepted)
-	return api
-}
+var _ = Describe("init", func() {
+	const clusterPath = "/v1/cluster"
+	const statusPath = "/v1/cluster/status"
 
-// expectPostedSpec fails t unless api got one POST of a spec, and returns that spec
-func expectPostedSpec(t *testing.T, api *fakeAPI) apiv1.Spec {
-	t.Helper()
-	posts := api.requestsTo(http.MethodPost, clusterPath)
-	if len(posts) != 1 {
-		t.Fatalf("expected one POST, got %v", api.requests())
-	}
-	var spec apiv1.Spec
-	if err := json.Unmarshal([]byte(posts[0].Body), &spec); err != nil {
-		t.Fatal(err)
-	}
-	return spec
-}
-
-func TestInitPostsTheSpecOfTheArgument(t *testing.T) {
-	api := newInitAPI(t)
-	stdout, _, err := api.run("init", `{"initMode": "new", "maxStandbys": 3}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stdout != "" {
-		t.Errorf("expected no output without --wait, got %q", stdout)
-	}
-	spec := expectPostedSpec(t, api)
-	if spec.InitMode == nil || *spec.InitMode != apiv1.New || spec.MaxStandbys == nil || *spec.MaxStandbys != 3 {
-		t.Errorf("unexpected spec %+v", spec)
-	}
-}
-
-func TestInitReadsTheSpecFromStdinWithADash(t *testing.T) {
-	api := newInitAPI(t)
-	if _, _, err := api.runWith(context.Background(), `{"maxStandbys": 5}`, "init", "--file", "-"); err != nil {
-		t.Fatal(err)
-	}
-	if spec := expectPostedSpec(t, api); spec.MaxStandbys == nil || *spec.MaxStandbys != 5 {
-		t.Errorf("unexpected spec %+v", spec)
-	}
-}
-
-func TestInitWithoutASpecCreatesANewClusterWithDefaults(t *testing.T) {
-	for name, tc := range map[string]struct {
-		stdin string
-		args  []string
-	}{
-		// it doesn't read stdin without --file -: at a terminal it would wait for input
-		"no arguments, stdin ignored": {stdin: `{"maxStandbys": 5}`},
-		"empty stdin":                 {stdin: "", args: []string{"--file", "-"}},
-		"stdin with only whitespace":  {stdin: " \n", args: []string{"--file", "-"}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			api := newInitAPI(t)
-			if _, _, err := api.runWith(context.Background(), tc.stdin, append([]string{"init"}, tc.args...)...); err != nil {
-				t.Fatal(err)
-			}
-			spec := expectPostedSpec(t, api)
-			if spec.InitMode == nil || *spec.InitMode != apiv1.New || spec.MaxStandbys != nil {
-				t.Errorf("expected a new cluster with the default settings, got %+v", spec)
-			}
+	// newInitAPI returns a fake api without a cluster, that accepts POST /v1/cluster
+	newInitAPI := func() *fakeAPI {
+		api := newFakeAPI()
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
 		})
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPost), accepted)
+		return api
 	}
-}
 
-func TestInitDefaultsTheInitModeToNew(t *testing.T) {
-	api := newInitAPI(t)
-	if _, _, err := api.run("init", `{"maxStandbys": 3}`); err != nil {
-		t.Fatal(err)
+	// expectPostedSpec fails the spec unless api got one POST of a spec, and returns that spec
+	expectPostedSpec := func(api *fakeAPI) apiv1.Spec {
+		GinkgoHelper()
+		posts := api.requestsTo(http.MethodPost, clusterPath)
+		Ω(posts).To(HaveLen(1), "expected one POST, got %v", api.requests())
+		var spec apiv1.Spec
+		Ω(json.Unmarshal([]byte(posts[0].Body), &spec)).To(Succeed())
+		return spec
 	}
-	if spec := expectPostedSpec(t, api); spec.InitMode == nil || *spec.InitMode != apiv1.New {
-		t.Errorf("expected initMode new, got %+v", spec)
-	}
-}
 
-func TestInitKeepsAnotherInitMode(t *testing.T) {
-	api := newInitAPI(t)
-	if _, _, err := api.run("init", `{"initMode": "existing", "existingConfig": {"keeperUID": "keeper1"}}`); err != nil {
-		t.Fatal(err)
-	}
-	if spec := expectPostedSpec(t, api); spec.InitMode == nil || *spec.InitMode != apiv1.ExistingCluster {
-		t.Errorf("expected initMode existing, got %+v", spec)
-	}
-}
+	Context("without a cluster", func() {
+		var api *fakeAPI
 
-func TestInitReadsTheSpecFromAFile(t *testing.T) {
-	api := newInitAPI(t)
-	file := filepath.Join(t.TempDir(), "spec.json")
-	if err := os.WriteFile(file, []byte(`{"maxStandbys": 7}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := api.run("init", "--file", file); err != nil {
-		t.Fatal(err)
-	}
-	if spec := expectPostedSpec(t, api); spec.MaxStandbys == nil || *spec.MaxStandbys != 7 {
-		t.Errorf("unexpected spec %+v", spec)
-	}
-}
-
-func TestInitRefusesAnExistingCluster(t *testing.T) {
-	api := newFakeAPI(t)
-	handleClusterData(api, testClusterData())
-	stdout, stderr, err := api.run("init", `{}`)
-	expectError(t, err, "cannot initialize an already existing cluster", "cannot initialize an already existing cluster")
-	expectNoUsage(t, stdout, stderr)
-	if len(api.requestsTo(http.MethodPost, clusterPath)) != 0 {
-		t.Error("expected no POST for an existing cluster")
-	}
-}
-
-func TestInitReportsAFailedRead(t *testing.T) {
-	api := newFakeAPI(t)
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		endpoints.WriteProblem(w, http.StatusInternalServerError, "the store doesn't answer")
-	})
-	_, _, err := api.run("init", `{}`)
-	expectError(t, err, "failed to get the cluster data: GET "+api.url(clusterPath)+
-		": 500 Internal Server Error: the store doesn't answer", httpCodeSuffix(http.StatusInternalServerError))
-}
-
-func TestInitReportsAFailedPost(t *testing.T) {
-	api := newFakeAPI(t)
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
-		endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
-	})
-	api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPost), func(w http.ResponseWriter, _ *http.Request) {
-		endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: maxStandbys can't be 0")
-	})
-	_, _, err := api.run("init", `{"maxStandbys": 0}`)
-	expectError(t, err, "init failed: POST "+api.url(clusterPath)+
-		": 400 Bad Request: invalid spec: maxStandbys can't be 0", httpCodeSuffix(http.StatusBadRequest))
-}
-
-func TestInitRefusesInvalidInput(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "missing.json")
-	for _, tc := range []struct {
-		name     string
-		args     []string
-		expected string
-	}{
-		{"two arguments", []string{"{}", "{}"}, "too many arguments"},
-		{"invalid json", []string{"{"}, "invalid cluster spec: "},
-		{"missing file", []string{"--file", missing}, "cannot read " + missing + ": "},
-		{"an argument and a file", []string{"{}", "--file", missing}, "pass the cluster spec as an argument or with --file, not both"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			api := newInitAPI(t)
-			_, _, err := api.run(append([]string{"init"}, tc.args...)...)
-			expectError(t, err, tc.expected, "")
-			if len(api.requests()) != 0 {
-				t.Errorf("expected no requests, got %v", api.requests())
-			}
+		BeforeEach(func() {
+			api = newInitAPI()
 		})
-	}
-}
 
-func TestInitWaitsUntilTheClusterIsAvailable(t *testing.T) {
-	api := newInitAPI(t)
-	handleStatusSequence(api, unavailable(), available("keeper1"))
-	stdout, _, err := api.run("init", "--wait", `{}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stdout != "the cluster applied the change\n" {
-		t.Errorf("unexpected output %q", stdout)
-	}
-	if n := len(api.requestsTo(http.MethodGet, statusPath)); n != 2 {
-		t.Errorf("expected 2 status requests, got %d", n)
-	}
-}
+		It("posts the spec of the argument", func() {
+			stdout, _, err := api.run("init", `{"initMode": "new", "maxStandbys": 3}`)
+			Ω(err).NotTo(HaveOccurred())
+			Ω(stdout).To(BeEmpty(), "expected no output without --wait")
+			spec := expectPostedSpec(api)
+			Ω(spec.InitMode).To(HaveValue(Equal(apiv1.New)))
+			Ω(spec.MaxStandbys).To(HaveValue(BeEquivalentTo(3)))
+		})
+
+		It("reads the spec from stdin with a dash", func() {
+			_, _, err := api.runWith(context.Background(), `{"maxStandbys": 5}`, "init", "--file", "-")
+			Ω(err).NotTo(HaveOccurred())
+			Ω(expectPostedSpec(api).MaxStandbys).To(HaveValue(BeEquivalentTo(5)))
+		})
+
+		DescribeTable("creates a new cluster with defaults without a spec",
+			func(stdin string, args []string) {
+				_, _, err := api.runWith(context.Background(), stdin, append([]string{"init"}, args...)...)
+				Ω(err).NotTo(HaveOccurred())
+				spec := expectPostedSpec(api)
+				Ω(spec.InitMode).To(HaveValue(Equal(apiv1.New)), "expected a new cluster")
+				Ω(spec.MaxStandbys).To(BeNil(), "expected the default settings")
+			},
+			// it doesn't read stdin without --file -: at a terminal it would wait for input
+			Entry("no arguments, stdin ignored", `{"maxStandbys": 5}`, nil),
+			Entry("empty stdin", "", []string{"--file", "-"}),
+			Entry("stdin with only whitespace", " \n", []string{"--file", "-"}),
+		)
+
+		It("defaults the init mode to new", func() {
+			_, _, err := api.run("init", `{"maxStandbys": 3}`)
+			Ω(err).NotTo(HaveOccurred())
+			Ω(expectPostedSpec(api).InitMode).To(HaveValue(Equal(apiv1.New)))
+		})
+
+		It("keeps another init mode", func() {
+			_, _, err := api.run("init", `{"initMode": "existing", "existingConfig": {"keeperUID": "keeper1"}}`)
+			Ω(err).NotTo(HaveOccurred())
+			Ω(expectPostedSpec(api).InitMode).To(HaveValue(Equal(apiv1.ExistingCluster)))
+		})
+
+		It("reads the spec from a file", func() {
+			file := filepath.Join(GinkgoT().TempDir(), "spec.json")
+			Ω(os.WriteFile(file, []byte(`{"maxStandbys": 7}`), 0o600)).To(Succeed())
+			_, _, err := api.run("init", "--file", file)
+			Ω(err).NotTo(HaveOccurred())
+			Ω(expectPostedSpec(api).MaxStandbys).To(HaveValue(BeEquivalentTo(7)))
+		})
+
+		DescribeTable("refuses invalid input",
+			func(args []string, expected string) {
+				missing := filepath.Join(GinkgoT().TempDir(), "missing.json")
+				_, _, err := api.run(append([]string{"init"}, withMissingFile(missing, args...)...)...)
+				expectError(err, withMissingFile(missing, expected)[0], "")
+				expectNoRequests(api)
+			},
+			Entry("two arguments", []string{"{}", "{}"}, "too many arguments"),
+			Entry("invalid json", []string{"{"}, "invalid cluster spec: "),
+			Entry("missing file", []string{"--file", missingFile}, "cannot read "+missingFile+": "),
+			Entry("an argument and a file", []string{"{}", "--file", missingFile},
+				"pass the cluster spec as an argument or with --file, not both"),
+		)
+
+		It("waits until the cluster is available", func() {
+			handleStatusSequence(api, unavailable(), available("keeper1"))
+			stdout, _, err := api.run("init", "--wait", `{}`)
+			Ω(err).NotTo(HaveOccurred())
+			Ω(stdout).To(Equal("the cluster applied the change\n"))
+			Ω(api.requestsTo(http.MethodGet, statusPath)).To(HaveLen(2))
+		})
+	})
+
+	It("refuses an existing cluster", func() {
+		api := newFakeAPI()
+		handleClusterData(api, testClusterData())
+		stdout, stderr, err := api.run("init", `{}`)
+		expectError(err, "cannot initialize an already existing cluster",
+			"cannot initialize an already existing cluster")
+		expectNoUsage(stdout, stderr)
+		Ω(api.requestsTo(http.MethodPost, clusterPath)).To(BeEmpty(), "expected no POST for an existing cluster")
+	})
+
+	It("reports a failed read", func() {
+		api := newFakeAPI()
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			endpoints.WriteProblem(w, http.StatusInternalServerError, "the store doesn't answer")
+		})
+		_, _, err := api.run("init", `{}`)
+		expectError(err, "failed to get the cluster data: GET "+api.url(clusterPath)+
+			": 500 Internal Server Error: the store doesn't answer", httpCodeSuffix(http.StatusInternalServerError))
+	})
+
+	It("reports a failed post", func() {
+		api := newFakeAPI()
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			endpoints.WriteProblem(w, http.StatusNotFound, "there is no cluster data yet")
+		})
+		api.handle(endpoints.ClusterEndPoint.Route(endpoints.MethodPost), func(w http.ResponseWriter, _ *http.Request) {
+			endpoints.WriteProblem(w, http.StatusBadRequest, "invalid spec: maxStandbys can't be 0")
+		})
+		_, _, err := api.run("init", `{"maxStandbys": 0}`)
+		expectError(err, "init failed: POST "+api.url(clusterPath)+
+			": 400 Bad Request: invalid spec: maxStandbys can't be 0", httpCodeSuffix(http.StatusBadRequest))
+	})
+})
