@@ -194,7 +194,7 @@ func (tc *Cluster) StartStore(ctx context.Context) {
 		// certificates for etcd and its clients, like the ones of the api: a server certificate for etcd, and a
 		// client certificate for the orion containers
 		storeTLS = &pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "store-client"),
-			APIDir: filepath.Join(tc.tmpDir, "store-server"), APISANs: []string{"etcd"}}
+			APIDir: filepath.Join(tc.tmpDir, "store-server"), APISANs: []string{etcdHost(tc.Network)}}
 		_, err = pki.Init(*storeTLS)
 		Ω(err).NotTo(HaveOccurred())
 	}

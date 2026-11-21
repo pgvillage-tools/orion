@@ -91,7 +91,15 @@ func pkiFiles(hostDir, containerDir string, names ...string) []testcontainers.Co
 	return files
 }
 
-// runEtcd runs etcd. With tlsOpts (as created by pki.Init, with "etcd" in the APISANs) it only serves TLS, with the
+// etcdHost is the name of the etcd of the cluster on network nw, unique per network: etcd advertises it, and the
+// store clients (with AutoSyncInterval) then use it instead of their endpoints. Containers on the networks of two
+// clusters (the keepers of a standby cluster) would resolve a shared name to either etcd, and could join the other
+// cluster.
+func etcdHost(nw *testcontainers.DockerNetwork) string {
+	return "etcd-" + nw.Name
+}
+
+// runEtcd runs etcd. With tlsOpts (as created by pki.Init, with etcdHost in the APISANs) it only serves TLS, with the
 // server certificate of the api in tlsOpts.APIDir, and only accepts client certificates signed like the one of the
 // cli in tlsOpts.CLIDir; the client files are in the container too (storeClientPKIDir), for etcdctl.
 func runEtcd(
@@ -119,16 +127,17 @@ func runEtcd(
 			pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile),
 			pkiFiles(tlsOpts.CLIDir, storeClientPKIDir, pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile)...)
 	}
+	host := etcdHost(nw)
 	// setup etcd; the arguments come after the ones of the module, and win
 	etcdContainer, startErr := etcd.Run(ctx,
 		etcdImage,
-		network.WithNetwork([]string{"etcd"}, nw),
+		network.WithNetwork([]string{host}, nw),
 		testcontainers.WithFiles(files...),
 		etcd.WithAdditionalArgs(append([]string{
 			"--listen-client-urls", scheme + "://0.0.0.0:2379",
-			"--advertise-client-urls", scheme + "://etcd:2379",
-			"--initial-advertise-peer-urls", "http://etcd:2380",
-			"--initial-cluster", "default=http://etcd:2380",
+			"--advertise-client-urls", scheme + "://" + host + ":2379",
+			"--initial-advertise-peer-urls", "http://" + host + ":2380",
+			"--initial-cluster", "default=http://" + host + ":2380",
 		}, tlsArgs...)...),
 	)
 	if startErr != nil {
@@ -136,7 +145,7 @@ func runEtcd(
 	}
 	if tlsOpts != nil {
 		// the name on the certificate
-		return etcdContainer, store{endpoints: "https://etcd:2379", tls: tlsOpts}, nil
+		return etcdContainer, store{endpoints: "https://" + host + ":2379", tls: tlsOpts}, nil
 	}
 	ips, ipErr := etcdContainer.ContainerIPs(ctx)
 	if ipErr != nil {
