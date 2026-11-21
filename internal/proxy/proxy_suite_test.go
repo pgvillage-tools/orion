@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// TestProxy runs the Ginkgo specs of the package; the plain tests run next to them
+// TestProxy runs the Ginkgo specs of the package
 func TestProxy(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Proxy Suite")
