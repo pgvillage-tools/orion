@@ -171,7 +171,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 	if initialized {
 		pgParameters, err := p.pgm.GetConfigFilePGParameters(ctx)
 		if err != nil {
-			logger.Error().AnErr(logging.KeyErr, err).Msg("cannot get configured pg parameters")
+			p.logPGStateUnavailable(ctx, err, "cannot get configured pg parameters")
 			return pgState, nil
 		}
 		logger.Debug().Any("pgParameters", pgParameters).Msg("got configured pg parameters")
@@ -188,9 +188,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 
 		inSyncStandbys, err := p.GetInSyncStandbys(ctx)
 		if err != nil {
-			logger.Warn().
-				AnErr(logging.KeyErr, err).
-				Msg("failed to retrieve current in sync standbys from instance")
+			p.logPGStateUnavailable(ctx, err, "failed to retrieve current in sync standbys from instance")
 			return pgState, nil
 		}
 
@@ -198,7 +196,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 
 		sd, err := p.pgm.GetSystemData(ctx)
 		if err != nil {
-			logger.Error().AnErr(logging.KeyErr, err).Msg("error getting pg state")
+			p.logPGStateUnavailable(ctx, err, "error getting pg state")
 			return pgState, nil
 		}
 		pgState.SystemID = sd.SystemID
@@ -207,7 +205,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 
 		ctlsh, err := getTimeLinesHistory(ctx, pgState, p.pgm, maxPostgresTimelinesHistory)
 		if err != nil {
-			logger.Error().AnErr(logging.KeyErr, err).Msg("error getting timeline history")
+			p.logPGStateUnavailable(ctx, err, "error getting timeline history")
 			return pgState, nil
 		}
 		pgState.TimelinesHistory = ctlsh
@@ -220,9 +218,24 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 			pgState.OlderWalFile = ow
 		}
 		pgState.Healthy = true
+		if p.pgStateUnavailable.changed(false) {
+			logger.Info().Msg("pg state available again")
+		}
 	}
 
 	return pgState, nil
+}
+
+// logPGStateUnavailable logs that GetPGState can't query the running instance (the keeper then reports it unhealthy):
+// a warning when that starts, and debug while it lasts, because it fails on every check while postgres doesn't accept
+// connections (e.g. during a restart or a resync). It must be called with getPGStateMutex held.
+func (p *PostgresKeeper) logPGStateUnavailable(ctx context.Context, err error, msg string) {
+	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
+	if p.pgStateUnavailable.changed(true) {
+		logger.Warn().AnErr(logging.KeyErr, err).Msg(msg)
+		return
+	}
+	logger.Debug().AnErr(logging.KeyErr, err).Msg(msg)
 }
 
 func getTimeLinesHistory(
@@ -232,14 +245,12 @@ func getTimeLinesHistory(
 	maxPostgresTimelinesHistory int) (
 	cluster.PostgresTimelinesHistory,
 	error) {
-	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
 	ctlsh := cluster.PostgresTimelinesHistory{}
 	// if timeline <= 1 then no timeline history file exists.
 	if pgState.TimelineID > 1 {
 		var tlsh []*pg.TimelineHistory
 		tlsh, err := pgm.GetTimelinesHistory(ctx, pgState.TimelineID)
 		if err != nil {
-			logger.Error().AnErr(logging.KeyErr, err).Msg("error getting timeline history")
 			return ctlsh, err
 		}
 		if len(tlsh) > maxPostgresTimelinesHistory {

@@ -77,11 +77,20 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 	db := cd.FindDB(k)
 	if db == nil {
-		logger.Debug().Msg("no db assigned")
+		// a spare keeper has no db for as long as it is spare: log when that starts, not on every check
+		if p.noDB.changed(true) {
+			logger.Info().Msg("no db assigned: postgres stays stopped until the sentinel assigns one")
+		} else {
+			logger.Debug().Msg("no db assigned")
+		}
 		if err = pgm.StopIfStarted(ctx, true); err != nil {
 			logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 		}
 		return
+	}
+
+	if p.noDB.changed(false) {
+		logger.Info().Str("db", db.UID).Msg("db assigned")
 	}
 
 	if p.bootUUID != k.Status.BootUUID {

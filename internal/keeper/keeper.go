@@ -106,6 +106,10 @@ type PostgresKeeper struct {
 	pgStateMutex    sync.Mutex
 	getPGStateMutex sync.Mutex
 	lastPGState     *cluster.PostgresState
+	// pgStateUnavailable is set while GetPGState can't query the running instance (guarded by getPGStateMutex)
+	pgStateUnavailable condition
+	// noDB is set while the sentinel assigned no db to this keeper (only used by the state machine)
+	noDB condition
 
 	waitSyncStandbysSynced bool
 
