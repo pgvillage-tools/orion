@@ -69,7 +69,7 @@ func (s *Sentinel) isLagBelowMax(ctx context.Context, cd *cluster.Data, curMaste
 		Uint64("delta", curMasterDB.Status.XLogPos-db.Status.XLogPos).
 		Msg("")
 	if int64(curMasterDB.Status.XLogPos-db.Status.XLogPos) > int64(*cd.Cluster.DefSpec().MaxStandbyLag) {
-		logger.Info().
+		logger.Debug().
 			Str(logDB, db.UID).
 			Uint64("dbXLogPos", db.Status.XLogPos).
 			Uint64("masterXLogPos", curMasterDB.Status.XLogPos).

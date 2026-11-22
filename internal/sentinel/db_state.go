@@ -89,7 +89,7 @@ func (s *Sentinel) dbValidity(ctx context.Context, cd *cluster.Data, dbUID strin
 	if db.Status.SystemID != "" {
 		// if with a different postgres systemID it's invalid
 		if db.Status.SystemID != masterDB.Status.SystemID {
-			logger.Info().
+			logger.Warn().
 				Str(logDB, db.UID).
 				Str(logKeeper, db.Spec.KeeperUID).
 				Str(logDbSysID, db.Status.SystemID).
@@ -171,7 +171,7 @@ func (s *Sentinel) dbCanSync(ctx context.Context, cd *cluster.Data, dbUID string
 		return true
 	}
 
-	logger.Info().
+	logger.Warn().
 		Str(logDB, db.UID).
 		Str(logKeeper, db.Spec.KeeperUID).
 		Str(logRequiredWal, required).
