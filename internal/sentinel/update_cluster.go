@@ -100,219 +100,130 @@ func (s *Sentinel) updateClusterInitializing(ctx context.Context, cd, newcd *clu
 // initNewCluster initializes a new cluster (init mode new): it chooses a keeper for a new db, and waits until it is
 // initialized
 func (s *Sentinel) initNewCluster(ctx context.Context, cd, newcd *cluster.Data, clusterSpec *cluster.Spec) error {
-	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	// Is there already a keeper choosed to be the new master?
-	if cd.Cluster.Status.Master == "" {
-		logger.Info().Msg("trying to find initial master")
-		k, err := s.findInitialKeeper(newcd)
-		if err != nil {
-			return fmt.Errorf("cannot choose initial master: %v", err)
-		}
-		logger.Info().
-			Str(logKeeper, k.UID).
-			Msg("initializing cluster")
-		db := &cluster.DB{
-			UID:        s.UIDFn(),
-			Generation: cluster.InitialGeneration,
-			Spec: &cluster.DBSpec{
-				KeeperUID:     k.UID,
-				InitMode:      cluster.NewDB,
-				NewConfig:     clusterSpec.NewConfig,
-				Role:          common.RolePrimary,
-				Followers:     []string{},
-				IncludeConfig: *clusterSpec.MergePgParameters,
-			},
-		}
-		newcd.DBs[db.UID] = db
-		newcd.Cluster.Status.Master = db.UID
-		logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
-	} else {
-		db, ok := newcd.DBs[cd.Cluster.Status.Master]
-		if !ok {
-			panic(fmt.Errorf("db %q object doesn't exists. This shouldn't happen", cd.Cluster.Status.Master))
-		}
-		// Check that the choosed db for being the master has correctly initialized
-		switch s.dbConvergenceState(db, clusterSpec.InitTimeout.Duration) {
-		case Converged:
-			if db.Status.Healthy {
-				logger.Info().
-					Str(logDB, db.UID).
-					Str(logKeeper, db.Spec.KeeperUID).
-					Msg("db initialized")
-				// Set db initMode to none, not needed but just a security measure
-				db.Spec.InitMode = cluster.NoDB
-				// Don't include previous config anymore
-				db.Spec.IncludeConfig = false
-
-				// Replace reported pg parameters in cluster spec
-				if *clusterSpec.MergePgParameters {
-					newcd.Cluster.Spec.PGParameters =
-						mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
-				}
-				// Cluster initialized, switch to Normal state
-				newcd.Cluster.Status.Phase = cluster.Normal
-			}
-		case Converging:
-			logger.Info().
-				Str(logDB, db.UID).
-				Str(logKeeper, db.Spec.KeeperUID).
-				Msg("waiting for db")
-		case ConvergenceFailed:
-			logger.Info().
-				Str(logDB, db.UID).
-				Str(logKeeper, db.Spec.KeeperUID).
-				Msg("db failed to initialize")
-			// Empty DBs
-			newcd.DBs = cluster.DBs{}
-			// Unset master so another keeper can be chosen
-			newcd.Cluster.Status.Master = ""
-		}
+	if cd.Cluster.Status.Master != "" {
+		s.checkInitialDB(ctx, cd, newcd, clusterSpec, clusterSpec.InitTimeout.Duration, true)
+		return nil
 	}
+	k, err := s.chooseInitialKeeper(ctx, newcd)
+	if err != nil {
+		return err
+	}
+	s.addInitialDB(ctx, newcd, clusterSpec, &cluster.DBSpec{
+		KeeperUID: k.UID,
+		InitMode:  cluster.NewDB,
+		NewConfig: clusterSpec.NewConfig,
+		Role:      common.RolePrimary,
+	})
 	return nil
 }
 
 // initExistingCluster initializes a cluster from the db of an existing keeper (init mode existing), and waits until it
-// is converged
+// is converged. It never gives up on that keeper: the user chose it.
 func (s *Sentinel) initExistingCluster(ctx context.Context, cd, newcd *cluster.Data, clusterSpec *cluster.Spec) error {
-	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	if cd.Cluster.Status.Master == "" {
-		wantedKeeper := clusterSpec.ExistingConfig.KeeperUID
-		logger.Info().
-			Str(logKeeper, wantedKeeper).
-			Msg("trying to use keeper as initial master")
-
-		k, ok := newcd.Keepers[wantedKeeper]
-		if !ok {
-			return fmt.Errorf("keeper %q state not available", wantedKeeper)
-		}
-
-		logger.Info().
-			Str(logKeeper, k.UID).
-			Msg("initializing cluster using selected keeper as master db owner")
-
-		db := &cluster.DB{
-			UID:        s.UIDFn(),
-			Generation: cluster.InitialGeneration,
-			Spec: &cluster.DBSpec{
-				KeeperUID:     k.UID,
-				InitMode:      cluster.ExistingDB,
-				Role:          common.RolePrimary,
-				Followers:     []string{},
-				IncludeConfig: *clusterSpec.MergePgParameters,
-			},
-		}
-		newcd.DBs[db.UID] = db
-		newcd.Cluster.Status.Master = db.UID
-		logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
-	} else {
-		db, ok := newcd.DBs[cd.Cluster.Status.Master]
-		if !ok {
-			panic(fmt.Errorf("db %q object doesn't exists. This shouldn't happen", cd.Cluster.Status.Master))
-		}
-		// Check that the choosed db for being the master has correctly initialized
-		if db.Status.Healthy && s.dbConvergenceState(db, clusterSpec.ConvergenceTimeout.Duration) == Converged {
-			logger.Info().
-				Str(logDB, db.UID).
-				Str(logKeeper, db.Spec.KeeperUID).
-				Msg("db initialized") // Set db initMode to none, not needed but just a security measure
-			db.Spec.InitMode = cluster.NoDB
-			// Don't include previous config anymore
-			db.Spec.IncludeConfig = false
-			// Replace reported pg parameters in cluster spec
-			if *clusterSpec.MergePgParameters {
-				newcd.Cluster.Spec.PGParameters = mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
-			}
-			// Cluster initialized, switch to Normal state
-			newcd.Cluster.Status.Phase = cluster.Normal
-		}
+	if cd.Cluster.Status.Master != "" {
+		s.checkInitialDB(ctx, cd, newcd, clusterSpec, clusterSpec.ConvergenceTimeout.Duration, false)
+		return nil
 	}
+	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
+	wantedKeeper := clusterSpec.ExistingConfig.KeeperUID
+	logger.Info().Str(logKeeper, wantedKeeper).Msg("trying to use keeper as initial master")
+	k, ok := newcd.Keepers[wantedKeeper]
+	if !ok {
+		return fmt.Errorf("keeper %q state not available", wantedKeeper)
+	}
+	s.addInitialDB(ctx, newcd, clusterSpec, &cluster.DBSpec{
+		KeeperUID: k.UID,
+		InitMode:  cluster.ExistingDB,
+		Role:      common.RolePrimary,
+	})
 	return nil
 }
 
 // initPITRCluster initializes a cluster with a point in time recovery (init mode pitr) on a keeper it chooses, and
 // waits until it is converged
 func (s *Sentinel) initPITRCluster(ctx context.Context, cd, newcd *cluster.Data, clusterSpec *cluster.Spec) error {
-	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	// Is there already a keeper choosed to be the new master?
-	if cd.Cluster.Status.Master == "" {
-		logger.Info().Msg("trying to find initial master")
-		k, err := s.findInitialKeeper(cd)
-		if err != nil {
-			return fmt.Errorf("cannot choose initial master: %v", err)
-		}
-		logger.Info().
-			Str(logKeeper, k.UID).
-			Msg("initializing cluster using selected keeper as master db owner")
-		role := common.RolePrimary
-		var followConfig *cluster.FollowConfig
-		if *clusterSpec.Role == cluster.Replica {
-			role = common.RoleReplica
-			followConfig = &cluster.FollowConfig{
-				Type:                    cluster.FollowTypeExternal,
-				StandbySettings:         clusterSpec.StandbyConfig.StandbySettings,
-				ArchiveRecoverySettings: clusterSpec.StandbyConfig.ArchiveRecoverySettings,
-			}
-		}
-		db := &cluster.DB{
-			UID:        s.UIDFn(),
-			Generation: cluster.InitialGeneration,
-			Spec: &cluster.DBSpec{
-				KeeperUID:     k.UID,
-				InitMode:      cluster.PITRDB,
-				PITRConfig:    clusterSpec.PITRConfig,
-				Role:          role,
-				FollowConfig:  followConfig,
-				Followers:     []string{},
-				IncludeConfig: *clusterSpec.MergePgParameters,
-			},
-		}
-		newcd.DBs[db.UID] = db
-		newcd.Cluster.Status.Master = db.UID
-		logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
-	} else {
-		db, ok := newcd.DBs[cd.Cluster.Status.Master]
-		if !ok {
-			panic(fmt.Errorf("db %q object doesn't exists. This shouldn't happen", cd.Cluster.Status.Master))
-		}
-		// Check that the choosed db for being the master has correctly initialized
+	if cd.Cluster.Status.Master != "" {
 		// TODO(sgotti) set a timeout (the max time for a restore operation)
-		switch s.dbConvergenceState(db, 0) {
-		case Converged:
-			if db.Status.Healthy {
-				logger.Info().
-					Str(logDB, db.UID).
-					Str(logKeeper, db.Spec.KeeperUID).
-					Msg("db initialized")
-				// Set db initMode to none, not needed but just a security measure
-				db.Spec.InitMode = cluster.NoDB
-				// Don't include previous config anymore
-				db.Spec.IncludeConfig = false
-
-				// Replace reported pg parameters in cluster spec
-				if *clusterSpec.MergePgParameters {
-					newcd.Cluster.Spec.PGParameters =
-						mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
-				}
-				// Cluster initialized, switch to Normal state
-				newcd.Cluster.Status.Phase = cluster.Normal
-			}
-		case Converging:
-			logger.Info().
-				Str(logDB, db.UID).
-				Str(logKeeper, db.Spec.KeeperUID).
-				Msg("waiting for db to converge")
-		case ConvergenceFailed:
-			logger.Info().
-				Str(logDB, db.UID).
-				Str(logKeeper, db.Spec.KeeperUID).
-				Msg("db failed to initialize")
-			// Empty DBs
-			newcd.DBs = cluster.DBs{}
-			// Unset master so another keeper can be chosen
-			newcd.Cluster.Status.Master = ""
+		s.checkInitialDB(ctx, cd, newcd, clusterSpec, 0, true)
+		return nil
+	}
+	k, err := s.chooseInitialKeeper(ctx, newcd)
+	if err != nil {
+		return err
+	}
+	spec := &cluster.DBSpec{
+		KeeperUID:  k.UID,
+		InitMode:   cluster.PITRDB,
+		PITRConfig: clusterSpec.PITRConfig,
+		Role:       common.RolePrimary,
+	}
+	if *clusterSpec.Role == cluster.Replica {
+		spec.Role = common.RoleReplica
+		spec.FollowConfig = &cluster.FollowConfig{
+			Type:                    cluster.FollowTypeExternal,
+			StandbySettings:         clusterSpec.StandbyConfig.StandbySettings,
+			ArchiveRecoverySettings: clusterSpec.StandbyConfig.ArchiveRecoverySettings,
 		}
 	}
+	s.addInitialDB(ctx, newcd, clusterSpec, spec)
 	return nil
+}
+
+// chooseInitialKeeper chooses the keeper for the first db of a new or pitr cluster
+func (s *Sentinel) chooseInitialKeeper(ctx context.Context, newcd *cluster.Data) (*cluster.Keeper, error) {
+	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
+	logger.Info().Msg("trying to find initial master")
+	k, err := s.findInitialKeeper(newcd)
+	if err != nil {
+		return nil, fmt.Errorf("cannot choose initial master: %v", err)
+	}
+	return k, nil
+}
+
+// addInitialDB adds the first db of the cluster, with spec (its keeper, init mode and role), and makes it the master
+func (s *Sentinel) addInitialDB(ctx context.Context, newcd *cluster.Data, clusterSpec *cluster.Spec,
+	spec *cluster.DBSpec) {
+	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
+	logger.Info().Str(logKeeper, spec.KeeperUID).Msg("initializing cluster")
+	spec.Followers = []string{}
+	spec.IncludeConfig = *clusterSpec.MergePgParameters
+	db := &cluster.DB{UID: s.UIDFn(), Generation: cluster.InitialGeneration, Spec: spec}
+	newcd.DBs[db.UID] = db
+	newcd.Cluster.Status.Master = db.UID
+	logger.Debug().Any(logKeyNewCD, spew.Sdump(newcd)).Msg("newcd dump")
+}
+
+// checkInitialDB checks the first db of the cluster (the master in cd). Once it converged and is healthy, the cluster
+// is initialized (phase Normal). When it doesn't converge within timeout (0: no timeout), and retry is set, it is
+// removed, so another keeper can be chosen; without retry, the sentinel keeps waiting.
+func (s *Sentinel) checkInitialDB(ctx context.Context, cd, newcd *cluster.Data, clusterSpec *cluster.Spec,
+	timeout time.Duration, retry bool) {
+	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
+	db, ok := newcd.DBs[cd.Cluster.Status.Master]
+	if !ok {
+		panic(fmt.Errorf("db %q object doesn't exists. This shouldn't happen", cd.Cluster.Status.Master))
+	}
+	state := s.dbConvergenceState(db, timeout)
+	switch {
+	case state == Converged && db.Status.Healthy:
+		logger.Info().Str(logDB, db.UID).Str(logKeeper, db.Spec.KeeperUID).Msg("db initialized")
+		// Set db initMode to none, not needed but just a security measure
+		db.Spec.InitMode = cluster.NoDB
+		// Don't include previous config anymore
+		db.Spec.IncludeConfig = false
+		// Replace reported pg parameters in cluster spec
+		if *clusterSpec.MergePgParameters {
+			newcd.Cluster.Spec.PGParameters = mergedPGParameters(clusterSpec.PGParameters, db.Status.PGParameters)
+		}
+		newcd.Cluster.Status.Phase = cluster.Normal
+	case state == ConvergenceFailed && retry:
+		logger.Info().Str(logDB, db.UID).Str(logKeeper, db.Spec.KeeperUID).Msg("db failed to initialize")
+		newcd.DBs = cluster.DBs{}
+		// Unset master so another keeper can be chosen
+		newcd.Cluster.Status.Master = ""
+	case state != Converged:
+		logger.Info().Str(logDB, db.UID).Str(logKeeper, db.Spec.KeeperUID).Msg("waiting for db to converge")
+	}
 }
 
 // updateClusterNormal manages an initialized cluster (phase Normal): it removes dead keepers, elects a new master when
@@ -622,62 +533,39 @@ func (s *Sentinel) updateStandbys(ctx context.Context, cd, newcd *cluster.Data, 
 
 // removeOldMasters removes the dbs that are masters, other than wantedMasterDBUID
 func (s *Sentinel) removeOldMasters(ctx context.Context, newcd *cluster.Data, wantedMasterDBUID string) {
-	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	toRemove := []*cluster.DB{}
-	for _, db := range newcd.DBs {
-		if db.UID == wantedMasterDBUID {
-			continue
-		}
-		if s.dbType(newcd, db.UID) != dbTypeMaster {
-			continue
-		}
-		logger.Info().
-			Str(logDB, db.UID).
-			Str(logKeeper, db.Spec.KeeperUID).
-			Msg("removing old master db")
-		toRemove = append(toRemove, db)
-	}
-	for _, db := range toRemove {
-		delete(newcd.DBs, db.UID)
-	}
+	s.removeDBs(ctx, newcd, newcd.DBs, "removing old master db", func(db *cluster.DB) bool {
+		return db.UID != wantedMasterDBUID && s.dbType(newcd, db.UID) == dbTypeMaster
+	})
 }
 
 // removeInvalidDBs removes the invalid dbs, other than wantedMasterDBUID
 func (s *Sentinel) removeInvalidDBs(ctx context.Context, newcd *cluster.Data, wantedMasterDBUID string) {
-	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
-	toRemove := []*cluster.DB{}
-	for _, db := range newcd.DBs {
-		if db.UID == wantedMasterDBUID {
-			continue
-		}
-		if s.dbValidity(ctx, newcd, db.UID) != dbValidityInvalid {
-			continue
-		}
-		logger.Info().
-			Str(logDB, db.UID).
-			Str(logKeeper, db.Spec.KeeperUID).
-			Msg("removing invalid db")
-		toRemove = append(toRemove, db)
-	}
-	for _, db := range toRemove {
-		delete(newcd.DBs, db.UID)
-	}
+	s.removeDBs(ctx, newcd, newcd.DBs, "removing invalid db", func(db *cluster.DB) bool {
+		return db.UID != wantedMasterDBUID && s.dbValidity(ctx, newcd, db.UID) == dbValidityInvalid
+	})
 }
 
 // removeUnsyncableDBs removes the dbs that won't sync because the current master (in cd) misses their WAL
 func (s *Sentinel) removeUnsyncableDBs(ctx context.Context, cd, newcd *cluster.Data) {
+	// judge the dbs of the current cluster data (dbCanSync looks them up there) that the new one still has
+	s.removeDBs(ctx, newcd, cd.DBs, "removing db that won't be able to sync due to missing wals on current master",
+		func(db *cluster.DB) bool {
+			_, ok := newcd.DBs[db.UID]
+			return ok && !s.dbCanSync(ctx, cd, db.UID)
+		})
+}
+
+// removeDBs removes the dbs of candidates for which remove returns true from newcd, and logs msg for each. It decides
+// on all candidates first, so a removal doesn't change the decision for another db.
+func (s *Sentinel) removeDBs(ctx context.Context, newcd *cluster.Data, candidates cluster.DBs, msg string,
+	remove func(*cluster.DB) bool) {
 	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
 	toRemove := []*cluster.DB{}
-	// judge the dbs of the current cluster data (dbCanSync looks them up there) that the new one still has
-	for _, db := range cd.DBs {
-		if _, ok := newcd.DBs[db.UID]; !ok || s.dbCanSync(ctx, cd, db.UID) {
-			continue
+	for _, db := range candidates {
+		if remove(db) {
+			logger.Info().Str(logDB, db.UID).Str(logKeeper, db.Spec.KeeperUID).Msg(msg)
+			toRemove = append(toRemove, db)
 		}
-		logger.Info().
-			Str(logDB, db.UID).
-			Str(logKeeper, db.Spec.KeeperUID).
-			Msg("removing db that won't be able to sync due to missing wals on current master")
-		toRemove = append(toRemove, db)
 	}
 	for _, db := range toRemove {
 		delete(newcd.DBs, db.UID)
