@@ -435,7 +435,7 @@ func (s *Sentinel) electMaster(ctx context.Context, newcd *cluster.Data, curMast
 				bestNewMasterDB = bestNewMasters[0]
 			}
 			if bestNewMasterDB != nil {
-				logger.Warn().
+				logger.Info().
 					Str(logDB, bestNewMasterDB.UID).
 					Str(logKeeper, bestNewMasterDB.Spec.KeeperUID).
 					Msg("electing db as the new master")
