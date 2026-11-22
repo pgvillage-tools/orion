@@ -16,27 +16,27 @@ package api_client
 
 import (
 	"net/http"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestRetryAfter(t *testing.T) {
-	for value, want := range map[string]time.Duration{
-		"":    defaultRetryAfter,
-		"abc": defaultRetryAfter,
-		"-1":  defaultRetryAfter,
-		"0":   0,
-		"2":   2 * time.Second,
-		"600": maxRetryAfter,
-		// an HTTP date is valid, but the api sends seconds
-		"Wed, 21 Oct 2026 07:28:00 GMT": defaultRetryAfter,
-	} {
+// retryAfter is unexported, so these specs are in package api_client; they run in the suite of api_client_test
+var _ = DescribeTable("retryAfter",
+	func(value string, want time.Duration) {
 		h := http.Header{}
 		if value != "" {
 			h.Set("Retry-After", value)
 		}
-		if got := retryAfter(h); got != want {
-			t.Errorf("retryAfter(%q) = %v, want %v", value, got, want)
-		}
-	}
-}
+		Ω(retryAfter(h)).To(Equal(want))
+	},
+	Entry("no header", "", defaultRetryAfter),
+	Entry("not a number", "abc", defaultRetryAfter),
+	Entry("negative", "-1", defaultRetryAfter),
+	Entry("zero", "0", time.Duration(0)),
+	Entry("seconds", "2", 2*time.Second),
+	Entry("capped at the maximum", "600", maxRetryAfter),
+	// an HTTP date is valid, but the api sends seconds
+	Entry("an HTTP date", "Wed, 21 Oct 2026 07:28:00 GMT", defaultRetryAfter),
+)
