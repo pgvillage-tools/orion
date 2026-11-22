@@ -80,7 +80,8 @@ func uniqueValues(values []string) []string {
 
 // Init creates the root, the server intermediate with the server certificate of the api, and the api client
 // intermediate with the client certificate of the cli. The certificates and private keys of the root and the
-// intermediates are stored in the cli directory (below CLICADir), so the api never has them.
+// intermediates are stored in the cli directory (below CLICADir), so the api never has them. With a CAPassphrase, their
+// private keys are encrypted.
 func Init(opts InitOptions) (*oriontls.Chain, error) {
 	if err := opts.check(); err != nil {
 		return nil, err
@@ -88,15 +89,18 @@ func Init(opts InitOptions) (*oriontls.Chain, error) {
 	caDir := filepath.Join(opts.CLIDir, CLICADir)
 	intermediate := func(name string) oriontls.Pair {
 		return oriontls.Pair{
-			Cert:       oriontls.Cert{Expiry: opts.IntermediateExpiry, Path: filepath.Join(caDir, name, caName+crtExt)},
-			PrivateKey: oriontls.PrivateKey{Path: filepath.Join(caDir, name, caName+keyExt)},
+			Cert: oriontls.Cert{Expiry: opts.IntermediateExpiry, Path: filepath.Join(caDir, name, caName+crtExt)},
+			PrivateKey: oriontls.PrivateKey{
+				Path:       filepath.Join(caDir, name, caName+keyExt),
+				Passphrase: opts.CAPassphrase,
+			},
 		}
 	}
 	chain := oriontls.Chain{
 		KeyAlgorithm: opts.KeyAlgorithm,
 		Root: oriontls.Pair{
 			Cert:       oriontls.Cert{Expiry: opts.RootExpiry, Path: filepath.Join(caDir, rootName+crtExt)},
-			PrivateKey: oriontls.PrivateKey{Path: filepath.Join(caDir, rootName+keyExt)},
+			PrivateKey: oriontls.PrivateKey{Path: filepath.Join(caDir, rootName+keyExt), Passphrase: opts.CAPassphrase},
 		},
 		Intermediates: oriontls.Intermediates{
 			ServerIntermediate: oriontls.Intermediate{

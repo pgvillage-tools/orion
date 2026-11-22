@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -252,5 +253,36 @@ var _ = Describe("Helpers", func() {
 			Expect(err).To(MatchError(fs.ErrPermission))
 			Expect(err).To(MatchError(ContainSubstring("cannot read " + files.KeyFile)))
 		})
+	})
+})
+
+var _ = Describe("PKI with a CA passphrase", func() {
+	It("encrypts the CA keys, and only those", func() {
+		tmpDir := GinkgoT().TempDir()
+		opts := pki.InitOptions{
+			CLIDir:       filepath.Join(tmpDir, "cli"),
+			APIDir:       filepath.Join(tmpDir, "api"),
+			CAPassphrase: []byte("a passphrase for the CA"),
+		}
+		_, err := pki.Init(opts)
+		Expect(err).NotTo(HaveOccurred())
+		caDir := filepath.Join(opts.CLIDir, pki.CLICADir) + string(filepath.Separator)
+		for _, f := range opts.Files() {
+			if filepath.Ext(f) != ".key" {
+				continue
+			}
+			data, err := os.ReadFile(f)
+			Expect(err).NotTo(HaveOccurred())
+			if !strings.HasPrefix(f, caDir) {
+				// the api and the cli use their keys without a passphrase
+				Expect(string(data)).To(HavePrefix("-----BEGIN PRIVATE KEY-----"), f)
+				continue
+			}
+			Expect(string(data)).To(HavePrefix("-----BEGIN ENCRYPTED PRIVATE KEY-----"), f)
+			key := oriontls.PrivateKey{Path: f}
+			Expect(key.Load()).To(MatchError(oriontls.ErrPassphraseRequired), f)
+			key = oriontls.PrivateKey{Path: f, Passphrase: opts.CAPassphrase}
+			Expect(key.Load()).To(Succeed(), f)
+		}
 	})
 })

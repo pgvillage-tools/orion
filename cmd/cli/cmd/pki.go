@@ -46,7 +46,11 @@ intermediates) are stored in --pki-dir. The api files are stored in --api-dir: c
 --pki-dir of the api.
 
 The api certificate is valid for localhost, 127.0.0.1, ::1, the configured api host (--host) and
-the names in --api-san.`,
+the names in --api-san.
+
+The private keys of the root and the intermediates are encrypted with a passphrase (at least 8
+characters). It is read from --ca-passphrase-file, else from ORIONCLI_CA_PASSPHRASE, else the cli
+asks for it on the terminal. The keys are encrypted PKCS#8, so openssl can read them too.`,
 }
 
 type pkiInitOptions struct {
@@ -57,6 +61,7 @@ type pkiInitOptions struct {
 	intermediateValidity string
 	leafValidity         string
 	force                bool
+	caPassphraseFile     string
 }
 
 var pkiInitOpts pkiInitOptions
@@ -77,6 +82,8 @@ func init() {
 	flags.StringVar(&pkiInitOpts.leafValidity, "leaf-validity", "1y",
 		"validity of the server and client certificates")
 	flags.BoolVar(&pkiInitOpts.force, "force", false, "overwrite existing files")
+	flags.StringVar(&pkiInitOpts.caPassphraseFile, "ca-passphrase-file", "",
+		"file with the passphrase for the CA keys (- for stdin; default: "+envCAPassphrase+", else a prompt)")
 	flags.StringP(flagHost, "H", defaultAPIIP, "hostname or ip of the api (added to the api certificate)")
 	cmdPKI.AddCommand(cmdPKIInit)
 	CmdCLI.AddCommand(cmdPKI)
@@ -122,12 +129,15 @@ func runPKIInit(c *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid options: %w", err)
 	}
+	if opts.CAPassphrase, err = newCAPassphrase(pkiInitOpts.caPassphraseFile); err != nil {
+		return err
+	}
 	if _, err = pki.Init(opts); err != nil {
 		return fmt.Errorf("failed to create the certificates: %w", err)
 	}
 	stdout("Created the CA and the cli client certificate in %s", opts.CLIDir)
 	stdout("Created the api certificates in %s: copy them to the --pki-dir of the api", opts.APIDir)
-	stdout("The private keys of the CA are in %s: keep them safe, and away from the api",
+	stdout("The private keys of the CA are in %s, encrypted with the passphrase: keep both safe, and away from the api",
 		filepath.Join(opts.CLIDir, pki.CLICADir))
 	return nil
 }

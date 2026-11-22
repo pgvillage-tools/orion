@@ -674,8 +674,10 @@ func (tc *Cluster) runCLI(ctx context.Context, files []testcontainers.ContainerF
 	cmd := append([]string{"--host", apiAlias, "--port", strconv.Itoa(APIInternalPort)}, args...)
 	cnt, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:      "cli",
-			Cmd:        cmd,
+			Image: "cli",
+			Cmd:   cmd,
+			// pki init encrypts the CA keys with a passphrase; the container has no terminal to prompt on
+			Env:        map[string]string{"ORIONCLI_CA_PASSPHRASE": cliCAPassphrase},
 			Files:      files,
 			Networks:   []string{tc.Network.Name},
 			WaitingFor: wait.ForExit().WithExitTimeout(cliTimeout),

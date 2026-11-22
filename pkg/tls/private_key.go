@@ -71,7 +71,10 @@ type PrivateKey struct {
 	Algorithm KeyAlgorithm `json:"algorithm"`
 	PEM       []byte       `json:"pem"`
 	Path      string       `json:"path"`
-	dirty     bool
+	// Passphrase encrypts the PEM (an encrypted PKCS#8 key, see encryptPKCS8) when set, and decrypts an encrypted
+	// PEM
+	Passphrase []byte `json:"-"`
+	dirty      bool
 }
 
 // Generate generates a private key, unless one was generated (or loaded) before
@@ -106,7 +109,8 @@ func (pk *PrivateKey) Generate() error {
 	return nil
 }
 
-// Encode encodes the private key as PKCS#8 in PEM format, and stores it in the PEM field
+// Encode encodes the private key as PKCS#8 in PEM format, and stores it in the PEM field. With a Passphrase, the key
+// is encrypted (an ENCRYPTED PRIVATE KEY).
 func (pk *PrivateKey) Encode() error {
 	if pk.PEM != nil {
 		return nil
@@ -118,12 +122,19 @@ func (pk *PrivateKey) Encode() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal private key: %w", err)
 	}
-	pk.PEM = pem.EncodeToMemory(&pem.Block{Type: pemTypePrivateKey, Bytes: der})
+	block := &pem.Block{Type: pemTypePrivateKey, Bytes: der}
+	if len(pk.Passphrase) > 0 {
+		if block.Bytes, err = encryptPKCS8(der, pk.Passphrase); err != nil {
+			return fmt.Errorf("failed to encrypt private key: %w", err)
+		}
+		block.Type = pemTypeEncryptedPrivateKey
+	}
+	pk.PEM = pem.EncodeToMemory(block)
 	pk.dirty = true
 	return nil
 }
 
-// Decode parses the PEM field into the private key
+// Decode parses the PEM field into the private key. An encrypted key is decrypted with the Passphrase.
 func (pk *PrivateKey) Decode() error {
 	block, _ := pem.Decode(pk.PEM)
 	if block == nil {
@@ -136,6 +147,12 @@ func (pk *PrivateKey) Decode() error {
 	switch block.Type {
 	case pemTypePrivateKey:
 		key, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+	case pemTypeEncryptedPrivateKey:
+		var der []byte
+		if der, err = decryptPKCS8(block.Bytes, pk.Passphrase); err != nil {
+			return err
+		}
+		key, err = x509.ParsePKCS8PrivateKey(der)
 	case "RSA PRIVATE KEY":
 		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 	case "EC PRIVATE KEY":
