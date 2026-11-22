@@ -13,19 +13,16 @@ import (
 )
 
 // walRecycledSpec keeps little WAL on the primary: no wal_keep_size, and at most 32MB for a replication slot, so a
-// standby that is away while the primary writes more loses its slot and the WAL it needs. Without merging the
-// parameters of the new db: the merge would replace them with the ones the keeper reports, without wal_keep_size,
-// which the keeper manages (and then sets to 128MB). A write to the paused standby fails after 10s
-// (tcp_user_timeout): its walsender, which the checkpoint must end to invalidate its slot, otherwise stays blocked on
-// the write while the standby is paused (13 minutes in a run without it, until the standby was unpaused; it may never
-// end), and the checkpoint with it. The resync (pg_basebackup) asks for a fast checkpoint (resyncFastCheckpoint),
-// instead of waiting for a spread one (4.5 minutes with the default checkpoint_timeout).
+// standby that is away while the primary writes more loses its slot and the WAL it needs. A write to the paused standby
+// fails after 10s (tcp_user_timeout): its walsender, which the checkpoint must end to invalidate its slot, otherwise
+// stays blocked on the write while the standby is paused (13 minutes in a run without it, until the standby was
+// unpaused; it may never end), and the checkpoint with it. The resync (pg_basebackup) asks for a fast checkpoint
+// (resyncFastCheckpoint), instead of waiting for a spread one (4.5 minutes with the default checkpoint_timeout).
 func walRecycledSpec() *apiv1.Spec {
 	spec := helpers.DefaultSpec()
 	spec.PGParameters["wal_keep_size"] = "0"
 	spec.PGParameters["max_slot_wal_keep_size"] = "32"
 	spec.PGParameters["tcp_user_timeout"] = "10000"
-	spec.MergePgParameters = util.ToPtr(false)
 	spec.ResyncFastCheckpoint = util.ToPtr(true)
 	return spec
 }
