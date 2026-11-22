@@ -60,7 +60,7 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 			return nil
 		}
 		// log pg_rewind error and fallback to pg_basebackup
-		logger.Error().AnErr(logging.KeyErr, err).Msg("error syncing with pg_rewind")
+		logger.Warn().AnErr(logging.KeyErr, err).Msg("error syncing with pg_rewind")
 	}
 
 	replSlot := ""

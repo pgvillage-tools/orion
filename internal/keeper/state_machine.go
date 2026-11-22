@@ -77,7 +77,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 
 	db := cd.FindDB(k)
 	if db == nil {
-		logger.Info().Msg("no db assigned")
+		logger.Debug().Msg("no db assigned")
 		if err = pgm.StopIfStarted(ctx, true); err != nil {
 			logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 		}
@@ -380,7 +380,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				// (see above TODO), so do a full resync using pg_basebackup.
 				if err = pgm.WaitReady(ctx, cd.Cluster.DefSpec().DBWaitReadyTimeout.Duration); err != nil {
 					// revive:disable-next-line
-					logger.Error().Msg("pg_rewinded standby is not accepting connection. it's probably waiting for unavailable wals. Forcing a full resync")
+					logger.Warn().Msg("pg_rewinded standby is not accepting connection. it's probably waiting for unavailable wals. Forcing a full resync")
 					fullResync = true
 				} else {
 					// Check again if it was really synced
@@ -508,7 +508,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 	switch targetRole {
 	case common.RolePrimary:
 		// We are the elected master
-		logger.Info().Msg("our db requested role is master")
+		logger.Debug().Msg("our db requested role is master")
 		if localRole == common.RoleUndefined {
 			logger.Error().Msg("database cluster not initialized but requested role is master. This shouldn't happen!")
 			return
@@ -548,7 +548,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				return
 			}
 		} else {
-			logger.Info().Msg("already master")
+			logger.Debug().Msg("already master")
 		}
 
 		if err := p.refreshReplicationSlots(ctx, cd, db); err != nil {
@@ -562,7 +562,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		switch db.Spec.FollowConfig.Type {
 		case cluster.FollowTypeInternal:
 			followedUID := db.Spec.FollowConfig.DBUID
-			logger.Info().Str(followedStr, followedUID).Msg("our db requested role is standby")
+			logger.Debug().Str(followedStr, followedUID).Msg("our db requested role is standby")
 			followedDB, ok := cd.DBs[followedUID]
 			if !ok {
 				logger.Error().Str(followedStr, followedUID).Msg("no db data available for followed db")
@@ -583,7 +583,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			logger.Error().Msg("cannot move from master role to standby role")
 			return
 		case common.RoleReplica:
-			logger.Info().Msg("already standby")
+			logger.Debug().Msg("already standby")
 			started, err := pgm.IsStarted()
 			if err != nil {
 				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to retrieve instance status")
@@ -699,8 +699,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		pgm.SetParameters(pgParameters)
 		needsReload = true
 	} else {
-		// for tests
-		logger.Info().Msg("postgres parameters not changed")
+		logger.Debug().Msg("postgres parameters not changed")
 	}
 
 	// Generate hba auth from clusterData
@@ -728,8 +727,8 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		pgm.SetHba(newHBA)
 		needsReload = true
 	} else {
-		// for tests
-		logger.Info().Msg("postgres hba entries not changed")
+		// the e2e tests wait for this line (they run the keeper at log level debug)
+		logger.Debug().Msg("postgres hba entries not changed")
 	}
 
 	if needsReload {

@@ -188,7 +188,7 @@ func (p *PostgresKeeper) GetPGState(ctx context.Context) (*cluster.PostgresState
 
 		inSyncStandbys, err := p.GetInSyncStandbys(ctx)
 		if err != nil {
-			logger.Error().
+			logger.Warn().
 				AnErr(logging.KeyErr, err).
 				Msg("failed to retrieve current in sync standbys from instance")
 			return pgState, nil
