@@ -30,6 +30,7 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
+	"github.com/sorintlab/pollon"
 )
 
 // the consts and helpers below are shared with start_test.go
@@ -294,5 +295,18 @@ var _ = Describe("Run", func() {
 		DeferCleanup(cancel)
 		// the store doesn't answer, so the checks fail; Run stops with ctx
 		Expect(Run(runCtx, cfg)).To(Succeed())
+	})
+})
+
+var _ = Describe("sendPollonConfData", func() {
+	It("reports whether the address the proxy forwards to changed", func() {
+		c := &ClusterChecker{}
+		addr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5432}
+		other := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 2), Port: 5432}
+		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: nil})).To(BeFalse(), "not forwarding at the start")
+		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: addr})).To(BeTrue())
+		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: addr})).To(BeFalse())
+		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: other})).To(BeTrue())
+		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: nil})).To(BeTrue())
 	})
 })
