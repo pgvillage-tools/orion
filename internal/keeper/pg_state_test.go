@@ -35,7 +35,7 @@ var _ = Describe("the PostgreSQL state", func() {
 		f.configParams = common.Parameters{"work_mem": "8MB", "port": "5432", "primary_conninfo": "host=x"}
 		f.syncStandbys = []string{common.OrionName("db2"), "external"}
 		f.systemData = &pg.SystemData{SystemID: "sys1", TimelineID: 3, XLogPos: 1000}
-		f.timelines = []*pg.TimelineHistory{
+		f.timelines = cluster.PostgresTimelinesHistory{
 			{TimelineID: 1, SwitchPoint: 100, Reason: "a"},
 			{TimelineID: 2, SwitchPoint: 200, Reason: "b"},
 		}

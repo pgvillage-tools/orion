@@ -171,14 +171,6 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 			// update pgm postgres parameters
 			pgm.SetParameters(pgParameters)
 
-			initConfig := &pg.InitConfig{}
-
-			if db.Spec.NewConfig != nil {
-				initConfig.Locale = db.Spec.NewConfig.Locale
-				initConfig.Encoding = db.Spec.NewConfig.Encoding
-				initConfig.DataChecksums = db.Spec.NewConfig.DataChecksums
-			}
-
 			if err = pgm.StopIfStarted(ctx, true); err != nil {
 				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 				return
@@ -187,7 +179,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to remove the postgres data dir")
 				return
 			}
-			if err = pgm.Init(ctx, initConfig); err != nil {
+			if err = pgm.Init(ctx, db.Spec.NewConfig); err != nil {
 				logger.Error().AnErr(logging.KeyErr, err).Msg("failed to initialize postgres database cluster")
 				return
 			}

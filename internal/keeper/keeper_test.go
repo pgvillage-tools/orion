@@ -228,7 +228,7 @@ var _ = Describe("getTimeLinesHistory", func() {
 		}
 
 		pgm.EXPECT().GetTimelinesHistory(timelineID).Return(
-			[]*pg.TimelineHistory{},
+			cluster.PostgresTimelinesHistory{},
 			errors.New("failed to get timeline history"))
 		ctlsh, err := getTimeLinesHistory(ctx, pgState, pgm, 3)
 
@@ -242,7 +242,7 @@ var _ = Describe("getTimeLinesHistory", func() {
 			TimelineID: timelineID,
 		}
 
-		timelineHistories := []*pg.TimelineHistory{
+		timelineHistories := cluster.PostgresTimelinesHistory{
 			{
 				TimelineID:  1,
 				SwitchPoint: 1,
@@ -279,7 +279,7 @@ var _ = Describe("getTimeLinesHistory", func() {
 			TimelineID: timelineID,
 		}
 
-		timelineHistories := []*pg.TimelineHistory{
+		timelineHistories := cluster.PostgresTimelinesHistory{
 			{
 				TimelineID:  1,
 				SwitchPoint: 1,

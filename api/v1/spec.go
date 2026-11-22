@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/pgvillage-tools/orion/internal/common"
-	"github.com/pgvillage-tools/orion/internal/postgresql"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
 
@@ -377,7 +376,7 @@ func (s *Spec) Validate() error {
 }
 
 func validateReplicationSlot(replicationSlot string) error {
-	if !postgresql.IsValidReplSlotName(replicationSlot) {
+	if !IsValidReplSlotName(replicationSlot) {
 		return fmt.Errorf("wrong replication slot name: %q", replicationSlot)
 	}
 	if common.IsOrionName(replicationSlot) {

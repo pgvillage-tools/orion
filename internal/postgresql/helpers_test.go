@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -50,7 +52,7 @@ var _ = Describe("parseTimelinesHistory", func() {
 	It("parses multiple lines and skips lines that do not match", func() {
 		tlsh, err := parseTimelinesHistory("1\t0/5000090\tno recovery target specified\n\njunk\n2\t1/0\tbefore 2026\n")
 		Ω(err).NotTo(HaveOccurred())
-		Ω(tlsh).To(Equal([]*TimelineHistory{
+		Ω(tlsh).To(Equal(cluster.PostgresTimelinesHistory{
 			{TimelineID: 1, SwitchPoint: 0x5000090, Reason: "no recovery target specified"},
 			{TimelineID: 2, SwitchPoint: uint64(1) << 32, Reason: "before 2026"},
 		}))

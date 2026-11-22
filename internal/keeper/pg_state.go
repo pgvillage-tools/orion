@@ -248,7 +248,6 @@ func getTimeLinesHistory(
 	ctlsh := cluster.PostgresTimelinesHistory{}
 	// if timeline <= 1 then no timeline history file exists.
 	if pgState.TimelineID > 1 {
-		var tlsh []*pg.TimelineHistory
 		tlsh, err := pgm.GetTimelinesHistory(ctx, pgState.TimelineID)
 		if err != nil {
 			return ctlsh, err
@@ -256,14 +255,7 @@ func getTimeLinesHistory(
 		if len(tlsh) > maxPostgresTimelinesHistory {
 			tlsh = tlsh[len(tlsh)-maxPostgresTimelinesHistory:]
 		}
-		for _, tlh := range tlsh {
-			ctlh := &cluster.PostgresTimelineHistory{
-				TimelineID:  tlh.TimelineID,
-				SwitchPoint: tlh.SwitchPoint,
-				Reason:      tlh.Reason,
-			}
-			ctlsh = append(ctlsh, ctlh)
-		}
+		ctlsh = append(ctlsh, tlsh...)
 	}
 	return ctlsh, nil
 }

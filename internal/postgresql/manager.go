@@ -31,6 +31,8 @@ import (
 	"syscall"
 	"time"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/logging"
@@ -150,7 +152,10 @@ func (p *Manager) UpdateCurHba() {
 }
 
 // Init will initialize a PostgreSQL data directory
-func (p *Manager) Init(ctx context.Context, initConfig *InitConfig) error {
+func (p *Manager) Init(ctx context.Context, initConfig *cluster.NewConfig) error {
+	if initConfig == nil {
+		initConfig = &cluster.NewConfig{}
+	}
 	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
 	// os.CreateTemp already creates files with urw permissions
 	pwfile, err := os.CreateTemp("", "pwfile")
@@ -1140,7 +1145,7 @@ func (p *Manager) GetSystemData(ctx context.Context) (*SystemData, error) {
 }
 
 // GetTimelinesHistory will return a lost of timelinehostory objects
-func (p *Manager) GetTimelinesHistory(ctx context.Context, timeline uint64) ([]*TimelineHistory, error) {
+func (p *Manager) GetTimelinesHistory(ctx context.Context, timeline uint64) (cluster.PostgresTimelinesHistory, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.requestTimeout)
 	defer cancel()
 	return getTimelinesHistory(ctx, timeline, p.replConnParams)
