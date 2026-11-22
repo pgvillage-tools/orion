@@ -28,6 +28,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
+	"github.com/rs/zerolog"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/sorintlab/pollon"
@@ -47,6 +48,8 @@ type ClusterChecker struct {
 	endPollonProxyCh chan error
 
 	pollonMutex sync.Mutex
+	// dest is the address the proxy forwards to ("" when it doesn't), as last sent to pollon
+	dest string
 
 	proxyCheckInterval time.Duration
 	proxyTimeout       time.Duration
@@ -129,12 +132,29 @@ func (c *ClusterChecker) stopPollonProxy(ctx context.Context) {
 	}
 }
 
-func (c *ClusterChecker) sendPollonConfData(confData pollon.ConfData) {
+// sendPollonConfData sends confData to pollon, and returns whether the address it forwards to changed
+func (c *ClusterChecker) sendPollonConfData(confData pollon.ConfData) bool {
 	c.pollonMutex.Lock()
 	defer c.pollonMutex.Unlock()
 	if c.pp != nil {
 		c.pp.C <- confData
 	}
+	dest := ""
+	if confData.DestAddr != nil {
+		dest = confData.DestAddr.String()
+	}
+	changed := dest != c.dest
+	c.dest = dest
+	return changed
+}
+
+// changeEvent returns an info event when the address the proxy forwards to changed, and a debug event otherwise:
+// every check repeats the same decision, but an operator must see when it changes
+func changeEvent(logger *zerolog.Logger, changed bool) *zerolog.Event {
+	if changed {
+		return logger.Info()
+	}
+	return logger.Debug()
 }
 
 // SetProxyInfo is function which sets the proxy-info
@@ -167,8 +187,8 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 
 	logger.Debug().Str("cd dump", spew.Sdump(cd)).Msg("")
 	if cd == nil {
-		logger.Info().Msg("no clusterdata available, closing connections to master")
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changeEvent(logger, changed).Msg("no clusterdata available, closing connections to master")
 		return nil
 	}
 	if cd.FormatVersion != cluster.CurrentCDFormatVersion {
@@ -195,11 +215,11 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 
 	proxy := cd.Proxy
 	if proxy == nil {
-		logger.Info().Msg("no proxy object available, closing connections to master")
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changeEvent(logger, changed).Msg("no proxy object available, closing connections to master")
 		// ignore errors on setting proxy info
 		if err = c.SetProxyInfo(ctx, c.e, cluster.NoGeneration, proxyTimeout); err != nil {
-			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to update proxyInfo")
+			logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to update proxyInfo")
 		} else {
 			// update proxyCheckinterval and proxyTimeout only if we successfully updated our proxy info
 			c.configMutex.Lock()
@@ -212,11 +232,12 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 
 	db, ok := cd.DBs[proxy.Spec.MasterDBUID]
 	if !ok {
-		logger.Info().Str("db", proxy.Spec.MasterDBUID).Msg("no db object available, closing connections to master")
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changeEvent(logger, changed).Str("db", proxy.Spec.MasterDBUID).
+			Msg("no db object available, closing connections to master")
 		// ignore errors on setting proxy info
 		if err = c.SetProxyInfo(ctx, c.e, proxy.Generation, proxyTimeout); err != nil {
-			logger.Error().AnErr(logging.KeyErr, err).Msg("failed to update proxyInfo")
+			logger.Warn().AnErr(logging.KeyErr, err).Msg("failed to update proxyInfo")
 		} else {
 			// update proxyCheckinterval and proxyTimeout only if we successfully updated our proxy info
 			c.configMutex.Lock()
@@ -233,7 +254,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
 		return nil
 	}
-	logger.Info().Any("address", addr).Msg("master address")
+	logger.Debug().Any("address", addr).Msg("master address")
 	if err = c.SetProxyInfo(ctx, c.e, proxy.Generation, proxyTimeout); err != nil {
 		// if we failed to update our proxy info when a master is defined we
 		// cannot ignore this error since the sentinel won't know that we exist
@@ -250,13 +271,13 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 	// start proxing only if we are inside enabledProxies, this ensures that the
 	// sentinel has read our proxyinfo and knows we are alive
 	if util.StringInSlice(proxy.Spec.EnabledProxies, c.uid) {
-		logger.Info().Any("address", addr).Msg("proxying to master address")
-		c.sendPollonConfData(pollon.ConfData{DestAddr: addr})
+		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: addr})
+		changeEvent(logger, changed).Any("address", addr).Msg("proxying to master address")
 	} else {
-		logger.Info().
+		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changeEvent(logger, changed).
 			Any("address", addr).
 			Msg("not proxying to master address since we aren't in the enabled proxies list")
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
 	}
 
 	return nil
@@ -267,7 +288,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 // its master is still the master
 func (c *ClusterChecker) fence(ctx context.Context) {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
-	logger.Info().Msg("check timeout timer fired")
+	logger.Warn().Msg("check timeout timer fired: closing all connections")
 	c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
 	if c.stopListening {
 		c.stopPollonProxy(ctx)
@@ -303,7 +324,7 @@ func (c *ClusterChecker) Start(ctx context.Context) error {
 		case err := <-checkCh:
 			if err != nil {
 				// don't report check ok since it returned an error
-				logger.Info().AnErr(logging.KeyErr, err).Msg("check function error")
+				logger.Warn().AnErr(logging.KeyErr, err).Msg("check function error")
 			} else {
 				logger.Debug().Msg("check ok")
 				// the check was ok: the proxy timeout starts again (from the timeout of the cluster spec)
