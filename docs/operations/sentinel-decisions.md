@@ -24,8 +24,10 @@ With `synchronousReplication`, the sentinel keeps a set of synchronous standbys 
 4. adds a placeholder (`orionfakestandby`) when there are fewer real ones than `minSynchronousStandbys`, so commits
    wait instead of being acknowledged by fewer standbys than you asked for.
 
-In step 2, which standbys are removed isn't defined: it can be any of them, also the one that is furthest along. After
-you lower `maxSynchronousStandbys`, check `synchronous_standby_names` on the primary to see which ones stayed.
+In step 2, the sentinel keeps the best ones: first the standbys the primary reports in sync, then the ones furthest
+along in the WAL; when those are equal, the one with the lowest db uid. So after you lower `maxSynchronousStandbys`,
+the standbys that are already acknowledging commits stay, and a standby that was just added (and isn't in sync yet)
+is the first to go.
 
 The sentinel changes the set in steps: after it changed it, it waits until the primary reports the new synchronous
 standbys in sync before it changes the set again. When one of the new ones fails or disappears in the meantime, it
