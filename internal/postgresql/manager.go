@@ -1122,14 +1122,13 @@ func (p *Manager) RemoveAllIfInitialized(ctx context.Context) error {
 
 // RemoveAll entirely cleans up the data directory, including any wal directory if that
 // exists outside of the data directory.
-func (p *Manager) RemoveAll(ctx context.Context) error {
-	ctx, logger := logging.GetLogComponent(ctx, logging.PgComponent)
+// It returns an error (and leaves the data directory) when the wal directory can't be removed: the caller retries.
+func (p *Manager) RemoveAll(_ context.Context) error {
 	if p.walDir != "" {
 		if err := os.RemoveAll(p.walDir); err != nil {
-			logger.Fatal().Str(logKeyPath, p.walDir).AnErr(logging.KeyErr, err).Msg("failed to remove tree")
+			return fmt.Errorf("failed to remove the wal directory %s: %w", p.walDir, err)
 		}
 	}
-
 	return os.RemoveAll(p.dataDir)
 }
 
