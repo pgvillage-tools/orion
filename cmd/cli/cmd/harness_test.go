@@ -44,6 +44,9 @@ import (
 	"github.com/spf13/viper"
 )
 
+// testCAPassphrase encrypts the CA keys of pki init in the specs
+const testCAPassphrase = "orion-test-passphrase"
+
 // the suite state: set by the BeforeSuite, read by the harness
 var (
 	// testHome is $HOME during the tests: the config file of the cli and its certificates (~/.orion/cli) are in there
@@ -66,6 +69,9 @@ var _ = BeforeSuite(func() {
 			DeferCleanup(os.Setenv, name, value)
 		}
 	}
+	// pki init encrypts the CA keys with this passphrase (the specs have no terminal to prompt on)
+	Ω(os.Setenv(envCAPassphrase, testCAPassphrase)).To(Succeed())
+	DeferCleanup(os.Unsetenv, envCAPassphrase)
 	originalPollInterval := waitPollInterval
 	waitPollInterval = testPollWait
 	DeferCleanup(func() { waitPollInterval = originalPollInterval })

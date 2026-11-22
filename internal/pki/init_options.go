@@ -43,6 +43,8 @@ type InitOptions struct {
 	LeafExpiry time.Duration
 	// Force overwrites existing files
 	Force bool
+	// CAPassphrase encrypts the private keys of the root and the intermediates (unencrypted when empty)
+	CAPassphrase []byte
 }
 
 // Files returns the files that Init creates

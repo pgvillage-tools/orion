@@ -238,6 +238,7 @@ either a certificate or a token.
 |------|-----------|--------------|
 | Certificate keys and signatures | ECDSA P-256, keys in PKCS#8 (configurable, e.g. RSA) | ❌ |
 | Key pair of the cli, encryption of the archive | HPKE with ML-KEM-768 + X25519 (`crypto/hpke`, `MLKEM768X25519`) | ✅ |
+| CA keys on disk (`~/.orion/cli/ca`) | Encrypted PKCS#8: PBKDF2-HMAC-SHA256 (600,000 iterations) → AES-256-CBC, readable by OpenSSL | ✅ |
 | Private key of the cli on disk | Passphrase → scrypt or Argon2id → AES-256-GCM | ✅ |
 | TLS key exchange | The Go default: X25519MLKEM768 and SecP256r1MLKEM768 | ✅ (Go clients and servers) |
 | HMAC in the bootstrap | HMAC-SHA256 | ✅ |
@@ -260,7 +261,7 @@ The directories are only readable for their owner, and private keys are stored w
 
 ## Roadmap
 
-Implemented in the first PR:
+Implemented:
 
 - [x] The PKI library (`pkg/tls`): root, server intermediate, client intermediate, server and client certificates,
   ECDSA P-256, validity rules.
@@ -270,11 +271,10 @@ Implemented in the first PR:
 - [x] The probe port with `/livez`, `/readyz` and `/status` (Kubernetes conventions; graceful shutdown on SIGTERM).
 - [x] The cli connects to the api with mTLS.
 - [x] `/metrics` on the probe port, with the expiry of the certificates.
+- [x] The CA keys on the cli are encrypted with a passphrase (encrypted PKCS#8, readable by OpenSSL).
 
 Later, each in its own PR:
 
-- [ ] Encrypt the CA keys on the cli with a passphrase. For now, `orion-cli pki init` stores them unencrypted, readable
-  for the owner only.
 - [ ] Bootstrap mode, with the shared secret, the HMAC, the archive, the confirmation and `--rebootstrap`.
 - [ ] Certificate management in the cli and the api (issue, renew, list), and automatic renewal.
 - [ ] Server and client certificates for PostgreSQL, etcd, RustFS and the other components.

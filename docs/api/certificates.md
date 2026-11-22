@@ -18,6 +18,8 @@ On the machine where you run the cli:
 
 ```bash
 orion-cli pki init --host orion-api.example.com
+# Passphrase for the CA keys:
+# Repeat the passphrase:
 ```
 
 Copy `~/.orion/api` to the api host (e.g. to `/etc/orion/api`), and start the api:
@@ -58,8 +60,11 @@ Root CA
 | | `ca/` | The certificates and private keys of the root and the intermediates |
 
 - Private keys are only readable for their owner (mode `0600`).
-- The api directory has no CA key. Keep `~/.orion/cli/ca` safe: whoever has it can create certificates that the api
-  accepts. For now the CA keys are stored unencrypted; encryption with a passphrase is planned.
+- The api directory has no CA key. The CA keys in `~/.orion/cli/ca` are encrypted with a passphrase (see
+  [The passphrase of the CA keys](#the-passphrase-of-the-ca-keys)). Keep the directory and the passphrase safe:
+  whoever has both can create certificates that the api accepts.
+- The keys of the api and the cli certificates are not encrypted: the api and the cli use them without asking for a
+  passphrase.
 - `orion-cli pki init` doesn't overwrite existing files, unless you add `--force`.
 
 ### Options
@@ -75,8 +80,28 @@ Root CA
 | `--intermediate-validity` | `3y` | Validity of the intermediates. |
 | `--leaf-validity` | `1y` | Validity of the api and cli certificates. |
 | `--force` | | Overwrite existing files. |
+| `--ca-passphrase-file` | | File with the passphrase for the CA keys (`-` for stdin). |
 
 The api certificate is always valid for `localhost`, `127.0.0.1` and `::1`.
+
+### The passphrase of the CA keys
+
+The private keys of the root and the intermediates are encrypted with a passphrase of at least 8 characters. The cli
+takes the first of:
+
+1. the file in `--ca-passphrase-file` (one trailing newline is removed; `-` reads stdin);
+2. the environment variable `ORIONCLI_CA_PASSPHRASE`;
+3. a prompt on the terminal (twice, to catch typos).
+
+Without a terminal and without 1 or 2 (e.g. in a script), `pki init` fails and writes nothing.
+
+The keys are standard encrypted PKCS#8 (PBES2: PBKDF2-HMAC-SHA256 and AES-256-CBC, what OpenSSL 3 writes by default),
+so other tools can use them with the passphrase, e.g.:
+
+```bash
+openssl pkey -in ~/.orion/cli/ca/root.key -noout -text
+# Enter pass phrase for /home/me/.orion/cli/ca/root.key:
+```
 
 ## Running the api
 
