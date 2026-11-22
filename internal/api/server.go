@@ -190,11 +190,15 @@ const storeRetryAfter = "2"
 
 // handleError logs err with msg, and (when w is set) responds with a problem with msg as the detail: a 503 with
 // Retry-After when the store didn't answer in time or can't serve requests right now (the request may succeed when
-// retried), a 500 otherwise
+// retried; logged as a warning), a 500 otherwise (logged as an error)
 func handleError(ctx context.Context, err error, w http.ResponseWriter, msg string) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg(msg)
+		event := logger.Error()
+		if consensus.IsUnavailable(err) {
+			event = logger.Warn()
+		}
+		event.AnErr("error", err).Msg(msg)
 	}
 	if w == nil {
 		return
