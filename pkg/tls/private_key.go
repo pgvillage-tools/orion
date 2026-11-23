@@ -152,7 +152,10 @@ func (pk *PrivateKey) Decode() error {
 		if der, err = decryptPKCS8(block.Bytes, pk.Passphrase); err != nil {
 			return err
 		}
-		key, err = x509.ParsePKCS8PrivateKey(der)
+		// a wrong passphrase can still end in valid padding (about 1 in 256): then the decrypted data isn't a key
+		if key, err = x509.ParsePKCS8PrivateKey(der); err != nil {
+			return fmt.Errorf("%w: %v", ErrWrongPassphrase, err)
+		}
 	case "RSA PRIVATE KEY":
 		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 	case "EC PRIVATE KEY":
