@@ -37,6 +37,9 @@ const (
 	NonceSize = 32
 	// ProofSize is the size of a proof (HMAC-SHA256), in bytes
 	ProofSize = sha256.Size
+	// MinSecretLength is the minimum length of a bootstrap secret you choose: with an active man in the middle, a weak
+	// secret can be guessed offline
+	MinSecretLength = 20
 
 	// labelCLI and labelAPI separate the proof of the cli from the proof of the api, so one can't be replayed as the
 	// other

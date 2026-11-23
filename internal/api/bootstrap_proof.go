@@ -42,9 +42,6 @@ const (
 	BootstrapSecretEnv = "ORIONAPI_BOOTSTRAP_SECRET"
 	// DefaultBootstrapSecretTTL is the default time the bootstrap secret is valid, from the start of bootstrap mode
 	DefaultBootstrapSecretTTL = 24 * time.Hour
-	// MinBootstrapSecretLength is the minimum length of a bootstrap secret you choose: with an active man in the
-	// middle, a weak secret can be guessed offline
-	MinBootstrapSecretLength = 20
 
 	// generatedSecretBytes is the size of a generated secret (128 bits; 26 base32 characters)
 	generatedSecretBytes = 16
@@ -84,8 +81,8 @@ func bootstrapSecret(ctx context.Context, cfg Config) ([]byte, error) {
 		}
 	}
 	if secret != "" {
-		if len(secret) < MinBootstrapSecretLength {
-			return nil, fmt.Errorf("the bootstrap secret must have at least %d characters", MinBootstrapSecretLength)
+		if len(secret) < bootstrap.MinSecretLength {
+			return nil, fmt.Errorf("the bootstrap secret must have at least %d characters", bootstrap.MinSecretLength)
 		}
 		return []byte(secret), nil
 	}

@@ -166,7 +166,8 @@ cli                                                    api (bootstrap mode)
 ```
 
 1. The cli checks on the probe port that the api is in bootstrap mode.
-2. The cli generates its key pair in `~/.orion/cli/`, with the private key encrypted with a passphrase.
+2. The cli generates its key pair in `~/.orion/cli/` (once), with the private key encrypted with the passphrase of
+   the CA keys. See [The key pair of the cli](#the-key-pair-of-the-cli).
 3. The cli connects to the api port. The api has a temporary self-signed certificate, so the cli can't verify it.
 4. The api and the cli prove to each other that they know the secret, with HMAC. The HMAC also covers keying material
    exported from the TLS session (`ConnectionState.ExportKeyingMaterial`, see
@@ -229,6 +230,62 @@ api proof = HMAC-SHA256(secret, "orion-bootstrap api" || 0x00 || api nonce || cl
 | `403 Forbidden` | A wrong proof, or the secret expired |
 | `409 Conflict` | A proof without a challenge on this connection |
 | `429 Too Many Requests` | Too many wrong proofs, or too many open challenges (with `Retry-After`) |
+
+### The key pair of the cli
+
+The api encrypts the archive (#322) to the public key of the cli, with HPKE (RFC 9180), so only the cli can read it.
+
+- **The KEM** is ML-KEM-768 with X25519 (X-Wing, `hpke.MLKEM768X25519()`, HPKE KEM id `0x647A`): the encryption stays
+  safe as long as either of the two holds, also against a quantum computer later.
+- **The files** are in the directory of the cli (`--pki-dir`, default `~/.orion/cli`): `bootstrap.key` (the private key,
+  encrypted, mode `0600`) and `bootstrap.pub` (the public key). `orion-cli bootstrap` creates them when they don't exist
+  yet, and keeps them otherwise. One of the two without the other is an error: remove it to start over.
+- **The passphrase** is the passphrase of the CA keys (`--ca-passphrase-file`, `ORIONCLI_CA_PASSPHRASE`, or a prompt):
+  the archive holds the CA keys, which the cli stores encrypted with that passphrase anyway, so a second passphrase
+  wouldn't protect anything more.
+- **The encryption of the private key**: Argon2id (RFC 9106; 3 passes, 64 MiB, 4 threads, a random salt of 16 bytes)
+  derives an AES-256-GCM key from the passphrase. The parameters are in the PEM headers, so they can change later
+  without breaking older files. When reading a file, the cli accepts at most 16 passes, 1 GiB and 16 threads, so a
+  crafted file can't make it use all memory.
+
+```text
+-----BEGIN ORION BOOTSTRAP ENCRYPTED PRIVATE KEY-----
+Argon2-Memory: 65536
+Argon2-Threads: 4
+Argon2-Time: 3
+KDF: argon2id
+KEM: 0x647A
+Nonce: <12 bytes, base64>
+Salt: <16 bytes, base64>
+
+<AES-256-GCM(the private key as HPKE SerializePrivateKey, additional data "orion bootstrap private key"), base64>
+-----END ORION BOOTSTRAP ENCRYPTED PRIVATE KEY-----
+
+-----BEGIN ORION BOOTSTRAP PUBLIC KEY-----
+KEM: 0x647A
+
+<the public key as HPKE SerializePublicKey, base64>
+-----END ORION BOOTSTRAP PUBLIC KEY-----
+```
+
+### orion-cli bootstrap
+
+```bash
+ORIONCLI_BOOTSTRAP_SECRET=... orion-cli bootstrap --host orion-api.example.com
+```
+
+1. The cli asks the probe port (`--probe-port`, default `8080`) for the mode of the api, and stops unless it is
+   `bootstrap`.
+2. It reads the secret from `--bootstrap-secret-file` (`-` for stdin), else from `ORIONCLI_BOOTSTRAP_SECRET`, else it
+   asks for it on the terminal (without echo). A secret shorter than 20 characters can't be the secret of the api, so
+   the cli refuses it before it uses one of the few tries the api allows.
+3. It creates its key pair when it doesn't have one yet.
+4. It connects to the api port (`--host`, `--port`) with TLS 1.3, without verifying the self-signed certificate, and
+   runs the challenge and the proof on that one connection. It checks the proof of the api before it sends anything
+   else, and it fails when the connection changes in between.
+
+Not yet: sending the public key and receiving the archive (#322); the command stops after the proofs. It stays hidden
+in `orion-cli --help` until bootstrap mode is enabled in the api.
 
 ### Why this is safe
 
@@ -293,7 +350,7 @@ either a certificate or a token.
 | Certificate keys and signatures | ECDSA P-256, keys in PKCS#8 (configurable, e.g. RSA) | ❌ |
 | Key pair of the cli, encryption of the archive | HPKE with ML-KEM-768 + X25519 (`crypto/hpke`, `MLKEM768X25519`) | ✅ |
 | CA keys on disk (`~/.orion/cli/ca`) | Encrypted PKCS#8: PBKDF2-HMAC-SHA256 (600,000 iterations) → AES-256-CBC, readable by OpenSSL | ✅ |
-| Private key of the cli on disk | Passphrase → scrypt or Argon2id → AES-256-GCM | ✅ |
+| Private key of the cli on disk (`~/.orion/cli/bootstrap.key`) | Passphrase → Argon2id (3 passes, 64 MiB, 4 threads) → AES-256-GCM | ✅ |
 | TLS key exchange | The Go default: X25519MLKEM768 and SecP256r1MLKEM768 | ✅ (Go clients and servers) |
 | HMAC in the bootstrap | HMAC-SHA256 | ✅ |
 
@@ -309,7 +366,7 @@ either a certificate or a token.
 | Where | Directory | Contents |
 |-------|-----------|----------|
 | api | `~/.orion/api/` (`--pki-dir`) | Its server certificate and key, the chains to verify clients, and during the bootstrap the bootstrap state and the archive |
-| cli | `~/.orion/cli/` | Its key pair, its client certificate, the chains, and the encrypted CA keys |
+| cli | `~/.orion/cli/` | Its bootstrap key pair (`bootstrap.key`, encrypted, and `bootstrap.pub`), its client certificate, the chains, and the encrypted CA keys |
 
 The directories are only readable for their owner, and private keys are stored with mode `0600`.
 
@@ -333,8 +390,8 @@ In progress:
   reports `bootstrap`, and the switch to normal mode (#319). It stays off until the bootstrap is complete: until then
   an api without certificates fails with an error.
 - [x] The shared secret and the mutual HMAC: the challenge and proof endpoints (#320).
-- [ ] `orion-cli bootstrap` and the key pair of the cli (#321), the archive, the stored state, the confirmation and
-  `--rebootstrap`.
+- [x] `orion-cli bootstrap` up to the proofs, and the key pair of the cli (#321).
+- [ ] The archive, the stored state, the confirmation and `--rebootstrap` (#322); enabling bootstrap mode (#323).
 
 Later, each in its own PR:
 
