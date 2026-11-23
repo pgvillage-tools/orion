@@ -204,7 +204,8 @@ var _ = Describe("run", func() {
 	It("serves bootstrap mode without certificates, and switches to normal mode once the bootstrap is done", func() {
 		start()
 		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeBootstrap))
-		Expect(h.Ready.Load()).To(BeTrue(), "ready in bootstrap mode")
+		// /status answers as soon as the probe port serves, a moment before run marks the api ready
+		Eventually(h.Ready.Load).WithTimeout(5*time.Second).Should(BeTrue(), "ready in bootstrap mode")
 
 		// a client without a certificate connects (it can't verify the self-signed certificate), but gets no api
 		insecure := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // the self-signed bootstrap certificate
