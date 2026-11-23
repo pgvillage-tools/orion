@@ -439,6 +439,18 @@ var _ = Describe("Manager", func() {
 				Ω(dataDir).NotTo(BeAnExistingFile())
 				Ω(walDir).NotTo(BeAnExistingFile())
 			})
+			It("returns an error, and keeps the data dir, when the wal dir can't be removed", func() {
+				if os.Geteuid() == 0 {
+					Skip("root can remove a read-only directory")
+				}
+				m = newManager(walDir)
+				initDataDir("16")
+				writeFile(filepath.Join(walDir, "000000010000000000000001"), "")
+				Ω(os.Chmod(walDir, 0o500)).To(Succeed())
+				DeferCleanup(os.Chmod, walDir, os.FileMode(0o700))
+				Ω(m.RemoveAll(ctx)).To(MatchError(ContainSubstring("failed to remove the wal directory " + walDir)))
+				Ω(dataDir).To(BeADirectory())
+			})
 			It("removes an uninitialized data dir", func() {
 				writeFile(filepath.Join(dataDir, "leftover"), "")
 				Ω(m.RemoveAllIfInitialized(ctx)).To(Succeed())
