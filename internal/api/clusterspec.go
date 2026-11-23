@@ -94,7 +94,7 @@ func (h *Handlers) PatchClusterSpecHandler(w http.ResponseWriter, r *http.Reques
 	defer func() {
 		err := r.Body.Close()
 		if err != nil {
-			logger.Error().AnErr("error", err).Msg("Failed to close Body")
+			logger.Debug().AnErr("error", err).Msg("Failed to close Body")
 		}
 	}()
 
@@ -119,7 +119,7 @@ func (h *Handlers) PutClusterSpecHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer func() {
 		if err := r.Body.Close(); err != nil {
-			logger.Error().AnErr("error", err).Msg("Failed to close Body")
+			logger.Debug().AnErr("error", err).Msg("Failed to close Body")
 		}
 	}()
 

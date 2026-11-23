@@ -65,7 +65,7 @@ func (h *Handlers) PutClusterHandler(w http.ResponseWriter, r *http.Request) {
 	reader := http.MaxBytesReader(w, r.Body, readMaxBytes)
 	defer func() {
 		if err := reader.Close(); err != nil {
-			logger.Error().AnErr("error", err).Msg("Failed to close Body")
+			logger.Debug().AnErr("error", err).Msg("Failed to close Body")
 		}
 	}()
 	var newCD apiv1.Data

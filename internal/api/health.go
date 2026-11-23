@@ -67,7 +67,7 @@ func writeProbe(ctx context.Context, w http.ResponseWriter, status int, msg stri
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(msg)); err != nil {
 		_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-		logger.Error().AnErr("error", err).Msg("unable to write the probe response")
+		logger.Debug().AnErr("error", err).Msg("unable to write the probe response")
 	}
 }
 
