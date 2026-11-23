@@ -93,7 +93,8 @@ func (h *Handlers) writeJSONStatus(ctx context.Context, w http.ResponseWriter, s
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(buf.Bytes()); err != nil {
-		handleError(ctx, err, w, "error while writing json")
+		// the status is sent already, so only log it (the client is gone, most likely)
+		handleError(ctx, err, nil, "error while writing json")
 	}
 }
 
