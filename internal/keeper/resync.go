@@ -50,11 +50,11 @@ func (p *PostgresKeeper) resync(ctx context.Context, db, masterDB, followedDB *c
 		// rewind that it targets the current primary, rather than whatever database we
 		// follow.
 		connParams := p.getSUConnParams(db, masterDB)
-		err := pgm.SyncFromFollowedPGRewind(ctx, connParams, p.pgSUPassword)
 		logger.Info().
 			Str("masterDB", masterDB.UID).
 			Str("keeper", followedDB.Spec.KeeperUID).
 			Msg("syncing using pg_rewind")
+		err := pgm.SyncFromFollowedPGRewind(ctx, connParams, p.pgSUPassword)
 		if err == nil {
 			pgm.SetRecoveryOptions(p.createRecoveryOptions(pg.RecoveryModeStandby, standbySettings, nil, nil))
 			return nil
