@@ -8,8 +8,9 @@ import (
 	"context"
 	reflect "reflect"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	gomock "github.com/golang/mock/gomock"
-	postgresql "github.com/pgvillage-tools/orion/internal/postgresql"
 )
 
 // MockPGManager is a mock of PGManager interface
@@ -36,9 +37,9 @@ func (m *MockPGManager) EXPECT() *MockPGManagerMockRecorder {
 }
 
 // GetTimelinesHistory mocks base method
-func (m *MockPGManager) GetTimelinesHistory(_ context.Context, timeline uint64) ([]*postgresql.TimelineHistory, error) {
+func (m *MockPGManager) GetTimelinesHistory(_ context.Context, timeline uint64) (cluster.PostgresTimelinesHistory, error) {
 	ret := m.ctrl.Call(m, "GetTimelinesHistory", timeline)
-	ret0, _ := ret[0].([]*postgresql.TimelineHistory)
+	ret0, _ := ret[0].(cluster.PostgresTimelinesHistory)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -21,6 +21,8 @@ import (
 	"context"
 	"slices"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	// TODO: replace with jackc
 	"database/sql"
 	"errors"
@@ -177,10 +179,6 @@ const (
 	historyTimelineStringLength  = 4
 	fileNameTimelineStringLength = 8
 	walNameLength                = 24
-)
-
-var (
-	validReplSlotName = regexp.MustCompile("^[a-z0-9_]+$")
 )
 
 func handledDbClose(db *sql.DB) {
@@ -434,8 +432,8 @@ func GetSystemData(ctx context.Context, replConnParams ConnParams) (*SystemData,
 	return nil, errors.New("query returned 0 rows")
 }
 
-func parseTimelinesHistory(contents string) ([]*TimelineHistory, error) {
-	tlsh := []*TimelineHistory{}
+func parseTimelinesHistory(contents string) (cluster.PostgresTimelinesHistory, error) {
+	tlsh := cluster.PostgresTimelinesHistory{}
 	regex, err := regexp.Compile(`(\S+)\s+(\S+)\s+(.*)$`)
 	if err != nil {
 		return nil, err
@@ -447,7 +445,7 @@ func parseTimelinesHistory(contents string) ([]*TimelineHistory, error) {
 	for scanner.Scan() {
 		m := regex.FindStringSubmatch(scanner.Text())
 		if len(m) == historyTimelineStringLength {
-			var tlh TimelineHistory
+			var tlh cluster.PostgresTimelineHistory
 			if tlh.TimelineID, err = strconv.ParseUint(m[1], base10, bitSize64); err != nil {
 				return nil, fmt.Errorf("cannot parse timelineID in timeline history line %q: %v", scanner.Text(), err)
 			}
@@ -461,7 +459,8 @@ func parseTimelinesHistory(contents string) ([]*TimelineHistory, error) {
 	return tlsh, err
 }
 
-func getTimelinesHistory(ctx context.Context, timeline uint64, replConnParams ConnParams) ([]*TimelineHistory, error) {
+func getTimelinesHistory(ctx context.Context, timeline uint64,
+	replConnParams ConnParams) (cluster.PostgresTimelinesHistory, error) {
 	// Add "replication=1" connection option
 	replConnParams["replication"] = "1"
 	db, err := sql.Open(globalDB, replConnParams.ConnString())
@@ -488,11 +487,6 @@ func getTimelinesHistory(ctx context.Context, timeline uint64, replConnParams Co
 		return tlsh, nil
 	}
 	return nil, errors.New("query returned 0 rows")
-}
-
-// IsValidReplSlotName validates if a string can be used as a name for a replication slot
-func IsValidReplSlotName(name string) bool {
-	return validReplSlotName.MatchString(name)
 }
 
 func fileExists(path string) (bool, error) {

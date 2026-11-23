@@ -18,6 +18,8 @@ import (
 	"context"
 	"time"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	"github.com/Masterminds/semver/v3"
 	"github.com/pgvillage-tools/orion/internal/common"
 	pg "github.com/pgvillage-tools/orion/internal/postgresql"
@@ -39,7 +41,7 @@ type pgManager interface {
 
 	// the data directory
 	IsInitialized() (bool, error)
-	Init(ctx context.Context, initConfig *pg.InitConfig) error
+	Init(ctx context.Context, initConfig *cluster.NewConfig) error
 	Restore(ctx context.Context, command string) error
 	RemoveAllIfInitialized(ctx context.Context) error
 	SyncFromFollowed(ctx context.Context, followedConnParams pg.ConnParams, replSlot string, fastCheckpoint bool) error

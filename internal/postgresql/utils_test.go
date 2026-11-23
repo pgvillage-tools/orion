@@ -18,31 +18,18 @@ package postgresql
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	cluster "github.com/pgvillage-tools/orion/api/v1"
 )
 
 var _ = Describe("utils", func() {
 	DescribeTable("parseTimelinesHistory",
-		func(contents string, want []*TimelineHistory) {
+		func(contents string, want cluster.PostgresTimelinesHistory) {
 			Ω(parseTimelinesHistory(contents)).To(Equal(want))
 		},
-		Entry("empty", "", []*TimelineHistory{}),
-		Entry("one timeline", "1\t0/5000090\tno recovery target specified", []*TimelineHistory{
+		Entry("empty", "", cluster.PostgresTimelinesHistory{}),
+		Entry("one timeline", "1\t0/5000090\tno recovery target specified", cluster.PostgresTimelinesHistory{
 			{TimelineID: 1, SwitchPoint: 83886224, Reason: "no recovery target specified"},
 		}),
-	)
-
-	DescribeTable("IsValidReplSlotName",
-		func(name string, valid bool) {
-			Ω(IsValidReplSlotName(name)).To(Equal(valid))
-		},
-		Entry(nil, "aaaaaaaa", true),
-		Entry(nil, "a12345aa", true),
-		Entry(nil, "_a1_2345aa_", true),
-		Entry(nil, "", false),
-		Entry(nil, "a-aaaaaaa", false),
-		Entry(nil, "_a1_-2345aa_", false),
-		Entry(nil, "ABC123", false),
-		Entry(nil, "$123", false),
 	)
 
 	DescribeTable("expandRecoveryCommand replaces %d, %w and %%",

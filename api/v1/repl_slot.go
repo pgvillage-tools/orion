@@ -9,15 +9,17 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package postgresql
+package v1
 
-// InitConfig stores the config specific to initdb
-type InitConfig struct {
-	Locale        string
-	Encoding      string
-	DataChecksums bool
+import "regexp"
+
+var validReplSlotName = regexp.MustCompile("^[a-z0-9_]+$")
+
+// IsValidReplSlotName validates if a string can be used as a name for a replication slot
+func IsValidReplSlotName(name string) bool {
+	return validReplSlotName.MatchString(name)
 }

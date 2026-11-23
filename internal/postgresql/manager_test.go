@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	"github.com/pgvillage-tools/orion/internal/common"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -675,7 +677,7 @@ var _ = Describe("Manager", func() {
 		It("runs initdb with all options", func() {
 			fakeBin("initdb", `printf "%s\n" "$*" > "`+filepath.Join(binDir, "initdb.args")+`"; mkdir -p "$2"`)
 			m = newManager(walDir)
-			Ω(m.Init(ctx, &InitConfig{Locale: "C", Encoding: "UTF8", DataChecksums: true})).To(Succeed())
+			Ω(m.Init(ctx, &cluster.NewConfig{Locale: "C", Encoding: "UTF8", DataChecksums: true})).To(Succeed())
 			args := readFile(filepath.Join(binDir, "initdb.args"))
 			Ω(args).To(HavePrefix("-D " + dataDir + " -U postgres --pwfile "))
 			Ω(args).To(HaveSuffix(" --waldir " + walDir + " --locale C --encoding UTF8 --data-checksums\n"))
@@ -685,12 +687,12 @@ var _ = Describe("Manager", func() {
 			fakeBin("initdb", `printf "%s\n" "$*" > "`+filepath.Join(binDir, "initdb.args")+`"`)
 			m = NewManager(binDir, filepath.Join(base, "data"), "", ConnParams{}, ConnParams{},
 				"trust", "postgres", "", "trust", "repl", "", time.Second)
-			Ω(m.Init(ctx, &InitConfig{})).To(Succeed())
+			Ω(m.Init(ctx, &cluster.NewConfig{})).To(Succeed())
 			Ω(readFile(filepath.Join(binDir, "initdb.args"))).To(Equal("-D " + dataDir + " -U postgres\n"))
 		})
 		It("removes a half initialized data dir when initdb fails", func() {
 			fakeBin("initdb", `mkdir -p "$2"; exit 1`)
-			Ω(m.Init(ctx, &InitConfig{})).NotTo(Succeed())
+			Ω(m.Init(ctx, &cluster.NewConfig{})).NotTo(Succeed())
 			Ω(dataDir).NotTo(BeAnExistingFile())
 		})
 

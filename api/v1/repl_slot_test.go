@@ -13,11 +13,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package postgresql
+package v1
 
-// TimelineHistory stores all info regarding a specific timeline
-type TimelineHistory struct {
-	TimelineID  uint64
-	SwitchPoint uint64
-	Reason      string
-}
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("replication slot names", func() {
+	DescribeTable("IsValidReplSlotName",
+		func(name string, valid bool) {
+			Ω(IsValidReplSlotName(name)).To(Equal(valid))
+		},
+		Entry(nil, "aaaaaaaa", true),
+		Entry(nil, "a12345aa", true),
+		Entry(nil, "_a1_2345aa_", true),
+		Entry(nil, "", false),
+		Entry(nil, "a-aaaaaaa", false),
+		Entry(nil, "_a1_-2345aa_", false),
+		Entry(nil, "ABC123", false),
+		Entry(nil, "$123", false),
+	)
+})

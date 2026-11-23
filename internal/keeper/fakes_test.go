@@ -55,7 +55,7 @@ type fakePG struct {
 
 	syncStandbys []string
 	systemData   *pg.SystemData
-	timelines    []*pg.TimelineHistory
+	timelines    cluster.PostgresTimelinesHistory
 	olderWalFile string
 	slots        []string
 	// replSlot is the replication slot of the last SyncFromFollowed
@@ -99,7 +99,7 @@ func (f *fakePG) sequence(methods ...string) string {
 	return strings.Join(seq, ",")
 }
 
-func (f *fakePG) GetTimelinesHistory(_ context.Context, _ uint64) ([]*pg.TimelineHistory, error) {
+func (f *fakePG) GetTimelinesHistory(_ context.Context, _ uint64) (cluster.PostgresTimelinesHistory, error) {
 	return f.timelines, f.call("GetTimelinesHistory")
 }
 
@@ -137,7 +137,7 @@ func (f *fakePG) IsRestartRequired(_ context.Context, _ []string) (bool, error) 
 
 func (f *fakePG) IsInitialized() (bool, error) { return f.initialized, f.call("IsInitialized") }
 
-func (f *fakePG) Init(_ context.Context, _ *pg.InitConfig) error {
+func (f *fakePG) Init(_ context.Context, _ *cluster.NewConfig) error {
 	if err := f.call("Init"); err != nil {
 		return err
 	}

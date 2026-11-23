@@ -22,11 +22,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	cluster "github.com/pgvillage-tools/orion/api/v1"
+
 	"github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/flagutil"
 	"github.com/pgvillage-tools/orion/internal/keeper"
 	"github.com/pgvillage-tools/orion/internal/logging"
-	pg "github.com/pgvillage-tools/orion/internal/postgresql"
 	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/spf13/cobra"
@@ -184,7 +185,7 @@ func runKeeper(c *cobra.Command, _ []string) {
 	}
 
 	if cfg.UID != "" {
-		if !pg.IsValidReplSlotName(cfg.UID) {
+		if !cluster.IsValidReplSlotName(cfg.UID) {
 			// revive:disable-next-line
 			logger.Fatal().
 				Str("uid", cfg.UID).
