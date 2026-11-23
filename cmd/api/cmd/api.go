@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"os"
 
 	cmdcommon "github.com/pgvillage-tools/orion/cmd"
 	"github.com/pgvillage-tools/orion/internal/api"
@@ -62,7 +63,18 @@ func init() {
 		"private key of the server certificate (default <pki-dir>/"+pki.APIServerKeyFile+")")
 	CmdWebApi.PersistentFlags().StringVar(&cfg.TLSCAFile, "tls-ca-file", "",
 		"CA that signs the client certificates the api accepts (default <pki-dir>/"+pki.APIClientCAFile+")")
+	CmdWebApi.PersistentFlags().StringVar(&cfg.BootstrapSecretFile, "bootstrap-secret-file", "",
+		"file with the bootstrap secret (default: "+api.BootstrapSecretEnv+", or a generated secret that is logged)")
+	CmdWebApi.PersistentFlags().DurationVar(&cfg.BootstrapSecretTTL, "bootstrap-secret-ttl",
+		api.DefaultBootstrapSecretTTL, "time the bootstrap secret is valid, from the start of bootstrap mode")
 	// revive:enable
+	// bootstrap mode isn't enabled yet (#323 enables it): its flags stay hidden until then
+	for _, name := range []string{"bootstrap-secret-file", "bootstrap-secret-ttl"} {
+		if err := CmdWebApi.PersistentFlags().MarkHidden(name); err != nil {
+			_, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
+			logger.Fatal().AnErr(keyError, err).Msg("")
+		}
+	}
 }
 
 // Execute can be used to start and run the API
@@ -89,6 +101,8 @@ func runAPI(c *cobra.Command, _ []string) {
 		logger.Fatal().AnErr(keyError, err).Msg("")
 	}
 
+	// the secret itself comes from the environment only: arguments are visible in ps
+	cfg.BootstrapSecret = os.Getenv(api.BootstrapSecretEnv)
 	if err := api.Run(ctx, cfg); err != nil {
 		logger.Fatal().AnErr(keyError, err).Msg("")
 	}

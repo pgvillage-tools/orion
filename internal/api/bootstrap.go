@@ -140,12 +140,6 @@ func bootstrapServer(ctx context.Context, h *Handlers, metrics *apiMetrics) (*ht
 	}, nil
 }
 
-// BootstrapRoutes returns the routes of the api port in bootstrap mode. The bootstrap endpoints (the HMAC challenge,
-// the archive) come with #320-#322; nothing else is served in bootstrap mode.
-func (h *Handlers) BootstrapRoutes() []Route {
-	return nil
-}
-
 // finishBootstrap makes the api switch from bootstrap mode to normal mode; it can be called more than once
 func (h *Handlers) finishBootstrap() {
 	h.bootstrapOnce.Do(func() { close(h.bootstrapDone) })

@@ -44,6 +44,8 @@ type Handlers struct {
 	storeTimeout time.Duration
 	// bootstrapping is true while the api port is in bootstrap mode
 	bootstrapping atomic.Bool
+	// bootstrap holds the bootstrap secret and the sessions in bootstrap mode; nil in normal mode
+	bootstrap *bootstrapper
 	// bootstrapDone is closed (by finishBootstrap) when the api switches from bootstrap mode to normal mode
 	bootstrapDone chan struct{}
 	bootstrapOnce sync.Once

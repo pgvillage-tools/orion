@@ -263,3 +263,16 @@ var _ = Describe("run", func() {
 		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeNormal))
 	})
 })
+
+var _ = Describe("Run in bootstrap mode", func() {
+	It("fails with an invalid bootstrap secret", func(ctx SpecContext) {
+		withBootstrap()
+		cfg := Config{PKIDir: GinkgoT().TempDir(), BaseURL: "127.0.0.1", BootstrapSecret: "too short"}
+		cfg.ClusterName = "cluster1"
+		cfg.StoreBackend = "etcdv3"
+		// nothing listens there: the store client connects on its first call
+		cfg.StoreEndpoints = "http://127.0.0.1:1"
+		cfg.StorePrefix = "orion/cluster"
+		Expect(Run(ctx, cfg)).To(MatchError(ContainSubstring("at least")))
+	})
+})

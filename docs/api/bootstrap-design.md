@@ -126,12 +126,20 @@ When the api starts without certificates, it starts in bootstrap mode.
 
 The api and the cli prove to each other that they know a shared secret.
 
-- Give the secret to the api in an environment variable or a file, not as a command-line argument (arguments are visible
-  in `ps`).
-- Without a secret, the api generates one (at least 128 bits) and logs it once.
-- A secret you choose yourself must have a minimum length: with an active man in the middle, a weak secret can be
+| Setting | How | Default |
+|---------|-----|---------|
+| The secret | The environment variable `ORIONAPI_BOOTSTRAP_SECRET`, or a file with `--bootstrap-secret-file` (a trailing newline is ignored) | Generated: 128 random bits, as 26 base32 characters (e.g. `MZXW6YTBOI4DSMRVGA3TCNJZHE`), logged once at warn level |
+| Its lifetime | `--bootstrap-secret-ttl`, from the start of bootstrap mode | `24h` |
+
+- There is no flag for the secret itself: command-line arguments are visible in `ps`. Setting both the environment
+  variable and the file is an error.
+- A secret you choose yourself must have at least 20 characters: with an active man in the middle, a weak secret can be
   guessed offline.
-- The secret can be used once, expires (e.g. after 24 hours), and failed attempts are rate limited.
+- The secret can be used once: a successful hand-over of the archive uses it up. A proof alone doesn't: when the
+  connection drops after the proof, the cli can try again.
+- Wrong proofs are rate limited: after 5 within a minute (for all clients together), the api answers `429 Too Many
+  Requests` with `Retry-After` until the oldest is a minute old.
+- Once the secret expired, the api refuses every bootstrap request (`403`). Restart the api for a new secret.
 
 ### The flow
 
@@ -141,10 +149,11 @@ cli                                                    api (bootstrap mode)
  |-- GET /status (probe port) ------------------------->|
  |<-------------------------------- {"mode":"bootstrap"}|
  |                                                      |
- |== TLS (self-signed api certificate) ================>|
- |<-- challenge (api nonce) ----------------------------|
- |-- HMAC(secret, api nonce, TLS exporter), cli nonce ->|
- |<-------------- HMAC(secret, cli nonce, TLS exporter)-|
+ |== TLS 1.3 (self-signed api certificate) ============>|
+ |-- POST /v1/bootstrap/challenge --------------------->|
+ |<------------------------------------ api nonce ------|
+ |-- POST /v1/bootstrap/proof: cli nonce, cli proof --->|  check the cli proof
+ |<------------------------------------ api proof ------|  check the api proof (cli)
  |                                                      |
  |-- cli public key, extra SANs ----------------------->|  generate root, intermediates,
  |                                                      |  api and cli certificates
@@ -161,7 +170,8 @@ cli                                                    api (bootstrap mode)
 3. The cli connects to the api port. The api has a temporary self-signed certificate, so the cli can't verify it.
 4. The api and the cli prove to each other that they know the secret, with HMAC. The HMAC also covers keying material
    exported from the TLS session (`ConnectionState.ExportKeyingMaterial`, see
-   [RFC 9266](https://www.rfc-editor.org/rfc/rfc9266)). The secret itself is never sent.
+   [RFC 9266](https://www.rfc-editor.org/rfc/rfc9266)). The secret itself is never sent. See
+   [The bootstrap protocol](#the-bootstrap-protocol) for the details.
 5. The cli sends its public key, and optionally extra names for the api certificate.
 6. The api generates the root, the intermediates, its own server certificate and the cli client certificate, and sends
    the archive:
@@ -176,6 +186,49 @@ cli                                                    api (bootstrap mode)
 
 After the bootstrap, the api has only its own server certificate and key, and the chains to verify clients. It can't
 issue or renew any certificate by itself; that goes through the cli.
+
+### The bootstrap protocol
+
+The bootstrap endpoints are on the api port, in bootstrap mode only, and need TLS 1.3. In JSON, all byte strings are
+base64 (standard, with padding). The shared parts of the protocol are in `pkg/bootstrap`, for the api and the cli.
+
+| Endpoint | Request | Response |
+|----------|---------|----------|
+| `POST /v1/bootstrap/challenge` | No body | `{"nonce": <32 bytes>}`: the nonce of the api |
+| `POST /v1/bootstrap/proof` | `{"nonce": <32 bytes>, "proof": <32 bytes>}`: the nonce and the proof of the cli | `{"proof": <32 bytes>}`: the proof of the api |
+
+**One TLS connection.** The api binds a bootstrap to the TLS connection it starts on: the challenge, the proof and
+(later) the archive must use the same connection. The api finds the bootstrap by the keying material of the connection
+(see below), so there is no session token to steal: another connection, also one of a man in the middle, has other
+keying material. A new challenge on a connection replaces the previous one, and a challenge without a proof expires
+after 5 minutes. The api keeps at most 16 challenges without a proof (`429` after that).
+
+**The proofs.** Both sides export 32 bytes of keying material from their TLS session, with the label
+`EXPORTER-orion-bootstrap` and no context (RFC 5705, `tls.ConnectionState.ExportKeyingMaterial`). The cli picks a random
+nonce of 32 bytes, and both compute an HMAC-SHA256 with the secret (as its UTF-8 bytes) as the key:
+
+```text
+ekm       = TLS-Exporter("EXPORTER-orion-bootstrap", no context, 32)
+cli proof = HMAC-SHA256(secret, "orion-bootstrap cli" || 0x00 || api nonce || cli nonce || ekm)
+api proof = HMAC-SHA256(secret, "orion-bootstrap api" || 0x00 || api nonce || cli nonce || ekm)
+```
+
+- The label at the start makes the two proofs different, so the api can't be made to send the proof of the cli, or the
+  other way around. The parts after the label have a fixed size, so the input is unambiguous.
+- The api checks the proof of the cli in constant time. A wrong proof ends the challenge: the cli asks for a new one.
+- The cli checks the proof of the api the same way before it sends anything else, so it never sends its public key to
+  an api that doesn't know the secret.
+- TLS 1.3 is required: with TLS 1.2, exported keying material is only safe with the extended master secret extension
+  (RFC 7627), which can't be checked from `crypto/tls`.
+
+**Errors** are problem details (RFC 9457, `application/problem+json`):
+
+| Status | When |
+|--------|------|
+| `400 Bad Request` | No TLS 1.3, an invalid body, or a nonce or proof of the wrong size |
+| `403 Forbidden` | A wrong proof, or the secret expired |
+| `409 Conflict` | A proof without a challenge on this connection |
+| `429 Too Many Requests` | Too many wrong proofs, or too many open challenges (with `Retry-After`) |
 
 ### Why this is safe
 
@@ -199,7 +252,8 @@ The api stores the state of the bootstrap, so it can continue after a restart:
 | `confirmed` | Normal mode | No |
 
 - After a restart, the api continues in the state it was in. The secret stays valid until it expires, and a CA that was
-  already generated is reused.
+  already generated is reused. (Not yet: until the state is stored, a restart starts a new bootstrap, with a new
+  generated secret.)
 - If the cli never confirms (e.g. it lost the archive), nobody can connect to the api. Restart the api with
   `--rebootstrap` to start over. The api doesn't fall back to bootstrap mode by itself.
 
@@ -278,8 +332,9 @@ In progress:
 - [x] Bootstrap mode on the api port: the temporary self-signed certificate, only the bootstrap routes, `/status`
   reports `bootstrap`, and the switch to normal mode (#319). It stays off until the bootstrap is complete: until then
   an api without certificates fails with an error.
-- [ ] The shared secret and the mutual HMAC (#320), `orion-cli bootstrap` and the key pair of the cli (#321), the
-  archive, the confirmation and `--rebootstrap`.
+- [x] The shared secret and the mutual HMAC: the challenge and proof endpoints (#320).
+- [ ] `orion-cli bootstrap` and the key pair of the cli (#321), the archive, the stored state, the confirmation and
+  `--rebootstrap`.
 
 Later, each in its own PR:
 
