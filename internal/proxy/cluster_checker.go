@@ -26,12 +26,12 @@ import (
 	"github.com/pgvillage-tools/orion/internal/common"
 	"github.com/pgvillage-tools/orion/internal/consensus"
 	"github.com/pgvillage-tools/orion/internal/logging"
+	"github.com/pgvillage-tools/orion/internal/proxy/tcpproxy"
 	"github.com/pgvillage-tools/orion/internal/store"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/rs/zerolog"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/sorintlab/pollon"
 )
 
 // ClusterChecker is struct containing information for checking the cluster
@@ -42,13 +42,17 @@ type ClusterChecker struct {
 
 	stopListening bool
 
-	listener         *net.TCPListener
-	pp               *pollon.Proxy
-	e                consensus.Store
-	endPollonProxyCh chan error
+	listener *net.TCPListener
+	pp       *tcpproxy.Proxy
+	// stopProxy stops pp, proxyDone is closed when it stopped
+	stopProxy context.CancelFunc
+	proxyDone chan struct{}
+	e         consensus.Store
+	// proxyErrCh gets the error of a proxy that stopped by itself
+	proxyErrCh chan error
 
-	pollonMutex sync.Mutex
-	// dest is the address the proxy forwards to ("" when it doesn't), as last sent to pollon
+	proxyMutex sync.Mutex
+	// dest is the address the proxy forwards to ("" when it doesn't), as last set
 	dest string
 
 	proxyCheckInterval time.Duration
@@ -66,23 +70,23 @@ func NewClusterChecker(ctx context.Context, uid string, cfg Config) (*ClusterChe
 	}
 
 	return &ClusterChecker{
-		uid:              uid,
-		listenAddress:    cfg.ListenAddress,
-		port:             cfg.Port,
-		stopListening:    cfg.StopListening,
-		cfg:              cfg,
-		e:                e,
-		endPollonProxyCh: make(chan error),
+		uid:           uid,
+		listenAddress: cfg.ListenAddress,
+		port:          cfg.Port,
+		stopListening: cfg.StopListening,
+		cfg:           cfg,
+		e:             e,
+		proxyErrCh:    make(chan error, 1),
 
 		proxyCheckInterval: cluster.DefaultProxyCheckInterval,
 		proxyTimeout:       cluster.DefaultProxyTimeout,
 	}, nil
 }
 
-func (c *ClusterChecker) startPollonProxy(ctx context.Context) error {
+func (c *ClusterChecker) startProxy(ctx context.Context) error {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
-	c.pollonMutex.Lock()
-	defer c.pollonMutex.Unlock()
+	c.proxyMutex.Lock()
+	defer c.proxyMutex.Unlock()
 	if c.pp != nil {
 		return nil
 	}
@@ -98,50 +102,76 @@ func (c *ClusterChecker) startPollonProxy(ctx context.Context) error {
 		return fmt.Errorf("error listening on tcp addr %q: %v", addr.String(), err)
 	}
 
-	pp, err := pollon.NewProxy(listener)
-	if err != nil {
-		return fmt.Errorf("error creating pollon proxy: %v", err)
-	}
-	pp.SetKeepAlive(true)
-	pp.SetKeepAliveIdle(time.Duration(c.cfg.KeepAliveIdle) * time.Second)
-	pp.SetKeepAliveCount(c.cfg.KeepAliveCount)
-	pp.SetKeepAliveInterval(time.Duration(c.cfg.KeepAliveInterval) * time.Second)
-
+	pp := tcpproxy.New(listener, keepAliveConfig(c.cfg))
+	// the proxy outlives the check that starts it: it stops with stopServing
+	serveCtx, stopProxy := context.WithCancel(context.WithoutCancel(ctx))
+	done := make(chan struct{})
 	c.pp = pp
 	c.listener = listener
+	c.stopProxy = stopProxy
+	c.proxyDone = done
 
 	go func() {
-		c.endPollonProxyCh <- c.pp.Start()
+		defer close(done)
+		if err := pp.Serve(serveCtx); err != nil {
+			select {
+			case c.proxyErrCh <- err:
+			default:
+				// an error is pending already: Start returns on that one
+			}
+		}
 	}()
 
 	return nil
 }
 
-func (c *ClusterChecker) stopPollonProxy(ctx context.Context) {
+// keepAliveConfig returns the tcp keepalive of the proxied connections in cfg; a setting of 0 keeps the default of the
+// OS
+func keepAliveConfig(cfg Config) net.KeepAliveConfig {
+	// a negative setting leaves the setting of the OS
+	count := cfg.KeepAliveCount
+	if count == 0 {
+		count = -1
+	}
+	seconds := func(n int) time.Duration {
+		if n == 0 {
+			return -1
+		}
+		return time.Duration(n) * time.Second
+	}
+	return net.KeepAliveConfig{
+		Enable:   true,
+		Idle:     seconds(cfg.KeepAliveIdle),
+		Interval: seconds(cfg.KeepAliveInterval),
+		Count:    count,
+	}
+}
+
+// stopServing stops the proxy: it closes the listener and all connections
+func (c *ClusterChecker) stopServing(ctx context.Context) {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
-	c.pollonMutex.Lock()
-	defer c.pollonMutex.Unlock()
+	c.proxyMutex.Lock()
+	defer c.proxyMutex.Unlock()
 	if c.pp != nil {
 		logger.Info().Msg("Stopping listening")
-		c.pp.Stop()
+		c.stopProxy()
+		<-c.proxyDone
 		c.pp = nil
-		if err := c.listener.Close(); err != nil {
-			logger.Fatal().AnErr(logging.KeyErr, err).Msg("Stopping listening")
-		}
 		c.listener = nil
 	}
 }
 
-// sendPollonConfData sends confData to pollon, and returns whether the address it forwards to changed
-func (c *ClusterChecker) sendPollonConfData(confData pollon.ConfData) bool {
-	c.pollonMutex.Lock()
-	defer c.pollonMutex.Unlock()
+// setDestination sets the address the proxy forwards to (nil: it closes the connections), and returns whether it
+// changed
+func (c *ClusterChecker) setDestination(addr *net.TCPAddr) bool {
+	c.proxyMutex.Lock()
+	defer c.proxyMutex.Unlock()
 	if c.pp != nil {
-		c.pp.C <- confData
+		c.pp.SetDestination(addr)
 	}
 	dest := ""
-	if confData.DestAddr != nil {
-		dest = confData.DestAddr.String()
+	if addr != nil {
+		dest = addr.String()
 	}
 	changed := dest != c.dest
 	c.dest = dest
@@ -172,7 +202,7 @@ func (c *ClusterChecker) SetProxyInfo(ctx context.Context, _ consensus.Store, ge
 	return c.e.SetProxyInfo(ctx, proxyInfo, 2*proxyTimeout)
 }
 
-// Check reads the cluster data and applies the right pollon configuration.
+// Check reads the cluster data and sets the destination of the proxy.
 func (c *ClusterChecker) Check(ctx context.Context) error {
 	ctx, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
 	cd, _, err := c.e.GetClusterData(ctx)
@@ -180,23 +210,23 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 		return fmt.Errorf("cannot get cluster data: %v", err)
 	}
 
-	// Start pollon if not active
-	if err = c.startPollonProxy(ctx); err != nil {
+	// Start the proxy if not active
+	if err = c.startProxy(ctx); err != nil {
 		return fmt.Errorf("failed to start proxy: %v", err)
 	}
 
 	logger.Debug().Str("cd dump", spew.Sdump(cd)).Msg("")
 	if cd == nil {
-		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.setDestination(nil)
 		changeEvent(logger, changed).Msg("no clusterdata available, closing connections to master")
 		return nil
 	}
 	if cd.FormatVersion != cluster.CurrentCDFormatVersion {
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		c.setDestination(nil)
 		return fmt.Errorf("unsupported clusterdata format version: %d", cd.FormatVersion)
 	}
 	if err = cd.Cluster.Spec.Validate(); err != nil {
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		c.setDestination(nil)
 		return fmt.Errorf("clusterdata validation failed: %v", err)
 	}
 
@@ -215,7 +245,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 
 	proxy := cd.Proxy
 	if proxy == nil {
-		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.setDestination(nil)
 		changeEvent(logger, changed).Msg("no proxy object available, closing connections to master")
 		// ignore errors on setting proxy info
 		if err = c.SetProxyInfo(ctx, c.e, cluster.NoGeneration, proxyTimeout); err != nil {
@@ -232,7 +262,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 
 	db, ok := cd.DBs[proxy.Spec.MasterDBUID]
 	if !ok {
-		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.setDestination(nil)
 		changeEvent(logger, changed).Str("db", proxy.Spec.MasterDBUID).
 			Msg("no db object available, closing connections to master")
 		// ignore errors on setting proxy info
@@ -251,7 +281,7 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 	addr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(db.Status.ListenAddress, db.Status.Port))
 	if err != nil {
 		logger.Error().AnErr(logging.KeyErr, err).Msg("cannot resolve db address")
-		c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		c.setDestination(nil)
 		return nil
 	}
 	logger.Debug().Any("address", addr).Msg("master address")
@@ -271,10 +301,10 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 	// start proxing only if we are inside enabledProxies, this ensures that the
 	// sentinel has read our proxyinfo and knows we are alive
 	if util.StringInSlice(proxy.Spec.EnabledProxies, c.uid) {
-		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: addr})
+		changed := c.setDestination(addr)
 		changeEvent(logger, changed).Any("address", addr).Msg("proxying to master address")
 	} else {
-		changed := c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+		changed := c.setDestination(nil)
 		changeEvent(logger, changed).
 			Any("address", addr).
 			Msg("not proxying to master address since we aren't in the enabled proxies list")
@@ -289,9 +319,9 @@ func (c *ClusterChecker) Check(ctx context.Context) error {
 func (c *ClusterChecker) fence(ctx context.Context) {
 	_, logger := logging.GetLogComponent(ctx, logging.ProxyComponent)
 	logger.Warn().Msg("check timeout timer fired: closing all connections")
-	c.sendPollonConfData(pollon.ConfData{DestAddr: nil})
+	c.setDestination(nil)
 	if c.stopListening {
-		c.stopPollonProxy(ctx)
+		c.stopServing(ctx)
 	}
 }
 
@@ -337,11 +367,10 @@ func (c *ClusterChecker) Start(ctx context.Context) error {
 		case <-fenceTimer.C:
 			c.fence(ctx)
 
-		case err := <-c.endPollonProxyCh:
-			if err != nil {
-				return fmt.Errorf("proxy error: %v", err)
-			}
+		case err := <-c.proxyErrCh:
+			return fmt.Errorf("proxy error: %v", err)
 		case <-ctx.Done():
+			c.stopServing(ctx)
 			return nil
 		}
 	}

@@ -41,8 +41,8 @@ var _ = Describe("Start", func() {
 
 	// listening returns whether the proxy listens
 	listening := func(c *ClusterChecker) bool {
-		c.pollonMutex.Lock()
-		defer c.pollonMutex.Unlock()
+		c.proxyMutex.Lock()
+		defer c.proxyMutex.Unlock()
 		return c.listener != nil
 	}
 

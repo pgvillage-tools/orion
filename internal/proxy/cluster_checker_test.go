@@ -30,7 +30,6 @@ import (
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	"github.com/pgvillage-tools/orion/internal/util"
-	"github.com/sorintlab/pollon"
 )
 
 // the consts and helpers below are shared with start_test.go
@@ -51,7 +50,7 @@ func newChecker(store *mockconsensus.MockStore) *ClusterChecker {
 		port:               "0",
 		stopListening:      true,
 		e:                  store,
-		endPollonProxyCh:   make(chan error, 1),
+		proxyErrCh:         make(chan error, 1),
 		proxyCheckInterval: cluster.DefaultProxyCheckInterval,
 		proxyTimeout:       cluster.DefaultProxyTimeout,
 	}
@@ -92,9 +91,9 @@ func clusterData(host, port string, enabled ...string) *cluster.Data {
 
 // proxies returns whether a connection to the proxy reaches the echo server
 func proxies(c *ClusterChecker) bool {
-	c.pollonMutex.Lock()
+	c.proxyMutex.Lock()
 	ln := c.listener
-	c.pollonMutex.Unlock()
+	c.proxyMutex.Unlock()
 	if ln == nil {
 		return false
 	}
@@ -113,7 +112,7 @@ func proxies(c *ClusterChecker) bool {
 }
 
 func stop(c *ClusterChecker) {
-	c.stopPollonProxy(context.Background())
+	c.stopServing(context.Background())
 }
 
 var _ = Describe("ClusterChecker", func() {
@@ -248,11 +247,11 @@ var _ = Describe("ClusterChecker", func() {
 		})
 	})
 
-	It("returns the error of the pollon proxy from Start", func(ctx SpecContext) {
+	It("returns the error of the tcp proxy from Start", func(ctx SpecContext) {
 		store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, nil).AnyTimes()
 		c := checker()
-		c.endPollonProxyCh <- errors.New("listener closed")
-		Expect(c.Start(ctx)).NotTo(Succeed(), "expected the error of the pollon proxy")
+		c.proxyErrCh <- errors.New("listener closed")
+		Expect(c.Start(ctx)).NotTo(Succeed(), "expected the error of the tcp proxy")
 	})
 })
 
@@ -298,15 +297,25 @@ var _ = Describe("Run", func() {
 	})
 })
 
-var _ = Describe("sendPollonConfData", func() {
+var _ = Describe("setDestination", func() {
 	It("reports whether the address the proxy forwards to changed", func() {
 		c := &ClusterChecker{}
 		addr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5432}
 		other := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 2), Port: 5432}
-		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: nil})).To(BeFalse(), "not forwarding at the start")
-		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: addr})).To(BeTrue())
-		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: addr})).To(BeFalse())
-		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: other})).To(BeTrue())
-		Expect(c.sendPollonConfData(pollon.ConfData{DestAddr: nil})).To(BeTrue())
+		Expect(c.setDestination(nil)).To(BeFalse(), "not forwarding at the start")
+		Expect(c.setDestination(addr)).To(BeTrue())
+		Expect(c.setDestination(addr)).To(BeFalse())
+		Expect(c.setDestination(other)).To(BeTrue())
+		Expect(c.setDestination(nil)).To(BeTrue())
 	})
 })
+
+var _ = DescribeTable("keepAliveConfig",
+	func(cfg Config, expected net.KeepAliveConfig) {
+		Expect(keepAliveConfig(cfg)).To(Equal(expected))
+	},
+	Entry("keeps the defaults of the OS for settings of 0", Config{},
+		net.KeepAliveConfig{Enable: true, Idle: -1, Interval: -1, Count: -1}),
+	Entry("takes the settings in seconds", Config{KeepAliveIdle: 30, KeepAliveInterval: 10, KeepAliveCount: 3},
+		net.KeepAliveConfig{Enable: true, Idle: 30 * time.Second, Interval: 10 * time.Second, Count: 3}),
+)
