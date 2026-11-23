@@ -96,6 +96,17 @@ var _ = Describe("Encrypted private keys", func() {
 		Ω(decoded.Decode()).To(MatchError(ErrWrongPassphrase))
 	})
 
+	It("refuses a wrong passphrase that ends in valid padding", func() {
+		// what a wrong passphrase decrypts to, now and then: random data with valid padding, so no key
+		der, err := encryptPKCS8([]byte("not a private key"), []byte(testPassphrase))
+		Ω(err).NotTo(HaveOccurred())
+		decoded := PrivateKey{
+			PEM:        pem.EncodeToMemory(&pem.Block{Type: pemTypeEncryptedPrivateKey, Bytes: der}),
+			Passphrase: []byte(testPassphrase),
+		}
+		Ω(decoded.Decode()).To(MatchError(ErrWrongPassphrase))
+	})
+
 	It("ignores the passphrase for an unencrypted key", func() {
 		plain := PrivateKey{key: pk.key}
 		Ω(plain.Encode()).To(Succeed())
