@@ -131,6 +131,20 @@ var _ = Describe("the keeper state machine", func() {
 		Entry("other boot uuid", func(s *fakeStore) { s.cd.Keepers[testKeeperUID].Status.BootUUID = "old" }, true),
 	)
 
+	It("remembers that no db is assigned, until one is", func() {
+		p, _, s := smKeeper(GinkgoTB())
+		db := smDB("db1", common.RolePrimary, cluster.NewDB)
+		s.cd = smClusterData(db)
+		delete(s.cd.DBs, "db1")
+		p.postgresKeeperSM(ctx)
+		Expect(p.noDB.active).To(BeTrue())
+		p.postgresKeeperSM(ctx)
+		Expect(p.noDB.active).To(BeTrue())
+		s.cd = smClusterData(db)
+		p.postgresKeeperSM(ctx)
+		Expect(p.noDB.active).To(BeFalse())
+	})
+
 	Describe("the cluster uid", func() {
 		It("is saved in the keeper local state", func() {
 			p, _, s := smKeeper(GinkgoTB())

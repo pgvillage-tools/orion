@@ -106,6 +106,10 @@ type PostgresKeeper struct {
 	pgStateMutex    sync.Mutex
 	getPGStateMutex sync.Mutex
 	lastPGState     *cluster.PostgresState
+	// pgStateUnavailable is set while GetPGState can't query the running instance (guarded by getPGStateMutex)
+	pgStateUnavailable condition
+	// noDB is set while the sentinel assigned no db to this keeper (only used by the state machine)
+	noDB condition
 
 	waitSyncStandbysSynced bool
 
@@ -184,7 +188,7 @@ func NewPostgresKeeper(ctx context.Context, cfg *Config, end chan error) (*Postg
 				Msg("uid generated")
 		}
 		if err = p.saveKeeperLocalState(); err != nil {
-			logger.Info().
+			logger.Error().
 				AnErr(logging.KeyErr, err).
 				Msg("error while saving local state")
 		}
@@ -252,7 +256,7 @@ func (p *PostgresKeeper) Start(ctx context.Context) {
 
 		select {
 		case <-ctx.Done():
-			logger.Debug().Msg("stopping orion keeper")
+			logger.Info().Msg("stopping orion keeper")
 			if err = p.pgm.StopIfStarted(ctx, true); err != nil {
 				logger.Error().AnErr(logging.KeyErr, err).Msg(errorMsgPgInst)
 			}

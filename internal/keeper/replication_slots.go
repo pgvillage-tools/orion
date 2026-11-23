@@ -78,7 +78,7 @@ func (p *PostgresKeeper) refreshReplicationSlots(ctx context.Context, _ *cluster
 	var currentReplicationSlots []string
 	currentReplicationSlots, err := p.pgm.GetReplicationSlots(ctx)
 	if err != nil {
-		logger.Error().AnErr(logging.KeyErr, err).Msg("failed to get replication slots")
+		logger.Debug().AnErr(logging.KeyErr, err).Msg("failed to get replication slots")
 		return err
 	}
 
@@ -90,7 +90,7 @@ func (p *PostgresKeeper) refreshReplicationSlots(ctx context.Context, _ *cluster
 		db.UID,
 		followersUIDs,
 		db.Spec.AdditionalReplicationSlots); err != nil {
-		logger.Error().AnErr(logging.KeyErr, err).Msg("error updating replication slots")
+		logger.Debug().AnErr(logging.KeyErr, err).Msg("error updating replication slots")
 		return err
 	}
 

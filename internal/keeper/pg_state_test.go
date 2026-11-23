@@ -110,6 +110,21 @@ var _ = Describe("the PostgreSQL state", func() {
 			Entry(nil, "GetSystemData"),
 			Entry(nil, "GetTimelinesHistory"),
 		)
+		It("remembers that the instance can't be queried, until it can again", func() {
+			p, f, _ := statePG(GinkgoTB())
+			f.errs["GetSystemData"] = errFake
+			_, err := p.GetPGState(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(p.pgStateUnavailable.active).To(BeTrue())
+			// still failing: logged at debug, the condition stays
+			_, _ = p.GetPGState(ctx)
+			Expect(p.pgStateUnavailable.active).To(BeTrue())
+			delete(f.errs, "GetSystemData")
+			got, err := p.GetPGState(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Healthy).To(BeTrue())
+			Expect(p.pgStateUnavailable.active).To(BeFalse())
+		})
 	})
 
 	It("updatePGState keeps the last state, and getLastPGState returns a copy", func() {

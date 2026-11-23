@@ -89,7 +89,7 @@ func init() {
 func sigHandler(ctx context.Context, sigs chan os.Signal, cancel context.CancelFunc) {
 	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
 	s := <-sigs
-	logger.Debug().Any("signal", s).Msg("got signal")
+	logger.Info().Any("signal", s).Msg("got signal")
 	cancel()
 }
 

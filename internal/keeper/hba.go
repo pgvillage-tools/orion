@@ -49,7 +49,7 @@ func IsMaster(db *cluster.DB) bool {
 func localAuthMethod(ctx context.Context, authMethod string) string {
 	_, logger := logging.GetLogComponent(ctx, logging.KeeperComponent)
 	if authMethod == authCert {
-		logger.Info().Msg("using peer instead of cert for local connection authentication method")
+		logger.Debug().Msg("using peer instead of cert for local connection authentication method")
 		return authPeer
 	}
 	return authMethod
