@@ -18,7 +18,6 @@ package api
 import (
 	"context"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -79,39 +78,22 @@ func listen(host string, port uint) (net.Listener, error) {
 	return ln, nil
 }
 
-// Run runs the api with cfg until it gets SIGTERM or an interrupt (then it shuts down gracefully), or a server fails
+// Run runs the api with cfg until it gets SIGTERM or an interrupt (then it shuts down gracefully), or a server fails.
+// Without certificates (when supported) the api port starts in bootstrap mode, and switches to normal mode once the
+// bootstrap is done.
 func Run(ctx context.Context, cfg Config) error {
-	ctx, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	ctx, _ = logging.GetLogComponent(ctx, logging.WebApiComponent)
 
 	files, err := cfg.tlsFiles()
 	if err != nil {
 		return err
 	}
-	if err = files.Check(); err != nil {
-		if errors.Is(err, pki.ErrFilesNotFound) {
-			return fmt.Errorf("%w: create the certificates with `orion-cli pki init`, and copy the api files to "+
-				"--pki-dir (starting without certificates is not supported yet)", err)
-		}
-		return fmt.Errorf("%w: the api must be able to read its certificates and its key: make them readable for "+
-			"the user it runs as (uid 1000 in the container image)", err)
-	}
-	tlsConfig, err := files.ServerConfig()
+	bootstrap, err := startsInBootstrap(cfg, files)
 	if err != nil {
-		return fmt.Errorf("failed to load the certificates: %w", err)
-	}
-	certs, err := files.Certificates()
-	if err != nil {
-		return fmt.Errorf("failed to load the certificates: %w", err)
+		return err
 	}
 	metrics := newAPIMetrics(prometheus.NewRegistry())
-	metrics.setCertificates(certs)
 	store.SetMetrics(&cfg.CommonConfig, "api")
-	warnExpiring(ctx, certs)
-	go func() {
-		for range time.Tick(expiryCheckPeriod) {
-			warnExpiring(ctx, certs)
-		}
-	}()
 
 	// one store connection for the whole api, shared by the store and the election client
 	cl, election, err := store.NewStoreAndElection(ctx, &cfg.CommonConfig, "")
@@ -122,16 +104,15 @@ func Run(ctx context.Context, cfg Config) error {
 	var ready atomic.Bool
 	h := NewHandlers(cl, election, &ready)
 	h.storeTimeout = cfg.StoreTimeout
-	logger.Debug().Msg("registering routes")
-	routes := h.Routes()
-	for i := range routes {
-		routes[i].Handler = metrics.instrument(routes[i])
-	}
-	srv := &http.Server{
-		Handler:           auth.Middleware(newMux(ctx, routes), auth.ClientCertAuthenticator{}),
-		TLSConfig:         tlsConfig,
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
+	return run(ctx, cfg, files, bootstrap, h, metrics)
+}
+
+// run serves the api port (starting in bootstrap mode when bootstrap is set) and the probe port with h, until it gets
+// SIGTERM or an interrupt, or ctx is done (then it shuts down gracefully), or a server fails
+func run(ctx context.Context, cfg Config, files pki.TLSFiles, bootstrap bool, h *Handlers, metrics *apiMetrics) error {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	ready := h.Ready
+	h.bootstrapping.Store(bootstrap)
 	probe := &http.Server{
 		Handler:           newMux(ctx, h.ProbeRoutes(metrics.handler(prometheus.DefaultGatherer))),
 		ReadHeaderTimeout: readHeaderTimeout,
@@ -143,6 +124,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	// the port normal mode listens on after bootstrap mode (with --port 0, the free port bootstrap mode got)
+	port := uint(ln.Addr().(*net.TCPAddr).Port) //nolint:gosec // a tcp port fits
 	probeLn, err := listen(cfg.BaseURL, cfg.ProbePort)
 	if err != nil {
 		return err
@@ -150,21 +133,79 @@ func Run(ctx context.Context, cfg Config) error {
 
 	stopCtx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	errs := make(chan error, 2)
-	go func() { errs <- probe.Serve(probeLn) }()
-	go func() { errs <- srv.ServeTLS(ln, "", "") }()
+	probeErr := make(chan error, 1)
+	go func() { probeErr <- probe.Serve(probeLn) }()
 
-	ready.Store(true)
-	logger.Info().Str("host", cfg.BaseURL).Uint("port", cfg.Port).Uint("probe-port", cfg.ProbePort).
-		Str("mode", endpoints.ModeNormal).Msg("server ready")
+	for {
+		var srv *http.Server
+		if bootstrap {
+			srv, err = bootstrapServer(ctx, h, metrics)
+		} else {
+			srv, err = normalServer(ctx, files, h, metrics)
+		}
+		if err != nil {
+			return err
+		}
+		apiErr := make(chan error, 1)
+		go func(srv *http.Server, ln net.Listener) { apiErr <- srv.ServeTLS(ln, "", "") }(srv, ln)
 
-	select {
-	case err = <-errs:
-		return fmt.Errorf("server failing: %w", err)
-	case <-stopCtx.Done():
-		shutdown(ctx, &ready, cfg.ShutdownDelay, srv, probe)
+		ready.Store(true)
+		logger.Info().Str("host", cfg.BaseURL).Uint("port", port).Uint("probe-port", cfg.ProbePort).
+			Str("mode", h.mode()).Msg("server ready")
+
+		// only bootstrap mode ends with the bootstrap; a nil channel never fires
+		var bootstrapDone <-chan struct{}
+		if bootstrap {
+			bootstrapDone = h.bootstrapDone
+		}
+		select {
+		case err = <-apiErr:
+			return fmt.Errorf("server failing: %w", err)
+		case err = <-probeErr:
+			return fmt.Errorf("probe server failing: %w", err)
+		case <-stopCtx.Done():
+			shutdown(ctx, ready, cfg.ShutdownDelay, srv, probe)
+			return nil
+		case <-bootstrapDone:
+			if ln, err = switchToNormal(ctx, ready, srv, apiErr, cfg.BaseURL, port); err != nil {
+				return err
+			}
+			bootstrap = false
+			h.bootstrapping.Store(false)
+		}
 	}
-	return nil
+}
+
+// normalServer returns the server of the api port in normal mode: the certificates in files, a client certificate is
+// required, and the api routes
+func normalServer(ctx context.Context, files pki.TLSFiles, h *Handlers, metrics *apiMetrics) (*http.Server, error) {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	tlsConfig, err := files.ServerConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load the certificates: %w", err)
+	}
+	certs, err := files.Certificates()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load the certificates: %w", err)
+	}
+	metrics.setCertificates(certs)
+	warnExpiring(ctx, certs)
+	go func() {
+		for range time.Tick(expiryCheckPeriod) {
+			warnExpiring(ctx, certs)
+		}
+	}()
+
+	logger.Debug().Msg("registering routes")
+	routes := h.Routes()
+	for i := range routes {
+		routes[i].Handler = metrics.instrument(routes[i])
+	}
+	return &http.Server{
+		Handler:           auth.Middleware(newMux(ctx, routes), auth.ClientCertAuthenticator{}),
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}, nil
 }
 
 // shutdown stops the api gracefully: /readyz returns 503 first (ready is false), and after delay (so load balancers
