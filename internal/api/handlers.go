@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,6 +42,11 @@ type Handlers struct {
 	nextID   int
 	// storeTimeout is the deadline of the store calls of a request
 	storeTimeout time.Duration
+	// bootstrapping is true while the api port is in bootstrap mode
+	bootstrapping atomic.Bool
+	// bootstrapDone is closed (by finishBootstrap) when the api switches from bootstrap mode to normal mode
+	bootstrapDone chan struct{}
+	bootstrapOnce sync.Once
 }
 
 // NewHandlers returns a new Handlers object. election is only used to read the sentinel leader; the api never runs for
@@ -52,7 +58,8 @@ func NewHandlers(client consensus.Store, election consensus.Election, ready *ato
 		Ready:    ready,
 		nextID:   1,
 
-		storeTimeout: cluster.DefaultStoreTimeout,
+		storeTimeout:  cluster.DefaultStoreTimeout,
+		bootstrapDone: make(chan struct{}),
 	}
 }
 

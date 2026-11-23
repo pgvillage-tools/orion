@@ -71,9 +71,17 @@ func writeProbe(ctx context.Context, w http.ResponseWriter, status int, msg stri
 	}
 }
 
-// ModeHandler returns the mode of the api
+// ModeHandler returns the mode of the api port
 func (h *Handlers) ModeHandler(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(r.Context(), w, endpoints.ModeResponse{Mode: endpoints.ModeNormal})
+	h.writeJSON(r.Context(), w, endpoints.ModeResponse{Mode: h.mode()})
+}
+
+// mode returns the mode of the api port
+func (h *Handlers) mode() string {
+	if h.bootstrapping.Load() {
+		return endpoints.ModeBootstrap
+	}
+	return endpoints.ModeNormal
 }
 
 // WhoAmIRoutes collect and return the whoami route

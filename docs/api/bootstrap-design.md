@@ -273,9 +273,16 @@ Implemented:
 - [x] `/metrics` on the probe port, with the expiry of the certificates.
 - [x] The CA keys on the cli are encrypted with a passphrase (encrypted PKCS#8, readable by OpenSSL).
 
+In progress:
+
+- [x] Bootstrap mode on the api port: the temporary self-signed certificate, only the bootstrap routes, `/status`
+  reports `bootstrap`, and the switch to normal mode (#319). It stays off until the bootstrap is complete: until then
+  an api without certificates fails with an error.
+- [ ] The shared secret and the mutual HMAC (#320), `orion-cli bootstrap` and the key pair of the cli (#321), the
+  archive, the confirmation and `--rebootstrap`.
+
 Later, each in its own PR:
 
-- [ ] Bootstrap mode, with the shared secret, the HMAC, the archive, the confirmation and `--rebootstrap`.
 - [ ] Certificate management in the cli and the api (issue, renew, list), and automatic renewal.
 - [ ] Server and client certificates for PostgreSQL, etcd, RustFS and the other components.
 - [ ] Several api instances (HA), with the bootstrap state in shared storage and a lock.
