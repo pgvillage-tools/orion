@@ -46,9 +46,12 @@ var _ = Describe("a primary whose data directory disappears", Ordered, func() {
 	})
 
 	It("fails over to the standby with the data, without a new empty primary", func(ctx context.Context) {
-		// stop postgres hard and remove its data directory, while the keeper keeps running
-		code, out, err := tc.Keepers[oldIndex].Exec(ctx, []string{"sh", "-c",
-			fmt.Sprintf("kill -9 $(head -1 %[1]s/postmaster.pid) && rm -rf %[1]s", keeperPGData)}, tcexec.Multiplexed())
+		// stop postgres hard and remove its data directory, while the keeper keeps running. The backends of the killed
+		// postmaster can still write a file (e.g. in pg_stat) for a moment, which makes rm fail with "Directory not
+		// empty": rm again until they are gone (at most 5 seconds).
+		code, out, err := tc.Keepers[oldIndex].Exec(ctx, []string{"sh", "-c", fmt.Sprintf(
+			"kill -9 $(head -1 %[1]s/postmaster.pid) && for i in $(seq 50); do rm -rf %[1]s && exit 0; sleep 0.1; "+
+				"done; exit 1", keeperPGData)}, tcexec.Multiplexed())
 		Ω(err).NotTo(HaveOccurred())
 		output, _ := io.ReadAll(out)
 		Ω(code).To(Equal(0), string(output))
