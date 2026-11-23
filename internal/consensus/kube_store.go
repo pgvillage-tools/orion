@@ -83,7 +83,8 @@ func (s *KubeStore) Healthy(ctx context.Context) error {
 	discoveryClient := s.client.Discovery()
 	version, err := discoveryClient.ServerVersion()
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("Error while connecting to k8s")
+		// the caller reports it (e.g. the api's readiness probe warns): debug, like the health check of the kv store
+		logger.Debug().AnErr("error", err).Msg("Error while connecting to k8s")
 		return err
 	}
 	logger.Debug().Str("k8s version", version.GitVersion).Msg("")
