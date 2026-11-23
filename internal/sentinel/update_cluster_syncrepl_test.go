@@ -16,7 +16,10 @@
 package sentinel
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	cluster "github.com/pgvillage-tools/orion/api/v1"
 	"github.com/pgvillage-tools/orion/internal/util"
 )
@@ -274,4 +277,22 @@ var _ = Describe("updateCluster with synchronous replication", func() {
 			return updateClusterCase{cd: cd(), outcd: outcd}
 		}()),
 	)
+
+	It("remembers when the master has fewer synchronous standbys than wanted, until it has enough", func() {
+		// one master and a standby that can't be synchronous: no synchronous standby, MaxSynchronousStandbys 1
+		cd := etInitModeNone(etTableCluster(minSyncZeroSpec(), d2))
+		cd.Keepers[k2].Status.CanBeSynchronousReplica = util.ToPtr(false)
+		syncMaster(cd, []string{})
+		s := etSentinel(cd)
+		_, err := s.updateCluster(context.Background(), cd, cluster.ProxiesInfo{})
+		Ω(err).NotTo(HaveOccurred())
+		Ω(s.syncStandbysShort).To(BeTrue())
+
+		// the standby may be synchronous now: the sentinel chooses it
+		cd.Keepers[k2].Status.CanBeSynchronousReplica = util.ToPtr(true)
+		outcd, err := s.updateCluster(context.Background(), cd, cluster.ProxiesInfo{})
+		Ω(err).NotTo(HaveOccurred())
+		Ω(outcd.DBs[d1].Spec.SynchronousStandbys).To(ContainElement(d2))
+		Ω(s.syncStandbysShort).To(BeFalse())
+	})
 })

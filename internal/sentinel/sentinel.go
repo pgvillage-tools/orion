@@ -184,6 +184,9 @@ type Sentinel struct {
 	dbErrorTimers          map[string]int64
 	dbNotIncreasingXLogPos map[string]int64
 	dbConvergenceInfos     map[string]*DBConvergenceInfo
+	// syncStandbysShort is set while the master has fewer synchronous standbys than MaxSynchronousStandbys, so that
+	// is logged when it starts and when it ends, not on every check
+	syncStandbysShort bool
 
 	keeperInfoHistories KeeperInfoHistories
 	proxyInfoHistories  ProxyInfoHistories

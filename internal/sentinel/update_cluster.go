@@ -377,7 +377,7 @@ func (s *Sentinel) electMaster(ctx context.Context, newcd *cluster.Data, curMast
 
 	masterOK := true
 	if !curMasterDB.Status.Healthy {
-		logger.Info().
+		logger.Warn().
 			Str(logDB, curMasterDB.UID).
 			Str(logKeeper, curMasterDB.Spec.KeeperUID).
 			Msg("master db is failed")
@@ -386,7 +386,7 @@ func (s *Sentinel) electMaster(ctx context.Context, newcd *cluster.Data, curMast
 
 	// Check that the wanted master is in master state (i.e. check that promotion from standby to master happened)
 	if s.dbConvergenceState(curMasterDB, clusterSpec.ConvergenceTimeout.Duration) == ConvergenceFailed {
-		logger.Info().
+		logger.Warn().
 			Str(logDB, curMasterDB.UID).
 			Str(logKeeper, curMasterDB.Spec.KeeperUID).
 			Msg("db not converged")
@@ -861,7 +861,7 @@ func (s *Sentinel) chooseSynchronousStandbys(ctx context.Context, newcd *cluster
 	// because we have to be strict and make the master block transactions
 	// until MinSynchronousStandbys real standbys are available
 	if len(synchronousStandbys)+len(externalSynchronousStandbys) < minSynchronousStandbys {
-		logger.Info().
+		logger.Warn().
 			Str(logMasterDB, masterDB.UID).
 			Int("required", minSynchronousStandbys).
 			Msg("using a fake synchronous standby since there are not enough real standbys " +
@@ -925,7 +925,7 @@ func (s *Sentinel) pruneSynchronousStandbys(ctx context.Context, newcd *cluster.
 	toRemove = map[string]struct{}{}
 	for dbUID := range synchronousStandbys {
 		if _, ok := goodStandbys[dbUID]; !ok {
-			logger.Info().
+			logger.Warn().
 				Str(logMasterDB, masterDB.UID).
 				Str(logDB, dbUID).
 				Msg("removing failed synchronous standby")
@@ -986,6 +986,7 @@ func (s *Sentinel) addSynchronousStandbys(ctx context.Context, newcd *cluster.Da
 
 	ac := maxSynchronousStandbys - len(synchronousStandbys)
 	addedCount := 0
+	var cannotBeSynchronous []string
 	for _, bestStandby := range bestStandbys {
 		if addedCount >= ac {
 			break
@@ -999,10 +1000,11 @@ func (s *Sentinel) addSynchronousStandbys(ctx context.Context, newcd *cluster.Da
 			if keeper, ok := newcd.Keepers[db.Spec.KeeperUID]; ok &&
 				(keeper.Status.CanBeSynchronousReplica != nil &&
 					!*keeper.Status.CanBeSynchronousReplica) {
-				logger.Info().
+				logger.Debug().
 					Str(logDB, db.UID).
 					Str(logKeeper, keeper.UID).
 					Msg("cannot choose standby as synchronous (--can-be-synchronous-replica=false)")
+				cannotBeSynchronous = append(cannotBeSynchronous, db.UID)
 				continue
 			}
 		}
@@ -1016,6 +1018,7 @@ func (s *Sentinel) addSynchronousStandbys(ctx context.Context, newcd *cluster.Da
 		synchronousStandbys[bestStandby.UID] = struct{}{}
 		addedCount++
 	}
+	s.logSyncStandbysShort(ctx, masterDB, len(synchronousStandbys), maxSynchronousStandbys, cannotBeSynchronous)
 
 	// If there're some missing standbys to reach
 	// MinSynchronousStandbys, keep previous sync standbys,
@@ -1041,6 +1044,33 @@ func (s *Sentinel) addSynchronousStandbys(ctx context.Context, newcd *cluster.Da
 			addedCount++
 		}
 	}
+}
+
+// logSyncStandbysShort logs when the master starts having fewer synchronous standbys (have) than
+// MaxSynchronousStandbys (want), with the good standbys that can't be synchronous (--can-be-synchronous-replica=false),
+// and when it has enough again. The sentinel finds this on every check while it lasts.
+func (s *Sentinel) logSyncStandbysShort(ctx context.Context, masterDB *cluster.DB, have, want int,
+	cannotBeSynchronous []string) {
+	_, logger := logging.GetLogComponent(ctx, logging.SentinelComponent)
+	short := have < want
+	if short == s.syncStandbysShort {
+		return
+	}
+	s.syncStandbysShort = short
+	if short {
+		sort.Strings(cannotBeSynchronous)
+		logger.Warn().
+			Str(logMasterDB, masterDB.UID).
+			Int("synchronousStandbys", have).
+			Int("maxSynchronousStandbys", want).
+			Strs("cannotBeSynchronous", cannotBeSynchronous).
+			Msg("fewer synchronous standbys than maxSynchronousStandbys")
+		return
+	}
+	logger.Info().
+		Str(logMasterDB, masterDB.UID).
+		Int("synchronousStandbys", have).
+		Msg("synchronous standbys back at maxSynchronousStandbys")
 }
 
 // mergePrevSynchronousStandbys adds the previous synchronous standbys when some of the new ones weren't among them
@@ -1108,7 +1138,7 @@ func (s *Sentinel) updateStandbysCount(ctx context.Context, newcd *cluster.Data,
 				continue
 			}
 			if _, ok := goodStandbys[db.UID]; !ok {
-				logger.Info().Str(logDB, db.UID).Msg("removing non good standby")
+				logger.Warn().Str(logDB, db.UID).Msg("removing non good standby")
 				toRemove = append(toRemove, db)
 			}
 		}
