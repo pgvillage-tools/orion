@@ -41,8 +41,8 @@ var _ = Describe("Start", func() {
 
 	// listening returns whether the proxy listens
 	listening := func(c *ClusterChecker) bool {
-		c.pollonMutex.Lock()
-		defer c.pollonMutex.Unlock()
+		c.proxyMutex.Lock()
+		defer c.proxyMutex.Unlock()
 		return c.listener != nil
 	}
 
@@ -125,5 +125,16 @@ var _ = Describe("Start", func() {
 		Eventually(func() bool { return listening(c) }).WithTimeout(waitFor).Should(BeFalse())
 		storeUp.Store(true)
 		Eventually(func() bool { return proxies(c) }).WithTimeout(waitFor).Should(BeTrue())
+	})
+})
+
+var _ = Describe("Start, when the tcp proxy fails", func() {
+	It("returns the error of the tcp proxy", func(ctx SpecContext) {
+		store := mockconsensus.NewMockStore(gomock.NewController(GinkgoT()))
+		store.EXPECT().GetClusterData(gomock.Any()).Return(nil, nil, nil).AnyTimes()
+		c := newChecker(store)
+		DeferCleanup(stop, c)
+		c.proxyErrCh <- errors.New("listener closed")
+		Expect(c.Start(ctx)).NotTo(Succeed(), "expected the error of the tcp proxy")
 	})
 })
