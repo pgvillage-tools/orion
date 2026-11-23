@@ -49,6 +49,36 @@ const (
 	KeepersEndPoint EndPoint = "cluster/keepers"
 )
 
+// The endpoints of the api port in bootstrap mode (see docs/api/bootstrap-design.md, "The bootstrap protocol"). They
+// must be called on one TLS connection: the api binds the bootstrap to it.
+const (
+	// BootstrapChallengeEndPoint starts the bootstrap (POST): the api returns its nonce (BootstrapChallengeResponse)
+	BootstrapChallengeEndPoint EndPoint = "bootstrap/challenge"
+	// BootstrapProofEndPoint takes the nonce and the proof of the cli (POST, BootstrapProofRequest), and returns the
+	// proof of the api (BootstrapProofResponse)
+	BootstrapProofEndPoint EndPoint = "bootstrap/proof"
+)
+
+// BootstrapChallengeResponse is returned by the BootstrapChallengeEndPoint
+type BootstrapChallengeResponse struct {
+	// Nonce is the nonce of the api (32 bytes, base64 in JSON)
+	Nonce []byte `json:"nonce"`
+}
+
+// BootstrapProofRequest is sent to the BootstrapProofEndPoint
+type BootstrapProofRequest struct {
+	// Nonce is the nonce of the cli (32 bytes, base64 in JSON)
+	Nonce []byte `json:"nonce"`
+	// Proof is the proof of the cli (bootstrap.CLIProof; base64 in JSON)
+	Proof []byte `json:"proof"`
+}
+
+// BootstrapProofResponse is returned by the BootstrapProofEndPoint
+type BootstrapProofResponse struct {
+	// Proof is the proof of the api (bootstrap.APIProof; base64 in JSON)
+	Proof []byte `json:"proof"`
+}
+
 const (
 	// LiveEndPoint is the liveness endpoint on the probe port: 200 as long as the process serves requests (it doesn't
 	// check the store)

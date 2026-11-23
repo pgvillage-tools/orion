@@ -50,6 +50,12 @@ type Config struct {
 	TLSCAFile   string
 	// ShutdownDelay is the time between not being ready anymore and stopping the servers, on SIGTERM
 	ShutdownDelay time.Duration
+	// BootstrapSecret is the bootstrap secret (from BootstrapSecretEnv); BootstrapSecretFile is a file with it.
+	// Without either, the api generates one in bootstrap mode, and logs it.
+	BootstrapSecret     string
+	BootstrapSecretFile string
+	// BootstrapSecretTTL is the time the bootstrap secret is valid, from the start of bootstrap mode
+	BootstrapSecretTTL time.Duration
 }
 
 // tlsFiles returns the files of the api: the files in the pki directory, unless a file is set explicitly

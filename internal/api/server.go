@@ -104,6 +104,11 @@ func Run(ctx context.Context, cfg Config) error {
 	var ready atomic.Bool
 	h := NewHandlers(cl, election, &ready)
 	h.storeTimeout = cfg.StoreTimeout
+	if bootstrap {
+		if h.bootstrap, err = newBootstrapperFromConfig(ctx, cfg); err != nil {
+			return err
+		}
+	}
 	return run(ctx, cfg, files, bootstrap, h, metrics)
 }
 
