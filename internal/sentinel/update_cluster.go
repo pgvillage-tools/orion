@@ -563,7 +563,8 @@ func (s *Sentinel) removeDBs(ctx context.Context, newcd *cluster.Data, candidate
 	toRemove := []*cluster.DB{}
 	for _, db := range candidates {
 		if remove(db) {
-			logger.Info().Str(logDB, db.UID).Str(logKeeper, db.Spec.KeeperUID).Msg(msg)
+			// an operator must see a db that leaves the cluster: its keeper resyncs it from scratch
+			logger.Warn().Str(logDB, db.UID).Str(logKeeper, db.Spec.KeeperUID).Msg(msg)
 			toRemove = append(toRemove, db)
 		}
 	}

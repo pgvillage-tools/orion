@@ -36,7 +36,7 @@ func (p *PostgresKeeper) postgresKeeperSM(ctx context.Context) {
 		logger.Error().AnErr(logging.KeyErr, err).Msg("error retrieving cluster data")
 		return
 	}
-	logger.Debug().Any("clusterdata", cd).Msg("cd dump: %s")
+	logger.Debug().Any("clusterdata", cd).Msg("cd dump")
 
 	if cd == nil {
 		logger.Info().Msg("no cluster data available, waiting for it to appear")
