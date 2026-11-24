@@ -90,6 +90,7 @@ nav:
       - Kubernetes: deploy/k8s.md
   - Operations:
       - Point in time recovery: operations/pitr.md
+      - PostgreSQL parameters: operations/postgres-parameters.md
       - Sentinel decisions: operations/sentinel-decisions.md
       - Standby cluster: operations/standby-cluster.md
       - Standby resync: operations/resync.md
