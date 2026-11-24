@@ -391,6 +391,33 @@ after a restart:
   `--tls-cert-file`, `--tls-key-file` or `--tls-ca-file` it is an error.
 - The api doesn't fall back to bootstrap mode by itself.
 
+### When to bootstrap again
+
+A bootstrap creates a new CA. Every certificate the old CA issued stops working: the ones of the api and the cli, and
+later those of the other components and other cli users. So a bootstrap is for a missing PKI, not for one that expires:
+
+| Situation | What to do |
+|-----------|------------|
+| The cli never confirmed the bootstrap | `--rebootstrap` (see above). |
+| The CA is lost or compromised (passphrase forgotten, CA keys gone, a key leaked) | Remove the files of the api from its `--pki-dir`, and restart it: it starts in bootstrap mode. This needs access to the api host, which is the right bar for replacing the whole PKI. |
+| A certificate expires | Renew it with the cli, which has the CA keys (#325). Not a bootstrap. |
+
+An expired certificate doesn't put the api in bootstrap mode: that would let anyone who can wait for an expiry, or set
+the clock of the api host forward, start a new bootstrap on a running PKI. Renewal works without a new CA:
+
+- **The client certificate of the cli** (1 year): the cli signs a new one with the key of the client intermediate,
+  locally.
+- **The api certificate** (1 year): the cli signs a CSR of the api with the key of the server intermediate. The api
+  keeps its private key, and never has a CA key. When the certificate has expired already, the cli trusts the
+  certificate it knows from before for this one step.
+- **An intermediate** (3 years): the cli issues a new one with the root key, locally, and gives the api the new chain
+  in the same way.
+- **The root** (5 years): a CA rotation, with a period in which both roots are trusted. That is planned work, well
+  before the root expires.
+
+The cli warns when its certificate or the one of the api expires within 30 days (#420); the api warns in its log and
+with the metric `orion_api_certificate_expiry_timestamp_seconds` (see [certificates](certificates.md)).
+
 ## Bring your own PKI
 
 When you give the api a certificate, a key and a CA (`--tls-cert-file`, `--tls-key-file` and `--tls-ca-file`), it uses
@@ -490,4 +517,5 @@ Later, each in its own PR:
 | A separate bootstrap port | One api port with two modes is simpler, and a connection can't move from one mode to the other. |
 | One port with a middleware that allows some endpoints without a client certificate | The TLS handshake can enforce mTLS by itself; the health endpoints are on the probe port. |
 | Fall back to bootstrap mode automatically when the cli doesn't confirm | Hard to predict; `--rebootstrap` is explicit. |
+| Bootstrap again when a certificate expires | A new CA breaks every certificate of the old one, and an expiry (or a clock set forward) would reopen bootstrap mode on a running PKI. Renewal with the cli keeps the CA. |
 | RSA or Ed25519 for the certificates | RSA is slow and large; Ed25519 is not supported by all PostgreSQL clients. |
