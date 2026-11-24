@@ -92,6 +92,7 @@ nav:
       - Point in time recovery: operations/pitr.md
       - PostgreSQL parameters: operations/postgres-parameters.md
       - Sentinel decisions: operations/sentinel-decisions.md
+      - Rejoining with pg_rewind: operations/pg-rewind.md
       - Standby cluster: operations/standby-cluster.md
       - Standby resync: operations/resync.md
       - Synchronous replication: operations/sync-replication.md

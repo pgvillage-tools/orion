@@ -18,7 +18,7 @@ You can run Orion on Virtual Machines, and K8s environemts.
 * Can do point in time recovery integrating with your preferred backup/restore tool.
 * [Standby cluster](docs/operations/standby-cluster.md) (for multi site replication and near zero downtime migration).
 * Automatic service discovery and dynamic reconfiguration (handles postgres and orion processes changing their addresses).
-* Can use [pg_rewind](docs/stolon/pg_rewind.md) for fast instance resynchronization with current master.
+* Can use [pg_rewind](docs/operations/pg-rewind.md) for fast instance resynchronization with current master.
 
 ## Architecture
 
