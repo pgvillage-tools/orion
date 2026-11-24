@@ -45,6 +45,8 @@ type InitOptions struct {
 	Force bool
 	// CAPassphrase encrypts the private keys of the root and the intermediates (unencrypted when empty)
 	CAPassphrase []byte
+	// Subject holds the fields of the subject of all certificates, apart from the CommonName
+	Subject SubjectOptions
 }
 
 // Files returns the files that Init creates
@@ -136,6 +138,9 @@ func (o InitOptions) check() error {
 		return err
 	}
 	if err := o.checkSANs(); err != nil {
+		return err
+	}
+	if err := o.Subject.Check(); err != nil {
 		return err
 	}
 	if o.Force {

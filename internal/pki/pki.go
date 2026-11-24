@@ -106,6 +106,9 @@ func Generate(opts InitOptions) (*oriontls.Chain, error) {
 	if err := opts.checkSANs(); err != nil {
 		return nil, err
 	}
+	if err := opts.Subject.Check(); err != nil {
+		return nil, err
+	}
 	opts.CAPassphrase = nil
 	chain := newChain(opts, "")
 	if err := initialize(&chain); err != nil {
@@ -132,10 +135,11 @@ func newChain(opts InitOptions, caDir string) oriontls.Chain {
 			},
 		}
 	}
+	subject := opts.Subject.Subject()
 	return oriontls.Chain{
 		KeyAlgorithm: opts.KeyAlgorithm,
 		Root: oriontls.Pair{
-			Cert:       oriontls.Cert{Expiry: opts.RootExpiry, Path: join(rootName + crtExt)},
+			Cert:       oriontls.Cert{Subject: &subject, Expiry: opts.RootExpiry, Path: join(rootName + crtExt)},
 			PrivateKey: oriontls.PrivateKey{Path: join(rootName + keyExt), Passphrase: opts.CAPassphrase},
 		},
 		Intermediates: oriontls.Intermediates{
