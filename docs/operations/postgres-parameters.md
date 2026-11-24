@@ -81,11 +81,15 @@ configuration file on the reload and logs why. It keeps running with the configu
 changes of that update take effect either, and they aren't marked `pending_restart`, so the keeper doesn't restart it
 into a configuration it can't start with. Once you fix or remove the parameter, the keeper applies the changes.
 
+Orion doesn't check the parameters itself. Check the PostgreSQL log after a change, and before a restart: an instance
+that can't start with its configuration is down, and when it is the primary, the sentinel fails over.
+
 ## The parameters of initdb
 
 With `mergePgParameters` (the default), the parameters the new instance got from `initdb` (e.g. `max_connections`,
 `shared_buffers`, the locale settings) end up in `pgParameters` of the spec once the cluster is initialized. From then
-on, the spec has the full configuration, and every instance gets it.
+on, the spec has the full configuration, and every instance gets it. With `initMode: existing` or `pitr`, these are
+the parameters of the existing instance or of the restored backup.
 
 With `mergePgParameters: false`, the spec keeps only the parameters you set, and PostgreSQL uses its defaults for the
 rest. Set it when you create the cluster.
