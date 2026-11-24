@@ -3,17 +3,12 @@ package system_test
 import (
 	"context"
 	"fmt"
-	"io"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/tests/helpers"
-	tcexec "github.com/testcontainers/testcontainers-go/exec"
 )
-
-// keeperPGData is the postgres data directory in the keeper image (ORIONKEEPER_DATA_DIR=/pgdata)
-const keeperPGData = "/pgdata/postgres"
 
 // The data directory of the primary disappears (a lost or wrongly mounted volume): the keeper must not initialize a
 // new, empty primary in its place. The standby takes over with the data, and the old keeper comes back as a standby.
@@ -46,15 +41,9 @@ var _ = Describe("a primary whose data directory disappears", Ordered, func() {
 	})
 
 	It("fails over to the standby with the data, without a new empty primary", func(ctx context.Context) {
-		// stop postgres hard and remove its data directory, while the keeper keeps running. The backends of the killed
-		// postmaster can still write a file (e.g. in pg_stat) for a moment, which makes rm fail with "Directory not
-		// empty": rm again until they are gone (at most 5 seconds).
-		code, out, err := tc.Keepers[oldIndex].Exec(ctx, []string{"sh", "-c", fmt.Sprintf(
-			"kill -9 $(head -1 %[1]s/postmaster.pid) && for i in $(seq 50); do rm -rf %[1]s && exit 0; sleep 0.1; "+
-				"done; exit 1", keeperPGData)}, tcexec.Multiplexed())
-		Ω(err).NotTo(HaveOccurred())
-		output, _ := io.ReadAll(out)
-		Ω(code).To(Equal(0), string(output))
+		// stop postgres hard and remove its data directory, while the keeper keeps running
+		tc.KillPostgres(ctx, oldIndex)
+		tc.RemoveDataDir(ctx, oldIndex)
 
 		Eventually(func(g Gomega) {
 			status, _, err := tc.APIClient.GetStatus()

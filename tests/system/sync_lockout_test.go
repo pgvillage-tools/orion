@@ -3,18 +3,13 @@ package system_test
 import (
 	"context"
 	"fmt"
-	"io"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/pgvillage-tools/orion/tests/helpers"
-	tcexec "github.com/testcontainers/testcontainers-go/exec"
 )
-
-// postmasterPID holds the pid of postgres in the keeper image (ORIONKEEPER_DATA_DIR=/pgdata)
-const postmasterPID = "/pgdata/postgres/postmaster.pid"
 
 // With synchronous replication, a primary that restarts doesn't let normal users in until its synchronous standby is
 // in sync again: what they would write could otherwise be lost on a failover. The superuser (for orion itself) and
@@ -57,11 +52,7 @@ var _ = Describe("a restarted primary with synchronous replication", Ordered, fu
 		helpers.PauseContainer(ctx, tc.Keepers[standby])
 
 		// postgres on the primary stops; its keeper starts it again
-		code, out, err := tc.Keepers[primary].Exec(ctx, []string{"sh", "-c",
-			"kill -9 $(head -1 " + postmasterPID + ")"}, tcexec.Multiplexed())
-		Ω(err).NotTo(HaveOccurred())
-		output, _ := io.ReadAll(out)
-		Ω(code).To(Equal(0), string(output))
+		tc.KillPostgres(ctx, primary)
 
 		// the superuser gets in again, the normal user doesn't
 		Eventually(func() error { return helpers.PgPing(ctx, tc.KeeperConn(ctx, primary)) }).

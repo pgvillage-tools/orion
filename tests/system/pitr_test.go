@@ -11,6 +11,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/util"
 	"github.com/pgvillage-tools/orion/tests/helpers"
 	"github.com/testcontainers/testcontainers-go"
+	tcexec "github.com/testcontainers/testcontainers-go/exec"
 )
 
 // pitrArchive is where the keepers mount the volume with the WAL archive (wal) and a base backup (base)
@@ -62,9 +63,13 @@ var _ = Describe("point in time recovery", Ordered, func() {
 	It("archives its WAL and is backed up", func(ctx context.Context) {
 		tc.WaitForConverged(1)
 		// a new volume belongs to root; the keepers run as postgres
-		code, out := tc.KeeperExec(ctx, 0, "root",
-			fmt.Sprintf("mkdir -p %[1]s/wal %[1]s/base && chown -R postgres: %[1]s", pitrArchive))
-		Ω(code).To(Equal(0), out)
+		for _, cmd := range [][]string{
+			{"mkdir", "-p", pitrArchive + "/wal", pitrArchive + "/base"},
+			{"chown", "-R", "postgres:", pitrArchive},
+		} {
+			code, out := tc.KeeperExec(ctx, 0, cmd, tcexec.WithUser("root"))
+			Ω(code).To(Equal(0), out)
+		}
 
 		conn := tc.KeeperConn(ctx, 0)
 		Ω(helpers.PgExec(ctx, conn, "CREATE TABLE pitr (id int)")).To(Succeed())
@@ -72,8 +77,10 @@ var _ = Describe("point in time recovery", Ordered, func() {
 
 		// without WAL (-X none): a restore needs the archive. pg_basebackup waits until the WAL of the backup is
 		// archived.
-		code, out = tc.KeeperExec(ctx, 0, "", fmt.Sprintf(
-			"PGPASSWORD=%s pg_basebackup -h keeper_0 -U repluser -D %s/base -X none -c fast", "test123", pitrArchive))
+		code, out := tc.KeeperExec(ctx, 0,
+			[]string{"pg_basebackup", "-h", "keeper_0", "-U", "repluser", "-D", pitrArchive + "/base", "-X", "none",
+				"-c", "fast"},
+			tcexec.WithEnv([]string{"PGPASSWORD=test123"}))
 		Ω(code).To(Equal(0), out)
 
 		// after the backup: row 2 before the restore point, row 3 after it
