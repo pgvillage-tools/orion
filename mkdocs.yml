@@ -94,3 +94,4 @@ nav:
       - Standby cluster: operations/standby-cluster.md
       - Standby resync: operations/resync.md
       - Unresponsive standbys: operations/unresponsive-standbys.md
+      - Custom pg_hba entries: operations/pg-hba.md
