@@ -4,8 +4,8 @@ We suggest that you first read the [Stolon Architecture and Requirements](archit
 
 * [Stolon Architecture and Requirements](architecture.md)
 * [Commands Invocation](commands_invocation.md)
-* [Cluster Specification](../cluster/spec.md) (reviewed for Orion, moved out of docs/stolon)
-* [Cluster Initialization](../cluster/initialization.md) (reviewed for Orion, moved out of docs/stolon)
+* [Cluster Specification](cluster_spec.md)
+* [Cluster Initialization](initialization.md)
 * [Setting instance parameters](postgres_parameters.md)
 * [Custom pg_hba.conf entries](custom_pg_hba_entries.md)
 * [Stolon Client](orion-cli.md)

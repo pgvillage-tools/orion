@@ -70,7 +70,7 @@ When run inside a pod it'll use the pod service account to connect to the k8s AP
 
 If you have permanently lost your store you can create a new one BUT don't restore its contents (at least the orion ones) from a backup since the backed up data could be older than the current real state and this could cause different problems. For example if you restore a orion cluster data where the elected master was different than the current one, you can end up with this old master becoming the new master.
 
-The cleaner way is to reinitialize the orion cluster using the `existing` `initMode` (see [Cluster Initialization](../cluster/initialization.md)).
+The cleaner way is to reinitialize the orion cluster using the `existing` `initMode` (see [Cluster Initialization](initialization.md)).
 
 
 #### PostgreSQL Users
