@@ -33,6 +33,8 @@ run anywhere, come and go, and change their addresses.
 - [API certificates](api/certificates.md): the certificates the api and the cli use, and how to create them.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
+- [Failover and switchover](operations/failover-switchover.md): when the sentinel fails over, what happens to the old
+  primary, and how to switch over with `orion-cli failkeeper`.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
 - [Sentinel decisions](operations/sentinel-decisions.md): how the sentinel picks the synchronous standbys, switches
   the proxies, and replaces a standby that can't catch up.
