@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -22,11 +23,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/pgvillage-tools/orion/internal/pki"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/pgvillage-tools/orion/pkg/bootstrap"
+	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 )
 
 const testBootstrapSecret = "the bootstrap secret of the api"
@@ -38,16 +42,37 @@ func portOf(server *httptest.Server) string {
 	return port
 }
 
-// bootstrapAPI starts a fake api in mode: a probe port with /status, and an api port with the bootstrap endpoints
-// for testBootstrapSecret. It returns the flags for the cli to reach it.
-func bootstrapAPI(mode string) []string {
+// fakeBootstrapAPI is a fake api for the bootstrap: a probe port with /status, and an api port with the bootstrap
+// endpoints for testBootstrapSecret, which switches to mTLS with the certificates of the archive once the cli stored
+// it
+type fakeBootstrapAPI struct {
+	// flags are the flags for orion-cli bootstrap to reach it; apiFlags leave out the probe port
+	flags, apiFlags []string
+	// sans are the extra names the cli sent for the api certificate
+	sans []string
+	// normal is the TLS config of normal mode, once the cli stored the archive
+	normal atomic.Pointer[tls.Config]
+	// confirmed is set when the cli confirmed the bootstrap with its new certificate
+	confirmed atomic.Bool
+}
+
+// bootstrapAPI starts a fake api in mode, and returns it
+func bootstrapAPI(mode string) *fakeBootstrapAPI {
+	f := &fakeBootstrapAPI{}
 	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		Ω(r.URL.Path).To(Equal("/" + string(endpoints.ModeEndPoint)))
-		_ = json.NewEncoder(w).Encode(endpoints.ModeResponse{Mode: mode})
+		m := mode
+		if f.normal.Load() != nil {
+			m = endpoints.ModeNormal
+		}
+		_ = json.NewEncoder(w).Encode(endpoints.ModeResponse{Mode: m})
 	}))
 	DeferCleanup(probe.Close)
 
-	var apiNonce []byte
+	var (
+		apiNonce []byte
+		chain    *oriontls.Chain
+	)
 	mux := http.NewServeMux()
 	mux.HandleFunc(endpoints.BootstrapChallengeEndPoint.Route(endpoints.MethodPost),
 		func(w http.ResponseWriter, _ *http.Request) {
@@ -70,10 +95,49 @@ func bootstrapAPI(mode string) []string {
 			Ω(err).NotTo(HaveOccurred())
 			_ = json.NewEncoder(w).Encode(endpoints.BootstrapProofResponse{Proof: proof})
 		})
+	mux.HandleFunc(endpoints.BootstrapArchiveEndPoint.Route(endpoints.MethodPost),
+		func(w http.ResponseWriter, r *http.Request) {
+			var req endpoints.BootstrapArchiveRequest
+			Ω(json.NewDecoder(r.Body).Decode(&req)).To(Succeed())
+			f.sans = req.SANs
+			pub, err := bootstrap.KEM().NewPublicKey(req.PublicKey)
+			Ω(err).NotTo(HaveOccurred())
+			chain, err = pki.Generate(pki.InitOptions{APISANs: req.SANs})
+			Ω(err).NotTo(HaveOccurred())
+			certs, keys := pki.ArchiveContents(*chain)
+			ekm, err := bootstrap.ExportKeyingMaterial(r.TLS)
+			Ω(err).NotTo(HaveOccurred())
+			archive, err := bootstrap.SealArchive(pub, ekm, certs, keys)
+			Ω(err).NotTo(HaveOccurred())
+			_ = json.NewEncoder(w).Encode(archive)
+		})
+	mux.HandleFunc(endpoints.BootstrapStoredEndPoint.Route(endpoints.MethodPost),
+		func(w http.ResponseWriter, _ *http.Request) {
+			apiDir := GinkgoT().TempDir()
+			Ω(pki.WriteAPIFiles(*chain, apiDir)).To(Succeed())
+			config, err := pki.APIFiles(apiDir).ServerConfig()
+			Ω(err).NotTo(HaveOccurred())
+			f.normal.Store(config)
+			_ = json.NewEncoder(w).Encode(endpoints.BootstrapStatusResponse{Status: endpoints.BootstrapStatusStored})
+		})
+	mux.HandleFunc(endpoints.BootstrapConfirmEndPoint.Route(endpoints.MethodPost),
+		func(w http.ResponseWriter, r *http.Request) {
+			Ω(r.TLS.PeerCertificates).NotTo(BeEmpty(), "the confirmation is over mTLS")
+			Ω(r.TLS.PeerCertificates[0].Subject.CommonName).To(Equal(pki.CLIClientName))
+			f.confirmed.Store(true)
+			_ = json.NewEncoder(w).Encode(endpoints.BootstrapStatusResponse{
+				Status: endpoints.BootstrapStatusConfirmed})
+		})
 	api := httptest.NewUnstartedServer(mux)
+	// the self-signed certificate of httptest in bootstrap mode, the certificates of the archive in normal mode
+	api.TLS = &tls.Config{GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+		return f.normal.Load(), nil
+	}}
 	api.StartTLS()
 	DeferCleanup(api.Close)
-	return []string{"--host", "127.0.0.1", "--port", portOf(api), "--probe-port", portOf(probe), "--timeout", "5s"}
+	f.apiFlags = []string{"--host", "127.0.0.1", "--port", portOf(api), "--timeout", "5s"}
+	f.flags = append([]string{"--probe-port", portOf(probe)}, f.apiFlags...)
+	return f
 }
 
 // bootstrapSecretEnv sets ORIONCLI_BOOTSTRAP_SECRET to value for the spec ("" unsets it)
@@ -137,39 +201,83 @@ var _ = Describe("bootstrap", func() {
 		usePKIDir(dir)
 	})
 
-	It("creates the key pair, and proves the secret with the api", func() {
+	It("creates the key pair, gets and stores the certificates, and confirms with them", func() {
 		bootstrapSecretEnv(testBootstrapSecret)
-		out, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap)...)...)
+		api := bootstrapAPI(endpoints.ModeBootstrap)
+		out, _, err := run(append([]string{"bootstrap", "--api-san", "lb.example.org"}, api.flags...)...)
 		Ω(err).NotTo(HaveOccurred())
 		Ω(out).To(ContainSubstring("Created the bootstrap key pair in " + dir))
 		Ω(out).To(ContainSubstring("The api proved that it has the bootstrap secret"))
+		Ω(out).To(ContainSubstring("Stored the certificates and the CA keys in " + dir))
+		Ω(out).To(ContainSubstring("the bootstrap is done"))
+		Ω(api.sans).To(Equal([]string{"lb.example.org"}))
+		Ω(api.confirmed.Load()).To(BeTrue())
 		_, err = bootstrap.ReadPrivateKey(dir, []byte(testCAPassphrase))
 		Ω(err).NotTo(HaveOccurred(), "the private key is encrypted with the passphrase of the CA keys")
+		root := oriontls.PrivateKey{Path: filepath.Join(dir, pki.CLICADir, "root.key"),
+			Passphrase: []byte(testCAPassphrase)}
+		Ω(root.Load()).To(Succeed(), "the CA keys are encrypted with the passphrase")
 
+		// the confirmation can be repeated
+		api.confirmed.Store(false)
+		out, _, err = run(append([]string{"bootstrap", "confirm"}, api.apiFlags...)...)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(out).To(ContainSubstring("the bootstrap is done"))
+		Ω(api.confirmed.Load()).To(BeTrue())
+	})
+
+	It("uses the existing key pair", func() {
+		bootstrapSecretEnv(testBootstrapSecret)
+		priv, err := bootstrap.GenerateKey()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(bootstrap.WriteKeyPair(dir, priv, []byte(testCAPassphrase))).To(Succeed())
 		pub, err := os.ReadFile(filepath.Join(dir, bootstrap.PublicKeyFile))
 		Ω(err).NotTo(HaveOccurred())
-		out, _, err = run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap)...)...)
+		out, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap).flags...)...)
 		Ω(err).NotTo(HaveOccurred())
-		Ω(out).NotTo(ContainSubstring("Created the bootstrap key pair"), "the key pair exists already")
+		Ω(out).NotTo(ContainSubstring("Created the bootstrap key pair"))
 		Ω(os.ReadFile(filepath.Join(dir, bootstrap.PublicKeyFile))).To(Equal(pub))
+	})
+
+	It("fails with another passphrase than the one of the existing key pair", func() {
+		bootstrapSecretEnv(testBootstrapSecret)
+		priv, err := bootstrap.GenerateKey()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(bootstrap.WriteKeyPair(dir, priv, []byte("another passphrase"))).To(Succeed())
+		_, _, err = run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap).flags...)...)
+		Ω(err).To(MatchError(bootstrap.ErrWrongPassphrase))
+	})
+
+	It("refuses to overwrite the files of the cli, before it asks for anything", func() {
+		bootstrapSecretEnv("")
+		Ω(os.MkdirAll(dir, 0o700)).To(Succeed())
+		Ω(os.WriteFile(filepath.Join(dir, pki.CLICertFile), []byte("mine"), 0o600)).To(Succeed())
+		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap).flags...)...)
+		Ω(err).To(MatchError(ContainSubstring("refusing to overwrite")))
+		Ω(filepath.Join(dir, bootstrap.PublicKeyFile)).NotTo(BeAnExistingFile())
+	})
+
+	It("can't confirm without a client certificate", func() {
+		_, _, err := run(append([]string{"bootstrap", "confirm"}, bootstrapAPI(endpoints.ModeNormal).apiFlags...)...)
+		Ω(err).To(MatchError(ContainSubstring("pki init")))
 	})
 
 	It("fails with another secret than the one of the api", func() {
 		bootstrapSecretEnv("not the secret of the api")
-		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap)...)...)
+		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap).flags...)...)
 		Ω(err).To(MatchError(ContainSubstring("wrong bootstrap proof")))
 	})
 
 	It("refuses an api in normal mode", func() {
 		bootstrapSecretEnv(testBootstrapSecret)
-		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeNormal)...)...)
+		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeNormal).flags...)...)
 		Ω(err).To(MatchError(ContainSubstring("not in bootstrap mode")))
 		Ω(filepath.Join(dir, bootstrap.PublicKeyFile)).NotTo(BeAnExistingFile(), "no key pair without a bootstrap")
 	})
 
 	It("fails without a probe port", func() {
 		bootstrapSecretEnv(testBootstrapSecret)
-		flags := bootstrapAPI(endpoints.ModeBootstrap)
+		flags := bootstrapAPI(endpoints.ModeBootstrap).flags
 		for i, f := range flags {
 			if f == "--probe-port" {
 				flags[i+1] = "1"
@@ -182,7 +290,7 @@ var _ = Describe("bootstrap", func() {
 	It("fails without a passphrase for a new key pair", func() {
 		bootstrapSecretEnv(testBootstrapSecret)
 		noPassphraseEnv()
-		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap)...)...)
+		_, _, err := run(append([]string{"bootstrap"}, bootstrapAPI(endpoints.ModeBootstrap).flags...)...)
 		Ω(err).To(MatchError(ContainSubstring("passphrase")))
 	})
 

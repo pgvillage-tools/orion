@@ -103,18 +103,18 @@ var _ = Describe("bootstrapSecret", func() {
 
 var _ = Describe("newBootstrapperFromConfig", func() {
 	It("uses the default ttl", func(ctx SpecContext) {
-		b, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret})
+		b, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret}, "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(b.expires).To(BeTemporally("~", time.Now().Add(DefaultBootstrapSecretTTL), time.Second))
 	})
 
 	It("refuses a negative ttl", func(ctx SpecContext) {
-		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret, BootstrapSecretTTL: -1})
+		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret, BootstrapSecretTTL: -1}, "")
 		Expect(err).To(MatchError(errBootstrapTTL))
 	})
 
 	It("returns the error of the secret", func(ctx SpecContext) {
-		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: "short"})
+		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: "short"}, "")
 		Expect(err).To(HaveOccurred())
 	})
 })

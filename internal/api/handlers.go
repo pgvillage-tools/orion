@@ -49,6 +49,8 @@ type Handlers struct {
 	// bootstrapDone is closed (by finishBootstrap) when the api switches from bootstrap mode to normal mode
 	bootstrapDone chan struct{}
 	bootstrapOnce sync.Once
+	// archiveFile is the archive of the bootstrap in the api directory, which the confirmation of the cli removes
+	archiveFile string
 }
 
 // NewHandlers returns a new Handlers object. election is only used to read the sentinel leader; the api never runs for
@@ -76,6 +78,7 @@ func (h *Handlers) Routes() []Route {
 	routes = append(routes, h.StatusRoutes()...)
 	routes = append(routes, h.MemberRoutes()...)
 	routes = append(routes, h.WhoAmIRoutes()...)
+	routes = append(routes, h.BootstrapConfirmRoutes()...)
 	return routes
 }
 

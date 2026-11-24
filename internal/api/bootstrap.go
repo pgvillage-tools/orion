@@ -37,9 +37,8 @@ import (
 )
 
 // bootstrapSupported enables bootstrap mode: an api started without certificates starts in it, instead of failing.
-// It stays off until the bootstrap is complete (the shared secret, the archive and the confirmation, #320-#322):
-// until then, an api without certificates fails with a clear error instead of waiting for a bootstrap that can't
-// happen.
+// It stays off until the bootstrap can resume after a restart (the stored state and the secret, #323): until then, an
+// api without certificates fails with a clear error.
 var bootstrapSupported = false
 
 const (

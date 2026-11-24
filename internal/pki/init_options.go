@@ -49,14 +49,20 @@ type InitOptions struct {
 
 // Files returns the files that Init creates
 func (o InitOptions) Files() []string {
-	caDir := filepath.Join(o.CLIDir, CLICADir)
-	files := []string{
+	return append([]string{
 		filepath.Join(o.APIDir, APIServerCertFile),
 		filepath.Join(o.APIDir, APIServerKeyFile),
 		filepath.Join(o.APIDir, APIClientCAFile),
-		filepath.Join(o.CLIDir, CLICertFile),
-		filepath.Join(o.CLIDir, CLIKeyFile),
-		filepath.Join(o.CLIDir, CLICAFile),
+	}, cliFiles(o.CLIDir)...)
+}
+
+// cliFiles returns the files that Init (and the bootstrap) create in the cli directory dir
+func cliFiles(dir string) []string {
+	caDir := filepath.Join(dir, CLICADir)
+	files := []string{
+		filepath.Join(dir, CLICertFile),
+		filepath.Join(dir, CLIKeyFile),
+		filepath.Join(dir, CLICAFile),
 		filepath.Join(caDir, rootName+crtExt),
 		filepath.Join(caDir, rootName+keyExt),
 	}

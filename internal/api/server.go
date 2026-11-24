@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -104,8 +105,11 @@ func Run(ctx context.Context, cfg Config) error {
 	var ready atomic.Bool
 	h := NewHandlers(cl, election, &ready)
 	h.storeTimeout = cfg.StoreTimeout
+	// in bootstrap mode, the files are in the api directory (none is set explicitly)
+	dir := filepath.Dir(files.CertFile)
+	h.archiveFile = filepath.Join(dir, pki.APIBootstrapArchiveFile)
 	if bootstrap {
-		if h.bootstrap, err = newBootstrapperFromConfig(ctx, cfg); err != nil {
+		if h.bootstrap, err = newBootstrapperFromConfig(ctx, cfg, dir); err != nil {
 			return err
 		}
 	}

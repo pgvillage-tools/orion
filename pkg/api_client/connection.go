@@ -100,6 +100,11 @@ func NewTLSConnection(host string, port uint16, timeout time.Duration, tlsConfig
 	}
 }
 
+// CloseIdleConnections closes the connections that the Connection keeps open for its next requests
+func (c Connection) CloseIdleConnections() {
+	c.client.CloseIdleConnections()
+}
+
 // EndpointURL calculates and returns the url for a specific endpoint on this Connection
 func (c Connection) EndpointURL(ep endpoint) string {
 	return ep.URL(c.protocol, c.host, c.port)
