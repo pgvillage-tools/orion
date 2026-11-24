@@ -12,7 +12,7 @@ The keeper writes `pg_hba.conf` itself, on every instance, and reloads PostgreSQ
 on the host: the keeper overwrites it. Instead, put your own entries in the `pgHBA` field of the cluster spec:
 
 ```bash
-orion-cli update --patch '{"pgHBA": ["host all all 0.0.0.0/0 md5", "host all all ::0/0 md5"]}'
+orion-cli update --patch '{"pgHBA": ["host all all 0.0.0.0/0 scram-sha-256", "host all all ::0/0 scram-sha-256"]}'
 ```
 
 `pg_hba.conf` then has, in this order:
@@ -29,6 +29,9 @@ PostgreSQL uses the first entry that matches a connection, so your entries can't
 | Not set (`null`) | `host all all 0.0.0.0/0 md5` and `host all all ::0/0 md5`: every user, from every host, with a password |
 | `[]` | None: only the superuser and the replication user can connect |
 | A list of entries | Those entries, in that order |
+
+Use `scram-sha-256` in your own entries rather than `md5`: the default entries still use `md5`, which PostgreSQL also
+accepts for a password stored as SCRAM, but `scram-sha-256` never sends or accepts an MD5 hash.
 
 `orion-cli init` without a spec leaves `pgHBA` unset, so a new cluster accepts every user with a password.
 
@@ -95,10 +98,10 @@ not the default entries. Only the superuser and the replication user can connect
 sync again. Then the keeper adds your entries and reloads. Otherwise a client could write data that is lost when the
 primary fails before a standby has it.
 
-The end-to-end test `tests/system/sync_lockout_test.go` runs this: with `pgHBA` set to the two `md5` entries above, it
-kills PostgreSQL on the primary while its synchronous standby is paused. The superuser connects again as soon as
-PostgreSQL runs; a normal user gets a `pg_hba.conf` error until the standby is back and in sync, and then reads the
-data.
+The end-to-end test `tests/system/sync_lockout_test.go` runs this: with `pgHBA` set to `host all all 0.0.0.0/0 md5`
+and the same for `::0/0`, it kills PostgreSQL on the primary while its synchronous standby is paused. The superuser
+connects again as soon as PostgreSQL runs; a normal user gets a `pg_hba.conf` error until the standby is back and in
+sync, and then reads the data.
 
 ## Tests
 
