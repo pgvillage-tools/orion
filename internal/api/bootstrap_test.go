@@ -39,12 +39,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// withBootstrap enables bootstrap mode for the spec
-func withBootstrap() {
-	bootstrapSupported = true
-	DeferCleanup(func() { bootstrapSupported = false })
-}
-
 // freePort returns a tcp port on 127.0.0.1 that was free a moment ago
 func freePort() uint {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -76,29 +70,20 @@ var _ = Describe("startsInBootstrap", func() {
 	}
 
 	It("starts in normal mode with certificates", func() {
-		withBootstrap()
 		Expect(check(Config{PKIDir: initPKI(dir).APIDir})).To(BeFalse())
 	})
 
 	It("starts in bootstrap mode without any certificates", func() {
-		withBootstrap()
 		Expect(check(Config{PKIDir: dir})).To(BeTrue())
 	})
 
-	It("fails without certificates while bootstrap mode isn't supported", func() {
-		_, err := check(Config{PKIDir: dir})
-		Expect(err).To(MatchError(pki.ErrFilesNotFound))
-	})
-
 	It("fails with a part of the certificates", func() {
-		withBootstrap()
 		Expect(os.WriteFile(filepath.Join(dir, pki.APIServerCertFile), []byte("x"), 0o600)).To(Succeed())
 		_, err := check(Config{PKIDir: dir})
 		Expect(err).To(MatchError(pki.ErrFilesNotFound))
 	})
 
 	It("fails when a certificate file is set explicitly, but missing", func() {
-		withBootstrap()
 		_, err := check(Config{PKIDir: dir, TLSCertFile: filepath.Join(dir, "elsewhere.pem")})
 		Expect(err).To(MatchError(pki.ErrFilesNotFound))
 	})
@@ -107,7 +92,6 @@ var _ = Describe("startsInBootstrap", func() {
 		if os.Getuid() == 0 {
 			Skip("root reads every file")
 		}
-		withBootstrap()
 		for _, f := range []string{pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile} {
 			Expect(os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o000)).To(Succeed())
 		}
@@ -150,7 +134,6 @@ var _ = Describe("run", func() {
 	)
 
 	BeforeEach(func() {
-		withBootstrap()
 		dir := GinkgoT().TempDir()
 		// the cli files exist (the cli made them while bootstrapping), the api files come at the end of the bootstrap
 		opts = pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api")}
@@ -254,7 +237,8 @@ var _ = Describe("run", func() {
 	It("bootstraps with the cli: archive, stored, normal mode, and the confirmation over mTLS", func() {
 		h.bootstrap = newBootstrapper([]byte(testSecret), time.Hour)
 		h.bootstrap.dir = opts.APIDir
-		h.archiveFile = filepath.Join(opts.APIDir, pki.APIBootstrapArchiveFile)
+		h.pkiDir = opts.APIDir
+		archiveFile := filepath.Join(opts.APIDir, pki.APIBootstrapArchiveFile)
 		start()
 		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeBootstrap))
 		Eventually(h.Ready.Load).WithTimeout(5 * time.Second).Should(BeTrue())
@@ -269,7 +253,7 @@ var _ = Describe("run", func() {
 		Expect(pki.StoreArchive(opts.CLIDir, certs, keys, []byte("the CA passphrase"))).To(Succeed())
 		Expect(session.Stored(ctx)).To(Succeed())
 		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeNormal))
-		Expect(h.archiveFile).To(BeAnExistingFile())
+		Expect(archiveFile).To(BeAnExistingFile())
 
 		// the cli verifies the api with the new root, and logs in with its new certificate
 		clientConfig, err := pki.CLIFiles(opts.CLIDir).ClientConfig()
@@ -278,7 +262,8 @@ var _ = Describe("run", func() {
 		for range 2 {
 			Eventually(conn.ConfirmBootstrap).WithTimeout(5 * time.Second).Should(Equal(http.StatusOK))
 		}
-		Expect(h.archiveFile).NotTo(BeAnExistingFile(), "the api deleted the archive with the CA keys")
+		Expect(archiveFile).NotTo(BeAnExistingFile(), "the api deleted the archive with the CA keys")
+		Expect(readBootstrapState(opts.APIDir)).To(Equal(bootstrapState{State: stateConfirmed}))
 
 		// a spare connection the client dialed but never used would hold up the shutdown for 5 seconds
 		conn.CloseIdleConnections()
@@ -304,7 +289,6 @@ var _ = Describe("run", func() {
 
 var _ = Describe("Run in bootstrap mode", func() {
 	It("fails with an invalid bootstrap secret", func(ctx SpecContext) {
-		withBootstrap()
 		cfg := Config{PKIDir: GinkgoT().TempDir(), BaseURL: "127.0.0.1", BootstrapSecret: "too short"}
 		cfg.ClusterName = "cluster1"
 		cfg.StoreBackend = "etcdv3"

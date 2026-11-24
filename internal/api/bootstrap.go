@@ -36,11 +36,6 @@ import (
 	"github.com/pgvillage-tools/orion/internal/pki"
 )
 
-// bootstrapSupported enables bootstrap mode: an api started without certificates starts in it, instead of failing.
-// It stays off until the bootstrap can resume after a restart (the stored state and the secret, #323): until then, an
-// api without certificates fails with a clear error.
-var bootstrapSupported = false
-
 const (
 	// bootstrapCertValidity is the validity of the temporary certificate of bootstrap mode. The cli doesn't verify it
 	// (the HMAC of the bootstrap proves the api), and the api makes a new one at every start.
@@ -54,8 +49,8 @@ const (
 	bootstrapSwitchTimeout = time.Second
 )
 
-// startsInBootstrap returns whether the api starts in bootstrap mode: when bootstrap mode is supported, none of its
-// files exist, and none is set explicitly (with your own certificates there is no bootstrap). Otherwise it returns
+// startsInBootstrap returns whether the api starts in bootstrap mode: when none of its files exist, and none is set
+// explicitly (with your own certificates there is no bootstrap). Otherwise it returns
 // the error of checking the files, if any.
 func startsInBootstrap(cfg Config, files pki.TLSFiles) (bool, error) {
 	err := files.Check()
@@ -66,12 +61,11 @@ func startsInBootstrap(cfg Config, files pki.TLSFiles) (bool, error) {
 		return false, fmt.Errorf("%w: the api must be able to read its certificates and its key: make them readable "+
 			"for the user it runs as (uid 1000 in the container image)", err)
 	}
-	explicit := cfg.TLSCertFile != "" || cfg.TLSKeyFile != "" || cfg.TLSCAFile != ""
-	if bootstrapSupported && !explicit && noneExist(files) {
+	if !cfg.explicitTLSFiles() && noneExist(files) {
 		return true, nil
 	}
 	return false, fmt.Errorf("%w: create the certificates with `orion-cli pki init`, and copy the api files to "+
-		"--pki-dir (starting without certificates is not supported yet)", err)
+		"--pki-dir; or remove all of them to bootstrap the api with `orion-cli bootstrap`", err)
 }
 
 // noneExist returns whether none of the files exist: a part of them is a mistake (e.g. a file that wasn't copied),

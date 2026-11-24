@@ -178,6 +178,7 @@ var _ = Describe("the bootstrap archive endpoints", func() {
 		Expect(json.Unmarshal(data, &stored)).To(Succeed())
 		Expect(stored).To(Equal(archive), "the api keeps the archive it can't read, not the CA keys")
 		Expect(string(data)).NotTo(ContainSubstring("PRIVATE KEY"))
+		Expect(readBootstrapState(dir)).To(Equal(bootstrapState{State: stateHandedOver}), "without the secret")
 
 		// the secret is used up
 		resp, _ = post(newClient(), endpoints.BootstrapChallengeEndPoint, nil, nil)
@@ -245,8 +246,8 @@ var _ = Describe("BootstrapConfirmHandler", func() {
 
 	BeforeEach(func() {
 		h = NewHandlers(nil, nil, nil)
-		archiveFile = filepath.Join(GinkgoT().TempDir(), pki.APIBootstrapArchiveFile)
-		h.archiveFile = archiveFile
+		h.pkiDir = GinkgoT().TempDir()
+		archiveFile = filepath.Join(h.pkiDir, pki.APIBootstrapArchiveFile)
 	})
 
 	// confirm posts a confirmation as identity (none when nil), and returns the response

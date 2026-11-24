@@ -62,10 +62,9 @@ const (
 // generatedSecretEncoding writes a generated secret in upper case letters and digits, without padding
 var generatedSecretEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// bootstrapSecret returns the bootstrap secret: from cfg (the environment variable, or the file), or a new one, which
-// it logs once, since the cli needs it
-func bootstrapSecret(ctx context.Context, cfg Config) ([]byte, error) {
-	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+// configuredSecret returns the bootstrap secret that was set (the environment variable, or the file), nil when none
+// was set
+func configuredSecret(cfg Config) ([]byte, error) {
 	secret := cfg.BootstrapSecret
 	if cfg.BootstrapSecretFile != "" {
 		if secret != "" {
@@ -82,17 +81,23 @@ func bootstrapSecret(ctx context.Context, cfg Config) ([]byte, error) {
 			return nil, fmt.Errorf("the bootstrap secret file %s is empty", cfg.BootstrapSecretFile)
 		}
 	}
-	if secret != "" {
-		if len(secret) < bootstrap.MinSecretLength {
-			return nil, fmt.Errorf("the bootstrap secret must have at least %d characters", bootstrap.MinSecretLength)
-		}
-		return []byte(secret), nil
+	if secret == "" {
+		return nil, nil
 	}
+	if len(secret) < bootstrap.MinSecretLength {
+		return nil, fmt.Errorf("the bootstrap secret must have at least %d characters", bootstrap.MinSecretLength)
+	}
+	return []byte(secret), nil
+}
+
+// generateSecret returns a new bootstrap secret, which it logs once, since the cli needs it
+func generateSecret(ctx context.Context) ([]byte, error) {
+	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	raw := make([]byte, generatedSecretBytes)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, err
 	}
-	secret = generatedSecretEncoding.EncodeToString(raw)
+	secret := generatedSecretEncoding.EncodeToString(raw)
 	logger.Warn().Str("secret", secret).
 		Msg("generated a bootstrap secret: bootstrap the api with it (it can be used once), or set your own in " +
 			BootstrapSecretEnv)
@@ -299,8 +304,10 @@ func (h *Handlers) BootstrapProofHandler(w http.ResponseWriter, r *http.Request)
 var errBootstrapTTL = errors.New("--bootstrap-secret-ttl must be positive")
 
 // newBootstrapperFromConfig returns the bootstrapper with the secret and its ttl from cfg (DefaultBootstrapSecretTTL
-// when it isn't set), which stores the files of the api in dir
-func newBootstrapperFromConfig(ctx context.Context, cfg Config, dir string) (*bootstrapper, error) {
+// when it isn't set), or the ones of state when the bootstrap continues, and stores its state in dir (the api
+// directory, where it stores the files of the api too)
+func newBootstrapperFromConfig(ctx context.Context, cfg Config, dir string, state bootstrapState) (*bootstrapper,
+	error) {
 	ttl := cfg.BootstrapSecretTTL
 	if ttl == 0 {
 		ttl = DefaultBootstrapSecretTTL
@@ -308,11 +315,22 @@ func newBootstrapperFromConfig(ctx context.Context, cfg Config, dir string) (*bo
 	if ttl < 0 {
 		return nil, errBootstrapTTL
 	}
-	secret, err := bootstrapSecret(ctx, cfg)
+	configured, err := configuredSecret(cfg)
 	if err != nil {
 		return nil, err
 	}
-	b := newBootstrapper(secret, ttl)
+	b := newBootstrapper(nil, ttl)
+	if b.secret, b.expires, err = resumeSecret(ctx, state, configured, ttl, b.now()); err != nil {
+		return nil, err
+	}
 	b.dir, b.sans = dir, detectedSANs(cfg.BaseURL)
+	stored := bootstrapState{State: stateBootstrapping, SecretSHA256: secretHash(b.secret), Expires: b.expires}
+	if configured == nil {
+		// a set secret is the operator's, and stays where they keep it
+		stored.Secret = string(b.secret)
+	}
+	if err = writeBootstrapState(dir, stored); err != nil {
+		return nil, err
+	}
 	return b, nil
 }

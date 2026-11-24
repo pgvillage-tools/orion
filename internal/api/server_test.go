@@ -34,9 +34,16 @@ import (
 )
 
 var _ = Describe("Run", func() {
-	It("fails without certificates", func(ctx SpecContext) {
-		err := Run(ctx, Config{PKIDir: filepath.Join(GinkgoT().TempDir(), "missing")})
+	It("fails without certificates that are set explicitly", func(ctx SpecContext) {
+		dir := filepath.Join(GinkgoT().TempDir(), "missing")
+		err := Run(ctx, Config{PKIDir: dir, TLSCertFile: filepath.Join(dir, "server.pem")})
 		Expect(err).To(MatchError(pki.ErrFilesNotFound))
+	})
+
+	It("refuses --rebootstrap with certificates that are set explicitly", func(ctx SpecContext) {
+		dir := GinkgoT().TempDir()
+		err := Run(ctx, Config{PKIDir: dir, TLSCAFile: filepath.Join(dir, "ca.pem"), Rebootstrap: true})
+		Expect(err).To(MatchError(errRebootstrapExplicit))
 	})
 
 	It("fails with unreadable certificates", func(ctx SpecContext) {

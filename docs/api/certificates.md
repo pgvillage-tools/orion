@@ -114,8 +114,13 @@ openssl pkey -in ~/.orion/cli/ca/root.key -noout -text
 | `--tls-cert-file` | `ORIONAPI_TLS_CERT_FILE` | `<pki-dir>/server.crt` | Use another file for the server certificate. |
 | `--tls-key-file` | `ORIONAPI_TLS_KEY_FILE` | `<pki-dir>/server.key` | Use another file for the private key. |
 | `--tls-ca-file` | `ORIONAPI_TLS_CA_FILE` | `<pki-dir>/client-ca.crt` | Use another file for the CA of the client certificates. |
+| | `ORIONAPI_BOOTSTRAP_SECRET` | Generated and logged | The secret for [bootstrap mode](#starting-without-certificates). |
+| `--bootstrap-secret-file` | `ORIONAPI_BOOTSTRAP_SECRET_FILE` | | A file with the secret for bootstrap mode, instead of the environment variable. |
+| `--bootstrap-secret-ttl` | `ORIONAPI_BOOTSTRAP_SECRET_TTL` | `24h` | How long the secret of bootstrap mode is valid. |
+| `--rebootstrap` | `ORIONAPI_REBOOTSTRAP` | | Start a new bootstrap when the cli didn't confirm the last one. |
 
-- The api doesn't start without its certificates. Starting without certificates (bootstrap mode) is planned.
+- Without any of its three files in `--pki-dir` (and none set with `--tls-*-file`), the api starts in bootstrap mode:
+  see [Starting without certificates](#starting-without-certificates). With only a part of them, it doesn't start.
 - The api reads its certificates at start. After you replace them (e.g. after a renewal), restart the api.
 - At start, and once a day, the api logs a warning for every certificate it loaded that expires within 30 days.
 - The private key (`server.key`) must be readable for the user that runs the api, and for nobody else.
@@ -141,13 +146,56 @@ docker run -d -p 8443:8443 -p 8080:8080 \
 - On Kubernetes, mount them from a Secret. Its files are owned by root, with the pod's `fsGroup` as group: set
   `fsGroup: 1000` in the pod's security context, and `defaultMode: 0440` on the volume.
 
+## Starting without certificates
+
+Instead of creating the certificates with `orion-cli pki init` and copying the api files, you can start the api
+without any certificates, and let the cli bootstrap it over the network. The api then creates the CA and all
+certificates, hands the CA keys over to the cli (encrypted to a key only the cli has), and deletes them. For how this
+works and why it is safe, see [Bootstrap](bootstrap-design.md#bootstrap).
+
+Start the api with an empty, writable `--pki-dir`, and a secret of at least 20 characters (or none: the api then
+generates one and logs it once, at warn level):
+
+```bash
+export ORIONAPI_BOOTSTRAP_SECRET="$(openssl rand -base64 24)"
+orion-api --pki-dir /var/lib/orion/api --cluster-name mycluster --store-backend etcdv3
+# /status on the probe port reports {"mode":"bootstrap"}
+```
+
+Bootstrap it from the machine where you run the cli, with the same secret:
+
+```bash
+export ORIONCLI_BOOTSTRAP_SECRET=...   # or --bootstrap-secret-file, or a prompt
+orion-cli bootstrap --host orion-api.example.com --api-san orion.example.com
+# Passphrase for the CA keys:
+# Repeat the passphrase:
+# Created the bootstrap key pair in /home/me/.orion/cli
+# The api proved that it has the bootstrap secret
+# Stored the certificates and the CA keys in /home/me/.orion/cli
+# The api is in normal mode and deleted the CA keys: the bootstrap is done
+```
+
+- The cli stores the same files as `orion-cli pki init`, with the CA keys encrypted with the passphrase. It refuses to
+  start when one of them exists already.
+- The api certificate gets the hostname and the addresses of the api host, the host of `--base-url`, and the names in
+  `--api-san` (e.g. a load balancer or a DNS alias), on top of `localhost`, `127.0.0.1` and `::1`.
+- The secret can be used once, and is valid for `--bootstrap-secret-ttl` (24 hours) from the start of bootstrap mode.
+  The api keeps it (and its expiry) across restarts until it is used up or expired; a generated secret is stored in
+  `<pki-dir>/bootstrap-state.json` (mode `0600`) for that.
+- After 5 wrong secrets within a minute, the api refuses bootstrap requests for the rest of that minute.
+- When the last step (the confirmation) failed, run `orion-cli bootstrap confirm`. When the cli lost its files before it
+  confirmed, restart the api with `--rebootstrap` to start over; after the confirmation, `--rebootstrap` changes
+  nothing.
+- The api needs to write to `--pki-dir`: in a container, mount a writable volume owned by uid 1000, not a read-only
+  directory or a Kubernetes Secret. Bootstrap mode supports one api instance.
+
 ### Probe port
 
 | Endpoint | Returns |
 |----------|---------|
 | `/livez` | 200 as long as the api process serves requests. It doesn't check the store. Use it for the liveness probe. |
 | `/readyz` | 200 when the api serves, isn't shutting down and its store answers within a second; 503 otherwise. Use it for the readiness probe and load balancers. |
-| `/status` | The mode of the api, e.g. `{"mode":"normal"}`. |
+| `/status` | The mode of the api: `{"mode":"normal"}`, or `{"mode":"bootstrap"}` while it waits for `orion-cli bootstrap`. |
 | `/metrics` | Prometheus metrics, see below. |
 
 The probes follow the Kubernetes conventions: a store outage makes the api not ready (Kubernetes stops sending

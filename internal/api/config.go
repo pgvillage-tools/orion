@@ -15,6 +15,7 @@
 package api
 
 import (
+	"errors"
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
@@ -56,6 +57,18 @@ type Config struct {
 	BootstrapSecretFile string
 	// BootstrapSecretTTL is the time the bootstrap secret is valid, from the start of bootstrap mode
 	BootstrapSecretTTL time.Duration
+	// Rebootstrap removes the files of a bootstrap the cli didn't confirm, so the api starts a new one
+	Rebootstrap bool
+}
+
+// errRebootstrapExplicit is returned for --rebootstrap with certificate files that are set explicitly: those are
+// never from a bootstrap
+var errRebootstrapExplicit = errors.New("--rebootstrap only works with the files in --pki-dir, not with " +
+	"--tls-cert-file, --tls-key-file or --tls-ca-file")
+
+// explicitTLSFiles returns whether a certificate file is set explicitly: then there is no bootstrap
+func (c Config) explicitTLSFiles() bool {
+	return c.TLSCertFile != "" || c.TLSKeyFile != "" || c.TLSCAFile != ""
 }
 
 // tlsFiles returns the files of the api: the files in the pki directory, unless a file is set explicitly

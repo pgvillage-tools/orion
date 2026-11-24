@@ -50,8 +50,6 @@ var cmdBootstrap = &cobra.Command{
 	RunE:  runBootstrap,
 	Args:  cobra.NoArgs,
 	Short: "Bootstrap an api that started without certificates",
-	// bootstrap mode isn't enabled in the api yet (#323 enables it)
-	Hidden: true,
 	Long: `Bootstrap an api that started without certificates (bootstrap mode).
 
 The cli checks on the probe port (--probe-port) that the api is in bootstrap mode, and connects to

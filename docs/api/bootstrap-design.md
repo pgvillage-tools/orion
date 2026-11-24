@@ -9,7 +9,7 @@ date: 2026-11-07
 # TLS and bootstrap design
 
 This page describes how Orion secures the connections between its components with TLS, and how the api and the cli get
-their certificates. Most of it is not implemented yet: see [Roadmap](#roadmap) for what is done and what is planned.
+their certificates. See [Roadmap](#roadmap) for what is done and what is planned.
 
 ## TL;DR
 
@@ -346,8 +346,6 @@ ORIONCLI_BOOTSTRAP_SECRET=... orion-cli bootstrap --host orion-api.example.com
    new client certificate, verifying the api with the new root. When the confirmation fails, run
    `orion-cli bootstrap confirm` to try it again.
 
-The command stays hidden in `orion-cli --help` until bootstrap mode is enabled in the api (#323).
-
 ### Why this is safe
 
 - **A man in the middle can't take over the bootstrap.** The api certificate is self-signed, so the cli can't verify it,
@@ -362,7 +360,8 @@ The command stays hidden in `orion-cli --help` until bootstrap mode is enabled i
 
 ### State and recovery
 
-The api stores the state of the bootstrap, so it can continue after a restart:
+The api stores the state of the bootstrap in `bootstrap-state.json` in its `--pki-dir` (mode `0600`), so it can continue
+after a restart:
 
 | State | api port | CA keys on the api |
 |-------|----------|--------------------|
@@ -370,11 +369,27 @@ The api stores the state of the bootstrap, so it can continue after a restart:
 | `handed-over` | Normal mode | Only in the archive, encrypted to the cli, until the cli confirms |
 | `confirmed` | Normal mode | No |
 
-- After a restart, the api continues in the state it was in. The secret stays valid until it expires. A restart during
-  `bootstrapping` makes a new CA at the next archive request. (Not yet, #323: until the state and the secret are
-  stored, a restart in bootstrap mode starts a new bootstrap, with a new generated secret.)
-- If the cli never confirms (e.g. it lost the archive), nobody can connect to the api. Restart the api with
-  `--rebootstrap` to start over. The api doesn't fall back to bootstrap mode by itself.
+- **Bootstrap mode** writes `bootstrapping`, the SHA-256 of the secret and its expiry at the start. A generated secret
+  is stored too, since the api logs it only once; a secret you set (`ORIONAPI_BOOTSTRAP_SECRET` or
+  `--bootstrap-secret-file`) is not, it stays where you keep it.
+- **After a restart in bootstrap mode** the api continues with the same secret and expiry, as long as the secret is
+  still valid (and, for a secret you set, it is the same one). Otherwise it starts over: a new generated secret (logged
+  again) or the one you set, with a new expiry. A restart also makes a new CA at the next archive request: the old one
+  was only in memory.
+- **`stored`** writes the files of the api and the archive first, and then `handed-over` without the secret: the
+  secret is used up. When the api stops in between, the archive is there while the state is still `bootstrapping`: at
+  its next start, the api removes the archive and its files, and continues the bootstrap. The cli then has files
+  already: move them away before bootstrapping again (the cli says so).
+- **The confirmation** removes the archive and writes `confirmed`.
+- **Certificates from elsewhere**: when the api finds all its files at start while the state is still `bootstrapping`
+  (you put your own certificates there), it starts in normal mode and removes the state, with the secret.
+- **When the cli never confirms** (e.g. it lost its files), nobody can connect to the api, which logs a warning at
+  every start. Restart the api with `--rebootstrap`: it removes the files of the bootstrap (the certificate and key of
+  the api, the archive and the state) and starts a new one. `--rebootstrap` only acts while the bootstrap isn't
+  confirmed: after the confirmation, and with your own certificates (no state), it changes nothing and logs a warning,
+  so a flag that stays set (e.g. `ORIONAPI_REBOOTSTRAP` in a manifest) can't remove a working PKI. With
+  `--tls-cert-file`, `--tls-key-file` or `--tls-ca-file` it is an error.
+- The api doesn't fall back to bootstrap mode by itself.
 
 ## Bring your own PKI
 
@@ -427,7 +442,7 @@ either a certificate or a token.
 
 | Where | Directory | Contents |
 |-------|-----------|----------|
-| api | `~/.orion/api/` (`--pki-dir`) | Its server certificate and key, the chain to verify clients, and between the hand-over and the confirmation the archive (`bootstrap-archive.json`, the keys encrypted to the cli) |
+| api | `~/.orion/api/` (`--pki-dir`) | Its server certificate and key, the chain to verify clients, the state of the bootstrap (`bootstrap-state.json`), and between the hand-over and the confirmation the archive (`bootstrap-archive.json`, the keys encrypted to the cli) |
 | cli | `~/.orion/cli/` | Its bootstrap key pair (`bootstrap.key`, encrypted, and `bootstrap.pub`), its client certificate, the chains, and the encrypted CA keys |
 
 The directories are only readable for their owner, and private keys are stored with mode `0600`.
@@ -446,15 +461,14 @@ Implemented:
 - [x] `/metrics` on the probe port, with the expiry of the certificates.
 - [x] The CA keys on the cli are encrypted with a passphrase (encrypted PKCS#8, readable by OpenSSL).
 
-In progress:
+The bootstrap:
 
 - [x] Bootstrap mode on the api port: the temporary self-signed certificate, only the bootstrap routes, `/status`
-  reports `bootstrap`, and the switch to normal mode (#319). It stays off until the bootstrap is complete: until then
-  an api without certificates fails with an error.
+  reports `bootstrap`, and the switch to normal mode (#319).
 - [x] The shared secret and the mutual HMAC: the challenge and proof endpoints (#320).
 - [x] `orion-cli bootstrap` up to the proofs, and the key pair of the cli (#321).
 - [x] The archive, `stored`, the switch to normal mode and the confirmation (#322).
-- [ ] The stored state and secret, resuming after a restart, `--rebootstrap`, and enabling bootstrap mode (#323).
+- [x] The stored state and secret, resuming after a restart, `--rebootstrap`, and enabling bootstrap mode (#323).
 
 Later, each in its own PR:
 
