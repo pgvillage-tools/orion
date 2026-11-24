@@ -63,8 +63,8 @@ var _ = Describe("generateHBA", func() {
 		db3 = "db3"
 	)
 	const (
-		defaultLine1 = "local postgres superuser md5"
-		defaultLine2 = "local replication repluser md5"
+		defaultLine1 = "local postgres superuser scram-sha-256"
+		defaultLine2 = "local replication repluser scram-sha-256"
 	)
 
 	// minimal clusterdata with only the fields used by generateHBA
@@ -120,12 +120,12 @@ var _ = Describe("generateHBA", func() {
 		func(mode cluster.SUReplAccessMode, dbUID string, pgHBA []string, out []string) {
 			p := &PostgresKeeper{
 				pgSUConnType:          "host",
-				pgSULocalAuthMethod:   "md5",
-				pgSUAuthMethod:        "md5",
+				pgSULocalAuthMethod:   authScram,
+				pgSUAuthMethod:        authScram,
 				pgSUUsername:          "superuser",
 				pgReplConnType:        "host",
-				pgReplLocalAuthMethod: "md5",
-				pgReplAuthMethod:      "md5",
+				pgReplLocalAuthMethod: authScram,
+				pgReplAuthMethod:      authScram,
 				pgReplUsername:        "repluser",
 			}
 			cd := newClusterData()
@@ -138,58 +138,58 @@ var _ = Describe("generateHBA", func() {
 		Entry("all, primary", cluster.SUReplAccessAll, db1, nil, []string{
 			defaultLine1,
 			defaultLine2,
-			"host all superuser 0.0.0.0/0 md5",
-			"host all superuser ::0/0 md5",
-			"host replication repluser 0.0.0.0/0 md5",
-			"host replication repluser ::0/0 md5",
-			"host all all 0.0.0.0/0 md5",
-			"host all all ::0/0 md5",
+			"host all superuser 0.0.0.0/0 scram-sha-256",
+			"host all superuser ::0/0 scram-sha-256",
+			"host replication repluser 0.0.0.0/0 scram-sha-256",
+			"host replication repluser ::0/0 scram-sha-256",
+			"host all all 0.0.0.0/0 scram-sha-256",
+			"host all all ::0/0 scram-sha-256",
 		}),
 		Entry("all, replica", cluster.SUReplAccessAll, db2, nil, []string{
 			defaultLine1,
 			defaultLine2,
-			"host all superuser 0.0.0.0/0 md5",
-			"host all superuser ::0/0 md5",
-			"host replication repluser 0.0.0.0/0 md5",
-			"host replication repluser ::0/0 md5",
-			"host all all 0.0.0.0/0 md5",
-			"host all all ::0/0 md5",
+			"host all superuser 0.0.0.0/0 scram-sha-256",
+			"host all superuser ::0/0 scram-sha-256",
+			"host replication repluser 0.0.0.0/0 scram-sha-256",
+			"host replication repluser ::0/0 scram-sha-256",
+			"host all all 0.0.0.0/0 scram-sha-256",
+			"host all all ::0/0 scram-sha-256",
 		}),
-		Entry("all, primary, pghba", cluster.SUReplAccessAll, db1, []string{"host all all 192.168.0.0/24 md5"},
+		Entry("all, primary, pghba", cluster.SUReplAccessAll, db1, []string{"host all all 192.168.0.0/24 scram-sha-256"},
 			[]string{
 				defaultLine1,
 				defaultLine2,
-				"host all superuser 0.0.0.0/0 md5",
-				"host all superuser ::0/0 md5",
-				"host replication repluser 0.0.0.0/0 md5",
-				"host replication repluser ::0/0 md5",
-				"host all all 192.168.0.0/24 md5",
+				"host all superuser 0.0.0.0/0 scram-sha-256",
+				"host all superuser ::0/0 scram-sha-256",
+				"host replication repluser 0.0.0.0/0 scram-sha-256",
+				"host replication repluser ::0/0 scram-sha-256",
+				"host all all 192.168.0.0/24 scram-sha-256",
 			}),
-		Entry("all, replica, pghba", cluster.SUReplAccessAll, db2, []string{"host all all 192.168.0.0/24 md5"},
+		Entry("all, replica, pghba", cluster.SUReplAccessAll, db2, []string{"host all all 192.168.0.0/24 scram-sha-256"},
 			[]string{
 				defaultLine1,
 				defaultLine2,
-				"host all superuser 0.0.0.0/0 md5",
-				"host all superuser ::0/0 md5",
-				"host replication repluser 0.0.0.0/0 md5",
-				"host replication repluser ::0/0 md5",
-				"host all all 192.168.0.0/24 md5",
+				"host all superuser 0.0.0.0/0 scram-sha-256",
+				"host all superuser ::0/0 scram-sha-256",
+				"host replication repluser 0.0.0.0/0 scram-sha-256",
+				"host replication repluser ::0/0 scram-sha-256",
+				"host all all 192.168.0.0/24 scram-sha-256",
 			}),
 		Entry("strict, primary", cluster.SUReplAccessStrict, db1, nil, []string{
 			defaultLine1,
 			defaultLine2,
-			"host all superuser 192.168.0.2/32 md5",
-			"host replication repluser 192.168.0.2/32 md5",
-			"host all superuser 192.168.0.3/32 md5",
-			"host replication repluser 192.168.0.3/32 md5",
-			"host all all 0.0.0.0/0 md5",
-			"host all all ::0/0 md5",
+			"host all superuser 192.168.0.2/32 scram-sha-256",
+			"host replication repluser 192.168.0.2/32 scram-sha-256",
+			"host all superuser 192.168.0.3/32 scram-sha-256",
+			"host replication repluser 192.168.0.3/32 scram-sha-256",
+			"host all all 0.0.0.0/0 scram-sha-256",
+			"host all all ::0/0 scram-sha-256",
 		}),
 		Entry("strict, replica", cluster.SUReplAccessStrict, db2, nil, []string{
 			defaultLine1,
 			defaultLine2,
-			"host all all 0.0.0.0/0 md5",
-			"host all all ::0/0 md5",
+			"host all all 0.0.0.0/0 scram-sha-256",
+			"host all all ::0/0 scram-sha-256",
 		}),
 	)
 })
@@ -327,12 +327,12 @@ var _ = Describe("generateHBA with only internal users", func() {
 	hbaTestKeeper := func() *PostgresKeeper {
 		return &PostgresKeeper{
 			pgSUConnType:          connTypeHost,
-			pgSULocalAuthMethod:   authMd5,
-			pgSUAuthMethod:        authMd5,
+			pgSULocalAuthMethod:   authScram,
+			pgSUAuthMethod:        authScram,
 			pgSUUsername:          "superuser",
 			pgReplConnType:        connTypeHost,
-			pgReplLocalAuthMethod: authMd5,
-			pgReplAuthMethod:      authMd5,
+			pgReplLocalAuthMethod: authScram,
+			pgReplAuthMethod:      authScram,
 			pgReplUsername:        "repluser",
 		}
 	}
@@ -364,26 +364,26 @@ var _ = Describe("generateHBA with only internal users", func() {
 	}
 
 	const (
-		local1 = "local postgres superuser md5"
-		local2 = "local replication repluser md5"
+		local1 = "local postgres superuser scram-sha-256"
+		local2 = "local replication repluser scram-sha-256"
 	)
 	allEntries := []string{
 		local1,
 		local2,
-		"host all superuser 0.0.0.0/0 md5",
-		"host all superuser ::0/0 md5",
-		"host replication repluser 0.0.0.0/0 md5",
-		"host replication repluser ::0/0 md5",
+		"host all superuser 0.0.0.0/0 scram-sha-256",
+		"host all superuser ::0/0 scram-sha-256",
+		"host replication repluser 0.0.0.0/0 scram-sha-256",
+		"host replication repluser ::0/0 scram-sha-256",
 	}
 	strictPrimaryEntries := []string{
 		local1,
 		local2,
-		"host all superuser 192.168.0.2/32 md5",
-		"host replication repluser 192.168.0.2/32 md5",
-		"host all superuser 192.168.0.3/32 md5",
-		"host replication repluser 192.168.0.3/32 md5",
+		"host all superuser 192.168.0.2/32 scram-sha-256",
+		"host replication repluser 192.168.0.2/32 scram-sha-256",
+		"host all superuser 192.168.0.3/32 scram-sha-256",
+		"host replication repluser 192.168.0.3/32 scram-sha-256",
 	}
-	customHBA := []string{"host all all 192.168.0.0/24 md5", "hostssl app appuser 10.0.0.0/8 scram-sha-256"}
+	customHBA := []string{"host all all 192.168.0.0/24 scram-sha-256", "hostssl app appuser 10.0.0.0/8 scram-sha-256"}
 
 	DescribeTable("locks normal users out",
 		func(mode cluster.SUReplAccessMode, dbUID string, pgHBA []string, want []string) {
@@ -412,6 +412,22 @@ var _ = Describe("generateHBA with only internal users", func() {
 			[]string{local1, local2}),
 	)
 
+	// in strict mode, the entry of the superuser has the auth method of the superuser, not the one of the replication
+	// user
+	It("uses the auth method of each user in strict mode", func() {
+		p := hbaTestKeeper()
+		p.pgReplAuthMethod = authMd5
+		cd := hbaTestClusterData(cluster.SUReplAccessStrict)
+		Expect(p.generateHBA(context.Background(), cd, cd.DBs["db1"], true)).To(Equal([]string{
+			local1,
+			"local replication repluser scram-sha-256",
+			"host all superuser 192.168.0.2/32 scram-sha-256",
+			"host replication repluser 192.168.0.2/32 md5",
+			"host all superuser 192.168.0.3/32 scram-sha-256",
+			"host replication repluser 192.168.0.3/32 md5",
+		}))
+	})
+
 	// cert, which postgres doesn't support for local connections, becomes peer in the local entries, while the host
 	// entries keep cert.
 	It("uses peer instead of cert for the local entries", func() {
@@ -437,6 +453,7 @@ var _ = DescribeTable("localAuthMethod",
 		Expect(localAuthMethod(context.Background(), in)).To(Equal(want))
 	},
 	Entry(nil, authCert, authPeer),
+	Entry(nil, authScram, authScram),
 	Entry(nil, authMd5, authMd5),
 	Entry(nil, authTrust, authTrust),
 	Entry(nil, authPeer, authPeer),
@@ -559,8 +576,8 @@ var _ = Describe("ValidateUsersConfig", func() {
 	// valid returns the settings of the flag defaults, with passwords
 	valid := func() *Config {
 		return &Config{
-			PGSUUsername: "postgres", PGSUAuthMethod: authMd5, PGSUConnType: connTypeHost, PGSUPassword: "supass",
-			PGReplUsername: "repl", PGReplAuthMethod: authMd5, PGReplConnType: connTypeHost, PGReplPassword: "replpass",
+			PGSUUsername: "postgres", PGSUAuthMethod: authScram, PGSUConnType: connTypeHost, PGSUPassword: "supass",
+			PGReplUsername: "repl", PGReplAuthMethod: authScram, PGReplConnType: connTypeHost, PGReplPassword: "replpass",
 		}
 	}
 	sameUser := func(c *Config) { c.PGSUUsername, c.PGReplUsername = "pg", "pg" }
@@ -633,10 +650,23 @@ var _ = Describe("ValidateUsersConfig", func() {
 			c.PGSUAuthMethod, c.PGSUPassword, c.PGReplAuthMethod, c.PGReplPassword = authCert, "", authCert, ""
 		}, ""),
 		Entry("peer is a valid auth method", func(c *Config) { c.PGSULocalAuthMethod = authPeer }, ""),
+		Entry("md5 is still a valid auth method", func(c *Config) {
+			c.PGSUAuthMethod, c.PGReplAuthMethod = authMd5, authMd5
+		}, ""),
+		Entry("md5 needs a superuser password", func(c *Config) { c.PGSUAuthMethod, c.PGSUPassword = authMd5, "" },
+			"one of --pg-su-password or --pg-su-passwordfile is required"),
+		Entry("md5 needs a replication password", func(c *Config) {
+			c.PGReplAuthMethod, c.PGReplPassword = authMd5, ""
+		}, "one of --pg-repl-password or --pg-repl-passwordfile is required"),
+		Entry("same user with md5, different password", func(c *Config) {
+			sameUser(c)
+			c.PGSUAuthMethod, c.PGReplAuthMethod = authMd5, authMd5
+			c.PGSUPassword, c.PGReplPassword = "pass1", "pass2"
+		}, "provided superuser name and replication user name are the same but provided passwords are different"),
 		Entry("invalid repl auth method", func(c *Config) { c.PGReplAuthMethod = "bogus" },
-			"--pg-repl-auth-method must be one of: md5, trust, cert, ident or peer"),
+			"--pg-repl-auth-method must be one of: scram-sha-256, md5, trust, cert, ident or peer"),
 		Entry("invalid su auth method", func(c *Config) { c.PGSUAuthMethod = "bogus" },
-			"--pg-su-auth-method must be one of: md5, trust, cert, ident or peer"),
+			"--pg-su-auth-method must be one of: scram-sha-256, md5, trust, cert, ident or peer"),
 		Entry("invalid su connection type", func(c *Config) { c.PGSUConnType = "tcp" },
 			"--pg-su-connection-type must be one of"),
 	)
@@ -645,8 +675,8 @@ var _ = Describe("ValidateUsersConfig", func() {
 		c := valid()
 		c.PGSUPassword, c.PGSUPasswordFile = "", suNLFile
 		Expect(ValidateUsersConfig(context.Background(), c)).To(Succeed())
-		Expect(c.PGSULocalAuthMethod).To(Equal(authMd5))
-		Expect(c.PGReplLocalAuthMethod).To(Equal(authMd5))
+		Expect(c.PGSULocalAuthMethod).To(Equal(authScram))
+		Expect(c.PGReplLocalAuthMethod).To(Equal(authScram))
 		Expect(c.PGSUPassword).To(Equal("supass"))
 	})
 })
@@ -730,6 +760,7 @@ var _ = DescribeTable("usePgrewind",
 		db := &cluster.DB{Spec: &cluster.DBSpec{UsePgrewind: dbUsePgrewind}}
 		Expect(p.usePgrewind(db)).To(Equal(want))
 	},
+	Entry(nil, "su", "pw", authScram, true, true),
 	Entry(nil, "su", "pw", authMd5, true, true),
 	Entry(nil, "su", "", authCert, true, true),
 	Entry(nil, "su", "pw", authMd5, false, false),
@@ -921,19 +952,21 @@ var _ = Describe("the connection parameters", func() {
 	}
 	appName := common.OrionName(db.UID)
 
-	DescribeTable("have the password only with md5",
+	DescribeTable("have the password only with a password auth method",
 		func(get func(p *PostgresKeeper) pg.ConnParams, want pg.ConnParams) {
-			// the password is only part of the conn params with md5
+			// the password is only part of the conn params with scram-sha-256 and md5
 			got := get(newKeeper(authCert))
 			Expect(got.Equals(want)).To(BeTrue(), "cert: got %v, want %v", got, want)
-			wantMd5 := want.Copy()
+			wantPassword := want.Copy()
 			if want[pg.ConnParamKeyUser] == "su" {
-				wantMd5[pg.ConnParamKeyPassword] = "supw"
+				wantPassword[pg.ConnParamKeyPassword] = "supw"
 			} else {
-				wantMd5[pg.ConnParamKeyPassword] = "replpw"
+				wantPassword[pg.ConnParamKeyPassword] = "replpw"
 			}
-			got = get(newKeeper(authMd5))
-			Expect(got.Equals(wantMd5)).To(BeTrue(), "md5: got %v, want %v", got, wantMd5)
+			for _, auth := range []string{authScram, authMd5} {
+				got = get(newKeeper(auth))
+				Expect(got.Equals(wantPassword)).To(BeTrue(), "%s: got %v, want %v", auth, got, wantPassword)
+			}
 		},
 		Entry("su", func(p *PostgresKeeper) pg.ConnParams { return p.getSUConnParams(db, followed) }, pg.ConnParams{
 			pg.ConnParamKeyUser: "su", pg.ConnParamKeyHost: "10.0.0.1", pg.ConnParamKeyPort: "5432",

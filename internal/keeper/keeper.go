@@ -48,6 +48,7 @@ const (
 
 	authTrust = "trust"
 	authMd5   = "md5"
+	authScram = "scram-sha-256"
 	authCert  = "cert"
 	authIdent = "ident"
 	authPeer  = "peer"

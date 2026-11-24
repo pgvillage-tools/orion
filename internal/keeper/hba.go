@@ -63,8 +63,8 @@ func localAuthMethod(ctx context.Context, authMethod string) string {
 func (p *PostgresKeeper) generateHBA(ctx context.Context, cd *cluster.Data, db *cluster.DB,
 	onlyInternal bool) []string {
 	// Minimal entries for local normal and replication connections needed by the orion keeper
-	// Matched local connections are for postgres database and suUsername user with authMd5 auth
-	// Matched local replication connections are for replUsername user with authMd5 auth
+	// Matched local connections are for postgres database and suUsername user with the local auth method of the
+	// superuser; matched local replication connections are for replUsername user with the one of the replication user
 	computedHBA := []string{
 		fmt.Sprintf("local postgres %s %s", p.pgSUUsername, localAuthMethod(ctx, p.pgSULocalAuthMethod)),
 		fmt.Sprintf("local replication %s %s", p.pgReplUsername, localAuthMethod(ctx, p.pgReplLocalAuthMethod)),
@@ -99,7 +99,7 @@ func (p *PostgresKeeper) generateHBA(ctx context.Context, cd *cluster.Data, db *
 						p.pgSUConnType,
 						p.pgSUUsername,
 						address,
-						p.pgReplAuthMethod),
+						p.pgSUAuthMethod),
 					fmt.Sprintf(
 						"%s replication %s %s/32 %s",
 						p.pgReplConnType,
@@ -113,7 +113,7 @@ func (p *PostgresKeeper) generateHBA(ctx context.Context, cd *cluster.Data, db *
 
 	if !onlyInternal {
 		// By default, if no custom pg_hba entries are provided, accept
-		// connections for all databases and users with authMd5 auth
+		// connections for all databases and users with the auth method of the superuser
 		if db.Spec.PGHBA != nil {
 			computedHBA = append(computedHBA, db.Spec.PGHBA...)
 		} else {

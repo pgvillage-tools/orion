@@ -109,7 +109,7 @@ var _ = Describe("Manager", func() {
 			ConnParamKeySSLMode: "disable",
 		}
 		return NewManager(binDir, data, wal, noServer, noServer.Copy(),
-			"md5", "postgres", "supass", "md5", "repl", "replpass", time.Second)
+			"scram-sha-256", "postgres", "supass", "scram-sha-256", "repl", "replpass", time.Second)
 	}
 	newManager := func(wal string) *Manager {
 		return newManagerIn(filepath.Join(base, "data"), wal)
