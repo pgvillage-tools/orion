@@ -47,27 +47,28 @@ func statusOf(err *bootstrapError) int {
 	return err.status
 }
 
-var _ = Describe("bootstrapSecret", func() {
-	// logged returns a context with a logger that writes to out, at the level of the api component
-	logged := func(ctx context.Context, out *bytes.Buffer) context.Context {
-		_, componentLogger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-		logger := zerolog.New(out).Level(componentLogger.GetLevel())
-		return logger.WithContext(ctx)
-	}
+// logged returns a context with a logger that writes to out, at the level of the api component
+func logged(ctx context.Context, out *bytes.Buffer) context.Context {
+	_, componentLogger := logging.GetLogComponent(ctx, logging.WebApiComponent)
+	logger := zerolog.New(out).Level(componentLogger.GetLevel())
+	return logger.WithContext(ctx)
+}
 
+var _ = Describe("configuredSecret and generateSecret", func() {
 	It("takes the secret from the environment variable", func(ctx SpecContext) {
-		Expect(bootstrapSecret(ctx, Config{BootstrapSecret: testSecret})).To(Equal([]byte(testSecret)))
+		Expect(configuredSecret(Config{BootstrapSecret: testSecret})).To(Equal([]byte(testSecret)))
 	})
 
 	It("takes the secret from a file, without the newline", func(ctx SpecContext) {
 		file := filepath.Join(GinkgoT().TempDir(), "secret")
 		Expect(os.WriteFile(file, []byte(testSecret+"\n"), 0o600)).To(Succeed())
-		Expect(bootstrapSecret(ctx, Config{BootstrapSecretFile: file})).To(Equal([]byte(testSecret)))
+		Expect(configuredSecret(Config{BootstrapSecretFile: file})).To(Equal([]byte(testSecret)))
 	})
 
 	It("generates a secret of 128 bits, and logs it once", func(ctx SpecContext) {
 		var out bytes.Buffer
-		secret, err := bootstrapSecret(logged(ctx, &out), Config{})
+		Expect(configuredSecret(Config{})).To(BeNil(), "no secret was set")
+		secret, err := generateSecret(logged(ctx, &out))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(secret).To(HaveLen(26))
 		raw, err := generatedSecretEncoding.DecodeString(string(secret))
@@ -75,14 +76,14 @@ var _ = Describe("bootstrapSecret", func() {
 		Expect(raw).To(HaveLen(generatedSecretBytes))
 		Expect(strings.Count(out.String(), string(secret))).To(Equal(1), "the secret is logged once")
 
-		other, err := bootstrapSecret(ctx, Config{})
+		other, err := generateSecret(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(other).NotTo(Equal(secret))
 	})
 
 	DescribeTable("refuses",
 		func(ctx SpecContext, cfg func(dir string) Config, want string) {
-			_, err := bootstrapSecret(ctx, cfg(GinkgoT().TempDir()))
+			_, err := configuredSecret(cfg(GinkgoT().TempDir()))
 			Expect(err).To(MatchError(ContainSubstring(want)))
 		},
 		Entry("a short secret", func(string) Config { return Config{BootstrapSecret: "too short"} },
@@ -103,18 +104,18 @@ var _ = Describe("bootstrapSecret", func() {
 
 var _ = Describe("newBootstrapperFromConfig", func() {
 	It("uses the default ttl", func(ctx SpecContext) {
-		b, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret}, "")
+		b, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret}, GinkgoT().TempDir(), bootstrapState{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(b.expires).To(BeTemporally("~", time.Now().Add(DefaultBootstrapSecretTTL), time.Second))
 	})
 
 	It("refuses a negative ttl", func(ctx SpecContext) {
-		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret, BootstrapSecretTTL: -1}, "")
+		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: testSecret, BootstrapSecretTTL: -1}, GinkgoT().TempDir(), bootstrapState{})
 		Expect(err).To(MatchError(errBootstrapTTL))
 	})
 
 	It("returns the error of the secret", func(ctx SpecContext) {
-		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: "short"}, "")
+		_, err := newBootstrapperFromConfig(ctx, Config{BootstrapSecret: "short"}, GinkgoT().TempDir(), bootstrapState{})
 		Expect(err).To(HaveOccurred())
 	})
 })

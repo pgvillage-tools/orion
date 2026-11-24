@@ -17,9 +17,7 @@ package api
 import (
 	"crypto/hpke"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -128,6 +126,10 @@ func (b *bootstrapper) stored(ekm []byte) *bootstrapError {
 	if err == nil {
 		err = pki.WriteAPIFiles(*session.chain, b.dir)
 	}
+	if err == nil {
+		// the secret is used up: it isn't stored anymore
+		err = writeBootstrapState(b.dir, bootstrapState{State: stateHandedOver})
+	}
 	if err != nil {
 		return &bootstrapError{status: http.StatusInternalServerError,
 			detail: "failed to store the certificate of the api: " + err.Error()}
@@ -198,6 +200,19 @@ func (h *Handlers) BootstrapStoredHandler(w http.ResponseWriter, r *http.Request
 	h.finishBootstrap()
 }
 
+// confirmBootstrap removes the archive from the api directory dir, and stores the confirmed state when there was a
+// bootstrap
+func confirmBootstrap(dir string) error {
+	if _, err := removeFiles(dir, pki.APIBootstrapArchiveFile); err != nil {
+		return err
+	}
+	state, err := readBootstrapState(dir)
+	if err != nil || state.State != stateHandedOver {
+		return err
+	}
+	return writeBootstrapState(dir, bootstrapState{State: stateConfirmed})
+}
+
 // BootstrapConfirmRoutes returns the route of the confirmation, in normal mode
 func (h *Handlers) BootstrapConfirmRoutes() []Route {
 	return []Route{
@@ -215,16 +230,12 @@ func (h *Handlers) BootstrapConfirmHandler(w http.ResponseWriter, r *http.Reques
 		endpoints.WriteProblem(w, http.StatusForbidden, "only "+pki.CLIClientName+" can confirm the bootstrap")
 		return
 	}
-	if h.archiveFile != "" {
-		err := os.Remove(h.archiveFile)
-		switch {
-		case err == nil:
-			logger.Info().Str("client", r.RemoteAddr).
-				Msg("the cli confirmed the bootstrap: removed the archive with the CA keys")
-		case !errors.Is(err, fs.ErrNotExist):
-			handleError(ctx, err, w, "failed to remove the bootstrap archive")
+	if h.pkiDir != "" {
+		if err := confirmBootstrap(h.pkiDir); err != nil {
+			handleError(ctx, err, w, "failed to finish the bootstrap")
 			return
 		}
+		logger.Info().Str("client", r.RemoteAddr).Msg("the cli confirmed the bootstrap")
 	}
 	h.writeJSON(ctx, w, endpoints.BootstrapStatusResponse{Status: endpoints.BootstrapStatusConfirmed})
 }

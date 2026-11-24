@@ -294,9 +294,9 @@ var _ = Describe("bootstrap", func() {
 		Ω(err).To(MatchError(ContainSubstring("passphrase")))
 	})
 
-	It("is hidden until the api supports bootstrap mode", func() {
+	It("is in the help", func() {
 		out, _, err := run("--help")
 		Ω(err).NotTo(HaveOccurred())
-		Ω(strings.Contains(out, "bootstrap")).To(BeFalse())
+		Ω(strings.Contains(out, "bootstrap")).To(BeTrue())
 	})
 })

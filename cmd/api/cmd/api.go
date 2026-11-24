@@ -67,14 +67,9 @@ func init() {
 		"file with the bootstrap secret (default: "+api.BootstrapSecretEnv+", or a generated secret that is logged)")
 	CmdWebApi.PersistentFlags().DurationVar(&cfg.BootstrapSecretTTL, "bootstrap-secret-ttl",
 		api.DefaultBootstrapSecretTTL, "time the bootstrap secret is valid, from the start of bootstrap mode")
+	CmdWebApi.PersistentFlags().BoolVar(&cfg.Rebootstrap, "rebootstrap", false,
+		"remove the files of a bootstrap the cli didn't confirm (e.g. it lost them), and start a new one")
 	// revive:enable
-	// bootstrap mode isn't enabled yet (#323 enables it): its flags stay hidden until then
-	for _, name := range []string{"bootstrap-secret-file", "bootstrap-secret-ttl"} {
-		if err := CmdWebApi.PersistentFlags().MarkHidden(name); err != nil {
-			_, logger := logging.GetLogComponent(context.Background(), logging.WebApiComponent)
-			logger.Fatal().AnErr(keyError, err).Msg("")
-		}
-	}
 }
 
 // Execute can be used to start and run the API

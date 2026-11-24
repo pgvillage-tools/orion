@@ -89,9 +89,24 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	// the bootstrap stores its files in the api directory: only when no file is set explicitly
+	dir := filepath.Dir(files.CertFile)
+	var state bootstrapState
+	if cfg.explicitTLSFiles() {
+		if cfg.Rebootstrap {
+			return errRebootstrapExplicit
+		}
+	} else if state, err = prepareBootstrap(ctx, dir, cfg.Rebootstrap); err != nil {
+		return err
+	}
 	bootstrap, err := startsInBootstrap(cfg, files)
 	if err != nil {
 		return err
+	}
+	if !bootstrap {
+		if err = checkStateInNormalMode(ctx, dir, state); err != nil {
+			return err
+		}
 	}
 	metrics := newAPIMetrics(prometheus.NewRegistry())
 	store.SetMetrics(&cfg.CommonConfig, "api")
@@ -105,11 +120,11 @@ func Run(ctx context.Context, cfg Config) error {
 	var ready atomic.Bool
 	h := NewHandlers(cl, election, &ready)
 	h.storeTimeout = cfg.StoreTimeout
-	// in bootstrap mode, the files are in the api directory (none is set explicitly)
-	dir := filepath.Dir(files.CertFile)
-	h.archiveFile = filepath.Join(dir, pki.APIBootstrapArchiveFile)
+	if !cfg.explicitTLSFiles() {
+		h.pkiDir = dir
+	}
 	if bootstrap {
-		if h.bootstrap, err = newBootstrapperFromConfig(ctx, cfg, dir); err != nil {
+		if h.bootstrap, err = newBootstrapperFromConfig(ctx, cfg, dir, state); err != nil {
 			return err
 		}
 	}

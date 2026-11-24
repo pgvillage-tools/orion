@@ -225,4 +225,6 @@ When the pod of the leading sentinel goes away, the other sentinel takes over th
   annotations of an object (256 KiB).
 - Keepers, sentinels and proxies find each other by the labels of their pods, in their own namespace: a cluster name
   must be unique within the namespace, and the `orion-cluster` label must match `--cluster-name`.
-- The api must run with certificates; starting it without certificates (bootstrap mode) is planned.
+- The api runs with certificates from a Secret here. Bootstrap mode (`orion-cli bootstrap`, see
+  [Starting without certificates](../api/certificates.md#starting-without-certificates)) needs a writable volume for
+  the api files and one api replica, so these manifests don't use it.

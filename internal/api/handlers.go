@@ -49,8 +49,9 @@ type Handlers struct {
 	// bootstrapDone is closed (by finishBootstrap) when the api switches from bootstrap mode to normal mode
 	bootstrapDone chan struct{}
 	bootstrapOnce sync.Once
-	// archiveFile is the archive of the bootstrap in the api directory, which the confirmation of the cli removes
-	archiveFile string
+	// pkiDir is the api directory, with the archive and the state of the bootstrap: the confirmation of the cli
+	// removes the archive
+	pkiDir string
 }
 
 // NewHandlers returns a new Handlers object. election is only used to read the sentinel leader; the api never runs for

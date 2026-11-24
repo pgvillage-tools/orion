@@ -36,6 +36,10 @@ import (
 // cli. Its private keys are encrypted to the cli: the api can't read them.
 const APIBootstrapArchiveFile = "bootstrap-archive.json"
 
+// APIBootstrapStateFile holds the state of the bootstrap in the api directory, so the api can continue it after a
+// restart
+const APIBootstrapStateFile = "bootstrap-state.json"
+
 // ArchiveContents returns the certificates and the (unencrypted) private keys of chain (from Generate) for the
 // archive
 func ArchiveContents(chain oriontls.Chain) (endpoints.BootstrapCertificates, bootstrap.ArchiveKeys) {
