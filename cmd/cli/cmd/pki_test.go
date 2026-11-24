@@ -36,6 +36,7 @@ var _ = Describe("pkiInitOptions", func() {
 			rootValidity:         "10y",
 			intermediateValidity: "1000d",
 			leafValidity:         "720h",
+			subject:              &subjectFlags{organisation: "Acme", country: "nl", state: "UT", locality: "Utrecht"},
 		}
 		opts, err := o.initOptions("/cli", "api.example.org")
 		Ω(err).NotTo(HaveOccurred())
@@ -46,6 +47,9 @@ var _ = Describe("pkiInitOptions", func() {
 		Ω(opts.IntermediateExpiry).To(Equal(1000 * oriontls.Day))
 		Ω(opts.LeafExpiry).To(Equal(720 * time.Hour))
 		Ω(opts.KeyAlgorithm).To(Equal(oriontls.KeyAlgorithmRSA2048))
+		Ω(opts.Subject).To(Equal(pki.SubjectOptions{
+			Organisation: "Acme", Country: "NL", State: "UT", Locality: "Utrecht",
+		}), "expected the subject flags, with the country in upper case")
 
 		o.leafValidity = "forever"
 		_, err = o.initOptions("/cli", "localhost")

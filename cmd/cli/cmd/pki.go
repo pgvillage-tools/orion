@@ -48,6 +48,10 @@ intermediates) are stored in --pki-dir. The api files are stored in --api-dir: c
 The api certificate is valid for localhost, 127.0.0.1, ::1, the configured api host (--host) and
 the names in --api-san.
 
+All certificates get the subject of --org, --country, --state and --locality, with their own
+common name (CN). There is no flag for the organisational unit (OU): the api uses the OUs of a
+client certificate as the groups of the client.
+
 The private keys of the root and the intermediates are encrypted with a passphrase (at least 8
 characters). It is read from --ca-passphrase-file, else from ORIONCLI_CA_PASSPHRASE, else the cli
 asks for it on the terminal. The keys are encrypted PKCS#8, so openssl can read them too.`,
@@ -62,6 +66,7 @@ type pkiInitOptions struct {
 	leafValidity         string
 	force                bool
 	caPassphraseFile     string
+	subject              *subjectFlags
 }
 
 var pkiInitOpts pkiInitOptions
@@ -85,6 +90,7 @@ func init() {
 	flags.StringVar(&pkiInitOpts.caPassphraseFile, "ca-passphrase-file", "",
 		"file with the passphrase for the CA keys (- for stdin; default: "+envCAPassphrase+", else a prompt)")
 	flags.StringP(flagHost, "H", defaultAPIIP, "hostname or ip of the api (added to the api certificate)")
+	pkiInitOpts.subject = addSubjectFlags(flags)
 	cmdPKI.AddCommand(cmdPKIInit)
 	CmdCLI.AddCommand(cmdPKI)
 }
@@ -95,6 +101,9 @@ func (o pkiInitOptions) initOptions(cliDir, host string) (pki.InitOptions, error
 		APISANs:      append([]string{host}, o.apiSANs...),
 		KeyAlgorithm: oriontls.KeyAlgorithm(o.keyAlgorithm),
 		Force:        o.force,
+	}
+	if o.subject != nil {
+		opts.Subject = o.subject.options()
 	}
 	var err error
 	if opts.APIDir, err = pki.ExpandHome(o.apiDir); err != nil {

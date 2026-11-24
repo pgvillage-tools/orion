@@ -171,6 +171,29 @@ var _ = Describe("pki init", func() {
 		Ω(err).NotTo(HaveOccurred(), "expected --force to overwrite the files")
 	})
 
+	It("puts the subject flags on the certificates", func() {
+		apiDir := GinkgoT().TempDir()
+		usePKIDir(GinkgoT().TempDir())
+		_, _, err := run("pki", "init", "--api-dir", apiDir, "--org", "Acme", "--country", "nl",
+			"--state", "Utrecht", "--locality", "Utrecht")
+		Ω(err).NotTo(HaveOccurred())
+		certs, err := pki.APIFiles(apiDir).Certificates()
+		Ω(err).NotTo(HaveOccurred())
+		subject := certs[0].Subject
+		Ω(subject.CommonName).To(Equal(pki.APIServerName))
+		Ω(subject.Organization).To(Equal([]string{"Acme"}))
+		Ω(subject.Country).To(Equal([]string{"NL"}))
+		Ω(subject.Province).To(Equal([]string{"Utrecht"}))
+		Ω(subject.Locality).To(Equal([]string{"Utrecht"}))
+		Ω(subject.OrganizationalUnit).To(BeEmpty())
+	})
+
+	It("refuses an invalid country", func() {
+		usePKIDir(GinkgoT().TempDir())
+		_, _, err := run("pki", "init", "--api-dir", GinkgoT().TempDir(), "--country", "Netherlands")
+		expectError(err, `failed to create the certificates: invalid country "NETHERLANDS"`, "")
+	})
+
 	It("refuses an invalid validity", func() {
 		usePKIDir(GinkgoT().TempDir())
 		_, _, err := run("pki", "init", "--api-dir", GinkgoT().TempDir(), "--root-validity", "forever")

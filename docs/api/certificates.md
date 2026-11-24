@@ -81,8 +81,16 @@ Root CA
 | `--leaf-validity` | `1y` | Validity of the api and cli certificates. |
 | `--force` | | Overwrite existing files. |
 | `--ca-passphrase-file` | | File with the passphrase for the CA keys (`-` for stdin). |
+| `--org` | `PGVillage` | Organisation (O) in the subject of the certificates. |
+| `--country` | | Two letter country code (C), e.g. `NL`. |
+| `--state` | | State or province (ST). |
+| `--locality` | | Locality or city (L). |
 
 The api certificate is always valid for `localhost`, `127.0.0.1` and `::1`.
+
+All certificates get the same subject (`--org`, `--country`, `--state` and `--locality`), each with its own common
+name (CN), e.g. `orion-api` and `orion-cli`. There is no option for the organisational unit (OU) on purpose: the api
+uses the OUs of a client certificate as the groups of the client.
 
 ### The passphrase of the CA keys
 
