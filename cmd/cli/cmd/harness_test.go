@@ -128,7 +128,7 @@ func execute(ctx context.Context, stdin string, args ...string) (string, string,
 		CmdCLI.SetErr(nil)
 		CmdCLI.SetIn(nil)
 	}()
-	err := CmdCLI.ExecuteContext(ctx)
+	err := executeContext(ctx)
 	return outBuf.String(), errBuf.String(), err
 }
 
@@ -157,9 +157,14 @@ type fakeAPI struct {
 // newFakeAPI starts a fake api that, like the real one, requires a client certificate signed by the CA of the cli;
 // it stops at the end of the spec
 func newFakeAPI() *fakeAPI {
+	return newFakeAPIWithTLS(serverTLS)
+}
+
+// newFakeAPIWithTLS is newFakeAPI with another TLS config, e.g. with the certificates of another pki init
+func newFakeAPIWithTLS(tlsConfig *tls.Config) *fakeAPI {
 	f := &fakeAPI{mux: http.NewServeMux()}
 	f.server = httptest.NewUnstartedServer(http.HandlerFunc(f.serve))
-	f.server.TLS = serverTLS.Clone()
+	f.server.TLS = tlsConfig.Clone()
 	// a refused handshake is part of some specs: don't log it
 	f.server.Config.ErrorLog = log.New(io.Discard, "", 0)
 	f.server.StartTLS()
