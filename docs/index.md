@@ -34,6 +34,8 @@ run anywhere, come and go, and change their addresses.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
+- [PostgreSQL parameters](operations/postgres-parameters.md): set the parameters of all instances in the cluster
+  spec, and when the keeper reloads or restarts PostgreSQL.
 - [Sentinel decisions](operations/sentinel-decisions.md): how the sentinel picks the synchronous standbys, switches
   the proxies, and replaces a standby that can't catch up.
 - [Standby cluster](operations/standby-cluster.md): replicate from the primary of another cluster, and promote into a
