@@ -39,7 +39,8 @@ A spec without an `initMode` gets `new`.
 
 `orion-cli init` only creates a cluster that doesn't exist yet. When there already is one, it fails with
 `cannot initialize an already existing cluster` and changes nothing. To change a running cluster, use
-`orion-cli update` (see [Cluster spec](spec.md#changing-the-spec)).
+`orion-cli update` (see [Cluster spec](spec.md#changing-the-spec)). Unlike stolon, Orion doesn't initialize over an
+existing cluster: create a new cluster (e.g. for a restore) with its own `--cluster-name`.
 
 ### With the api
 
@@ -110,7 +111,15 @@ primary:
 ```
 
 That keeper must be running and registered in the store. The sentinel waits for it as long as it takes, and doesn't
-pick another keeper: you chose this one.
+pick another keeper: you chose this one. The other keepers then resync from it as standbys.
+
+Use `existing` when the store lost the cluster data but the databases are still there, for example after you lost the
+store for good. Set up a new, empty store, and initialize the cluster with `existing` and the keeper with the most
+recent data. Don't restore the store from a backup: the cluster data in it can be older than the real state, and could
+make an old primary the primary again.
+
+With `existing` you pick the primary yourself. A running cluster doesn't need that: to move its primary to another
+keeper, use `orion-cli failkeeper` on the current one.
 
 ### pitr
 

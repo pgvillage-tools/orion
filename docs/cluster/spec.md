@@ -43,6 +43,12 @@ the parameter again, and leaves the rest of the spec as it is:
 orion-cli update --patch '{"pgParameters": {"log_min_duration_statement": null}}'
 ```
 
+To remove all parameters, set `pgParameters` itself to `null`:
+
+```sh
+orion-cli update --patch '{"pgParameters": null}'
+```
+
 **Replace** the whole spec, which is `orion-cli update` without `--patch`. Every field you leave out falls back to its
 default. The replacement must still have the same `initMode`: get the current spec with `orion-cli spec`, change it,
 and send all of it back.
@@ -135,6 +141,40 @@ All fields are optional, except `initMode`. Durations are strings like `"5s"`, `
 | `pgHBA` | none | Extra pg_hba.conf entries. |
 | `automaticPgRestart` | `false` | Restart PostgreSQL by itself when a changed parameter needs a restart. |
 
+### Notes on some fields
+
+- **`maxStandbys`** sets `max_replication_slots` on every instance, and with `additionalWalSenders` it sets
+  `max_wal_senders` (2 × `maxStandbys` + 2 + `additionalWalSenders`). Keep it high enough for the standbys Orion manages
+  and the ones you add yourself (e.g. a [standby cluster](../operations/standby-cluster.md) that streams from this
+  one): with too few slots or WAL senders, replication fails. Both PostgreSQL parameters only change with a restart of
+  PostgreSQL.
+- **`additionalMasterReplicationSlots`**: Orion creates these slots on the primary with the prefix `orion_` (give the
+  names without it), like the slots of its own standbys. Orion drops the other slots on the primary whose name starts
+  with `orion_`; it leaves slots with other names alone. A name that starts with `orion_` is refused.
+- **`minSynchronousStandbys: 0`** lets the primary accept commits while there is no healthy synchronous standby. That
+  gives up the guarantee of synchronous replication, so it isn't advised.
+- **`pgParameters`**: write the values without quotes, and don't double single quotes. The keeper quotes them when it
+  writes `postgresql.conf`.
+- **`pgHBA`**: Orion adds these entries after the ones it needs itself (for the keepers and replication). Without
+  `pgHBA`, it accepts connections for all databases and users from all hosts, with the authentication method of the
+  superuser. The entries aren't validated, except that they can't contain a newline. With a wrong entry, PostgreSQL
+  doesn't start, or ignores the new pg_hba.conf on a reload and logs a warning.
+
+### Nested options
+
+| Object | Field | What it is |
+|--------|-------|------------|
+| `newConfig` | `locale`, `encoding`, `dataChecksums` | Options for initdb; see [Initialization](initialization.md#new). |
+| `existingConfig` | `keeperUID` | The keeper whose database becomes the primary; see [Initialization](initialization.md#existing). |
+| `pitrConfig` | `dataRestoreCommand` | Restores the base backup; `%d` is replaced with the data directory, `%%` is a `%`. It must exit 0 only on success. |
+| | `archiveRecoverySettings` | `restoreCommand`: PostgreSQL's [`restore_command`](https://www.postgresql.org/docs/current/runtime-config-wal.html#RUNTIME-CONFIG-WAL-ARCHIVE-RECOVERY). |
+| | `recoveryTargetSettings` | `recoveryTarget`, `recoveryTargetLsn`, `recoveryTargetName`, `recoveryTargetTime`, `recoveryTargetXid`, `recoveryTargetTimeline`: PostgreSQL's [recovery target settings](https://www.postgresql.org/docs/current/runtime-config-wal.html#RUNTIME-CONFIG-WAL-RECOVERY-TARGET). |
+| `standbyConfig` | `standbySettings` | `primaryConninfo`, `primarySlotName`, `recoveryMinApplyDelay`: PostgreSQL's `primary_conninfo`, `primary_slot_name` and `recovery_min_apply_delay`. |
+| | `archiveRecoverySettings` | `restoreCommand`, as for `pitrConfig`. |
+
+See [Point in time recovery](../operations/pitr.md) and [Standby cluster](../operations/standby-cluster.md) for how to
+use `pitrConfig` and `standbyConfig`.
+
 ## What a change does
 
 The sentinel and the keepers read the spec on each check (`sleepInterval`), so a change takes effect within a few
@@ -147,6 +187,8 @@ seconds, without a restart of the Orion components:
   true.
 - **`pgHBA`** and `defaultSUReplAccessMode`: the keepers write a new pg_hba.conf and reload PostgreSQL.
 - **Replication fields** (`synchronousReplication`, the number of standbys): the sentinel changes the cluster view,
-  and the keepers follow it.
+  and the keepers follow it. You can turn synchronous replication on and off on a running cluster.
+- **`maxStandbys` and `additionalWalSenders`** change PostgreSQL parameters that need a restart (see
+  [Notes on some fields](#notes-on-some-fields)).
 - **`initMode`** can't change, and `role` can only go from `standby` to `master` (see
   [What the api checks](#what-the-api-checks)).
