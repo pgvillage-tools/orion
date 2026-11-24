@@ -33,7 +33,9 @@ import (
 	. "github.com/onsi/gomega"
 	mockconsensus "github.com/pgvillage-tools/orion/internal/mock/consensus"
 	"github.com/pgvillage-tools/orion/internal/pki"
+	apiclient "github.com/pgvillage-tools/orion/pkg/api_client"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
+	"github.com/pgvillage-tools/orion/pkg/bootstrap"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -244,6 +246,39 @@ var _ = Describe("run", func() {
 			_ = resp.Body.Close()
 		}
 		Expect(err).To(HaveOccurred(), "a client without a certificate in normal mode")
+
+		cancel()
+		Eventually(done).WithTimeout(5 * time.Second).Should(Receive(BeNil()))
+	})
+
+	It("bootstraps with the cli: archive, stored, normal mode, and the confirmation over mTLS", func() {
+		h.bootstrap = newBootstrapper([]byte(testSecret), time.Hour)
+		h.bootstrap.dir = opts.APIDir
+		h.archiveFile = filepath.Join(opts.APIDir, pki.APIBootstrapArchiveFile)
+		start()
+		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeBootstrap))
+		Eventually(h.Ready.Load).WithTimeout(5 * time.Second).Should(BeTrue())
+
+		priv, err := bootstrap.GenerateKey()
+		Expect(err).NotTo(HaveOccurred())
+		session, err := bootstrap.Start(ctx, bootstrap.NewHTTPClient(5*time.Second), apiURL, []byte(testSecret))
+		Expect(err).NotTo(HaveOccurred())
+		certs, keys, err := session.Archive(ctx, priv, []string{"lb.example.org"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pki.VerifyArchive(certs, keys, time.Now())).To(Succeed())
+		Expect(pki.StoreArchive(opts.CLIDir, certs, keys, []byte("the CA passphrase"))).To(Succeed())
+		Expect(session.Stored(ctx)).To(Succeed())
+		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeNormal))
+		Expect(h.archiveFile).To(BeAnExistingFile())
+
+		// the cli verifies the api with the new root, and logs in with its new certificate
+		clientConfig, err := pki.CLIFiles(opts.CLIDir).ClientConfig()
+		Expect(err).NotTo(HaveOccurred())
+		conn := apiclient.NewTLSConnection("127.0.0.1", uint16(cfg.Port), 5*time.Second, clientConfig) //nolint:gosec
+		for range 2 {
+			Eventually(conn.ConfirmBootstrap).WithTimeout(5 * time.Second).Should(Equal(http.StatusOK))
+		}
+		Expect(h.archiveFile).NotTo(BeAnExistingFile(), "the api deleted the archive with the CA keys")
 
 		cancel()
 		Eventually(done).WithTimeout(5 * time.Second).Should(Receive(BeNil()))

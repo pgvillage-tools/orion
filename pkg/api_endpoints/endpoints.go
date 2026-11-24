@@ -57,7 +57,17 @@ const (
 	// BootstrapProofEndPoint takes the nonce and the proof of the cli (POST, BootstrapProofRequest), and returns the
 	// proof of the api (BootstrapProofResponse)
 	BootstrapProofEndPoint EndPoint = "bootstrap/proof"
+	// BootstrapArchiveEndPoint takes the public key of the cli and extra names for the api certificate (POST,
+	// BootstrapArchiveRequest), after the proofs, and returns the archive (BootstrapArchive)
+	BootstrapArchiveEndPoint EndPoint = "bootstrap/archive"
+	// BootstrapStoredEndPoint tells the api that the cli stored the archive (POST, no body): the api stores its own
+	// certificate and switches to normal mode (BootstrapStatusResponse)
+	BootstrapStoredEndPoint EndPoint = "bootstrap/stored"
 )
+
+// BootstrapConfirmEndPoint is in normal mode, with mTLS: the cli confirms that its client certificate works (POST, no
+// body), and the api deletes the archive (BootstrapStatusResponse). It can be repeated.
+const BootstrapConfirmEndPoint EndPoint = "bootstrap/confirm"
 
 // BootstrapChallengeResponse is returned by the BootstrapChallengeEndPoint
 type BootstrapChallengeResponse struct {
@@ -78,6 +88,51 @@ type BootstrapProofResponse struct {
 	// Proof is the proof of the api (bootstrap.APIProof; base64 in JSON)
 	Proof []byte `json:"proof"`
 }
+
+// BootstrapArchiveRequest is sent to the BootstrapArchiveEndPoint
+type BootstrapArchiveRequest struct {
+	// PublicKey is the bootstrap public key of the cli (HPKE SerializePublicKey; base64 in JSON)
+	PublicKey []byte `json:"publicKey"`
+	// SANs are extra names or addresses for the api certificate (e.g. of a load balancer)
+	SANs []string `json:"sans,omitempty"`
+}
+
+// BootstrapCertificates are the certificates of the archive, PEM encoded (public)
+type BootstrapCertificates struct {
+	// Root is the root CA
+	Root []byte `json:"root"`
+	// ServerIntermediate signs the server certificates
+	ServerIntermediate []byte `json:"serverIntermediate"`
+	// APIClientIntermediate signs the client certificates for the api
+	APIClientIntermediate []byte `json:"apiClientIntermediate"`
+	// APIServer is the server certificate of the api
+	APIServer []byte `json:"apiServer"`
+	// CLIClient is the client certificate of the cli
+	CLIClient []byte `json:"cliClient"`
+}
+
+// BootstrapArchive is returned by the BootstrapArchiveEndPoint: the certificates, and the private keys encrypted to
+// the public key of the cli with HPKE (see bootstrap.SealArchive)
+type BootstrapArchive struct {
+	Certificates BootstrapCertificates `json:"certificates"`
+	// Enc is the encapsulated key of HPKE (base64 in JSON)
+	Enc []byte `json:"enc"`
+	// SealedKeys are the private keys (base64 in JSON)
+	SealedKeys []byte `json:"sealedKeys"`
+}
+
+// BootstrapStatusResponse is returned by the BootstrapStoredEndPoint and the BootstrapConfirmEndPoint
+type BootstrapStatusResponse struct {
+	// Status is BootstrapStatusStored or BootstrapStatusConfirmed
+	Status string `json:"status"`
+}
+
+const (
+	// BootstrapStatusStored is the status after the BootstrapStoredEndPoint: the api switches to normal mode
+	BootstrapStatusStored = "stored"
+	// BootstrapStatusConfirmed is the status after the BootstrapConfirmEndPoint: the api deleted the archive
+	BootstrapStatusConfirmed = "confirmed"
+)
 
 const (
 	// LiveEndPoint is the liveness endpoint on the probe port: 200 as long as the process serves requests (it doesn't

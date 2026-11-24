@@ -16,12 +16,16 @@ package cmd
 
 import (
 	"context"
+	"crypto/hpke"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/pgvillage-tools/orion/internal/pki"
 
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
@@ -35,6 +39,10 @@ const (
 	envBootstrapSecret = "ORIONCLI_BOOTSTRAP_SECRET"
 	// defaultProbePort is the default probe port of the api
 	defaultProbePort = 8080
+	// bootstrapSwitchWait is how long the cli waits for the api to switch to normal mode after the hand-over
+	bootstrapSwitchWait = 30 * time.Second
+	// bootstrapPollInterval is how often the cli checks the mode of the api meanwhile
+	bootstrapPollInterval = 200 * time.Millisecond
 )
 
 var cmdBootstrap = &cobra.Command{
@@ -55,17 +63,32 @@ The bootstrap secret is the one the api logged at its start, or the one it was g
 --bootstrap-secret-file, else from ORIONCLI_BOOTSTRAP_SECRET, else the cli asks for it on the terminal.
 
 On the first bootstrap, the cli creates its bootstrap key pair in --pki-dir (bootstrap.key and
-bootstrap.pub): the api encrypts the certificates and the CA keys to it. The private key is encrypted
-with the passphrase of the CA keys (--ca-passphrase-file, else ORIONCLI_CA_PASSPHRASE, else a prompt).
+bootstrap.pub): the api encrypts the CA keys and the private key of the cli certificate to it. The
+private key is encrypted with the passphrase of the CA keys (--ca-passphrase-file, else
+ORIONCLI_CA_PASSPHRASE, else a prompt).
 
-Not yet: receiving the certificates and the CA keys from the api. This version stops after the
-proofs.`,
+Then the api creates the root, the intermediates, its own certificate (with the names in --api-san
+too) and the client certificate of the cli, and hands them over. The cli checks them, and stores them
+in --pki-dir like ` + "`orion-cli pki init`" + ` does, with the CA keys encrypted with the passphrase. It
+doesn't overwrite existing files. The api then switches to normal mode, and the cli confirms with its
+new client certificate, after which the api deletes the archive with the CA keys.`,
+}
+
+var cmdBootstrapConfirm = &cobra.Command{
+	Use:   "confirm",
+	RunE:  runBootstrapConfirm,
+	Args:  cobra.NoArgs,
+	Short: "Confirm a bootstrap with the client certificate of the cli",
+	Long: `Confirm a bootstrap with the client certificate of the cli (over mTLS), after which the api
+deletes the archive with the CA keys. ` + "`orion-cli bootstrap`" + ` does this itself; use this command when that
+step failed. It can be repeated.`,
 }
 
 type bootstrapOptions struct {
 	secretFile       string
 	caPassphraseFile string
 	probePort        uint16
+	apiSANs          []string
 }
 
 var bootstrapOpts bootstrapOptions
@@ -78,6 +101,9 @@ func init() {
 		"file with the passphrase for the CA keys and the bootstrap key (- for stdin; default: "+envCAPassphrase+
 			", else a prompt)")
 	flags.Uint16Var(&bootstrapOpts.probePort, "probe-port", defaultProbePort, "probe port of the api")
+	flags.StringSliceVar(&bootstrapOpts.apiSANs, "api-san", nil,
+		"extra name or address for the api certificate, on top of the ones the api detects (repeatable)")
+	cmdBootstrap.AddCommand(cmdBootstrapConfirm)
 	CmdCLI.AddCommand(cmdBootstrap)
 }
 
@@ -115,47 +141,86 @@ func bootstrapSecret(file string) ([]byte, error) {
 	return secret, nil
 }
 
-// ensureBootstrapKeyPair creates the bootstrap key pair in dir when it doesn't exist yet
-func ensureBootstrapKeyPair(dir, caPassphraseFile string) error {
+// bootstrapKeyPair returns the bootstrap private key in dir and the passphrase of the CA keys: it creates the key
+// pair (with a new passphrase) when it doesn't exist yet, and decrypts the existing one otherwise
+func bootstrapKeyPair(dir, caPassphraseFile string) (hpke.PrivateKey, []byte, error) {
 	exists, err := bootstrap.KeyPairExists(dir)
-	if err != nil || exists {
-		return err
+	if err != nil {
+		return nil, nil, err
+	}
+	if exists {
+		passphrase, passErr := existingCAPassphrase(caPassphraseFile)
+		if passErr != nil {
+			return nil, nil, passErr
+		}
+		priv, readErr := bootstrap.ReadPrivateKey(dir, passphrase)
+		if readErr != nil {
+			return nil, nil, fmt.Errorf("failed to read the bootstrap key pair in %s: %w", dir, readErr)
+		}
+		return priv, passphrase, nil
 	}
 	passphrase, err := newCAPassphrase(caPassphraseFile)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	priv, err := bootstrap.GenerateKey()
 	if err != nil {
-		return fmt.Errorf("failed to create the bootstrap key pair: %w", err)
+		return nil, nil, fmt.Errorf("failed to create the bootstrap key pair: %w", err)
 	}
 	if err = bootstrap.WriteKeyPair(dir, priv, passphrase); err != nil {
-		return fmt.Errorf("failed to store the bootstrap key pair: %w", err)
+		return nil, nil, fmt.Errorf("failed to store the bootstrap key pair: %w", err)
 	}
 	stdout("Created the bootstrap key pair in %s", dir)
-	return nil
+	return priv, passphrase, nil
+}
+
+// waitForNormalMode waits until the api reports normal mode on its probe port
+func waitForNormalMode(ctx context.Context, probe client.Connection) error {
+	deadline := time.Now().Add(bootstrapSwitchWait)
+	for {
+		mode, _, err := probe.Mode()
+		if err == nil && mode.Mode == endpoints.ModeNormal {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the api didn't switch to normal mode within %s (mode %q, error %v)",
+				bootstrapSwitchWait, mode.Mode, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(bootstrapPollInterval):
+		}
+	}
 }
 
 func runBootstrap(c *cobra.Command, _ []string) error {
 	host, port, timeout := viper.GetString(flagHost), viper.GetUint16(flagPort), viper.GetDuration(flagTimeout)
 
-	mode, _, err := client.NewConnection(endpoints.HTTP, host, bootstrapOpts.probePort, timeout).Mode()
+	probe := client.NewConnection(endpoints.HTTP, host, bootstrapOpts.probePort, timeout)
+	mode, _, err := probe.Mode()
 	if err != nil {
 		return fmt.Errorf("failed to get the mode of the api on its probe port %d: %w", bootstrapOpts.probePort, err)
 	}
 	if mode.Mode != endpoints.ModeBootstrap {
 		return fmt.Errorf("the api is in %s mode, not in bootstrap mode: it has its certificates already", mode.Mode)
 	}
+	files, err := cliTLSFiles()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(files.CertFile)
+	// before anything is asked or sent: the bootstrap stores files that must not exist yet
+	if err = pki.CheckNoCLIFiles(dir); err != nil {
+		return err
+	}
 
 	secret, err := bootstrapSecret(bootstrapOpts.secretFile)
 	if err != nil {
 		return err
 	}
-	files, err := cliTLSFiles()
+	priv, passphrase, err := bootstrapKeyPair(dir, bootstrapOpts.caPassphraseFile)
 	if err != nil {
-		return err
-	}
-	if err = ensureBootstrapKeyPair(filepath.Dir(files.CertFile), bootstrapOpts.caPassphraseFile); err != nil {
 		return err
 	}
 
@@ -164,10 +229,48 @@ func runBootstrap(c *cobra.Command, _ []string) error {
 		ctx = context.Background()
 	}
 	baseURL := "https://" + net.JoinHostPort(host, strconv.Itoa(int(port)))
-	if _, err = bootstrap.Start(ctx, bootstrap.NewHTTPClient(timeout), baseURL, secret); err != nil {
+	session, err := bootstrap.Start(ctx, bootstrap.NewHTTPClient(timeout), baseURL, secret)
+	if err != nil {
 		return fmt.Errorf("bootstrap failed: %w", err)
 	}
 	stdout("The api proved that it has the bootstrap secret")
-	stdout("Not yet: receiving the certificates from the api; this version stops here")
+	certs, keys, err := session.Archive(ctx, priv, bootstrapOpts.apiSANs)
+	if err != nil {
+		return fmt.Errorf("bootstrap failed: %w", err)
+	}
+	if err = pki.VerifyArchive(certs, keys, time.Now()); err != nil {
+		return fmt.Errorf("bootstrap failed: %w", err)
+	}
+	if err = pki.StoreArchive(dir, certs, keys, passphrase); err != nil {
+		return fmt.Errorf("bootstrap failed: %w", err)
+	}
+	stdout("Stored the certificates and the CA keys in %s", dir)
+	if err = session.Stored(ctx); err != nil {
+		return fmt.Errorf("the api didn't take the bootstrap over (run the bootstrap again after moving the files "+
+			"in %s away): %w", dir, err)
+	}
+	if err = waitForNormalMode(ctx, probe); err != nil {
+		return err
+	}
+	if err = confirmBootstrap(host, port); err != nil {
+		return fmt.Errorf("%w (retry with `orion-cli bootstrap confirm`)", err)
+	}
 	return nil
+}
+
+// confirmBootstrap confirms the bootstrap to the api on host and port with the client certificate of the cli
+func confirmBootstrap(host string, port uint16) error {
+	apiClient, err := newAPIClient(host, port)
+	if err != nil {
+		return err
+	}
+	if httpCode, confirmErr := apiClient.ConfirmBootstrap(); confirmErr != nil {
+		return apiError("confirming the bootstrap with the client certificate failed", httpCode, confirmErr)
+	}
+	stdout("The api is in normal mode and deleted the CA keys: the bootstrap is done")
+	return nil
+}
+
+func runBootstrapConfirm(_ *cobra.Command, _ []string) error {
+	return confirmBootstrap(viper.GetString(flagHost), viper.GetUint16(flagPort))
 }

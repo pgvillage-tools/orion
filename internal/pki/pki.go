@@ -86,21 +86,57 @@ func Init(opts InitOptions) (*oriontls.Chain, error) {
 	if err := opts.check(); err != nil {
 		return nil, err
 	}
-	caDir := filepath.Join(opts.CLIDir, CLICADir)
+	chain := newChain(opts, filepath.Join(opts.CLIDir, CLICADir))
+	if err := initialize(&chain); err != nil {
+		return nil, err
+	}
+	if err := WriteAPIFiles(chain, opts.APIDir); err != nil {
+		return nil, err
+	}
+	if err := writeCLIFiles(chain, opts.CLIDir); err != nil {
+		return nil, err
+	}
+	return &chain, nil
+}
+
+// Generate creates the same certificates as Init, in memory only: it writes no files, and the private keys are not
+// encrypted (CAPassphrase, CLIDir and APIDir are ignored). Bootstrap mode uses it: the api encrypts the private keys
+// of the CA to the cli.
+func Generate(opts InitOptions) (*oriontls.Chain, error) {
+	if err := opts.checkSANs(); err != nil {
+		return nil, err
+	}
+	opts.CAPassphrase = nil
+	chain := newChain(opts, "")
+	if err := initialize(&chain); err != nil {
+		return nil, err
+	}
+	return &chain, nil
+}
+
+// newChain returns the chain of Init. With caDir, the root and the intermediates are stored there; without, the chain
+// has no files.
+func newChain(opts InitOptions, caDir string) oriontls.Chain {
+	join := func(elem ...string) string {
+		if caDir == "" {
+			return ""
+		}
+		return filepath.Join(append([]string{caDir}, elem...)...)
+	}
 	intermediate := func(name string) oriontls.Pair {
 		return oriontls.Pair{
-			Cert: oriontls.Cert{Expiry: opts.IntermediateExpiry, Path: filepath.Join(caDir, name, caName+crtExt)},
+			Cert: oriontls.Cert{Expiry: opts.IntermediateExpiry, Path: join(name, caName+crtExt)},
 			PrivateKey: oriontls.PrivateKey{
-				Path:       filepath.Join(caDir, name, caName+keyExt),
+				Path:       join(name, caName+keyExt),
 				Passphrase: opts.CAPassphrase,
 			},
 		}
 	}
-	chain := oriontls.Chain{
+	return oriontls.Chain{
 		KeyAlgorithm: opts.KeyAlgorithm,
 		Root: oriontls.Pair{
-			Cert:       oriontls.Cert{Expiry: opts.RootExpiry, Path: filepath.Join(caDir, rootName+crtExt)},
-			PrivateKey: oriontls.PrivateKey{Path: filepath.Join(caDir, rootName+keyExt), Passphrase: opts.CAPassphrase},
+			Cert:       oriontls.Cert{Expiry: opts.RootExpiry, Path: join(rootName + crtExt)},
+			PrivateKey: oriontls.PrivateKey{Path: join(rootName + keyExt), Passphrase: opts.CAPassphrase},
 		},
 		Intermediates: oriontls.Intermediates{
 			ServerIntermediate: oriontls.Intermediate{
@@ -117,19 +153,17 @@ func Init(opts InitOptions) (*oriontls.Chain, error) {
 			},
 		},
 	}
+}
+
+// initialize creates the root and the intermediates of chain, with their certificates
+func initialize(chain *oriontls.Chain) error {
 	if err := chain.InitializeCA(); err != nil {
-		return nil, fmt.Errorf("failed to create the root: %w", err)
+		return fmt.Errorf("failed to create the root: %w", err)
 	}
 	if err := chain.InitializeIntermediates(); err != nil {
-		return nil, fmt.Errorf("failed to create the intermediates: %w", err)
+		return fmt.Errorf("failed to create the intermediates: %w", err)
 	}
-	if err := writeAPIFiles(chain, opts.APIDir); err != nil {
-		return nil, err
-	}
-	if err := writeCLIFiles(chain, opts.CLIDir); err != nil {
-		return nil, err
-	}
-	return &chain, nil
+	return nil
 }
 
 type file struct {
@@ -147,7 +181,9 @@ func writeFiles(files []file) error {
 	return nil
 }
 
-func writeAPIFiles(chain oriontls.Chain, dir string) error {
+// WriteAPIFiles writes the files of the api to dir: its server certificate (with the server intermediate), its private
+// key, and the api client intermediate to verify clients
+func WriteAPIFiles(chain oriontls.Chain, dir string) error {
 	serverIM := chain.Intermediates[ServerIntermediate]
 	server := serverIM.Children()[APIServerName]
 	clientIM := chain.Intermediates[APIClientIntermediate]

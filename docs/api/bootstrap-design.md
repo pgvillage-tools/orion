@@ -155,14 +155,16 @@ cli                                                    api (bootstrap mode)
  |-- POST /v1/bootstrap/proof: cli nonce, cli proof --->|  check the cli proof
  |<------------------------------------ api proof ------|  check the api proof (cli)
  |                                                      |
- |-- cli public key, extra SANs ----------------------->|  generate root, intermediates,
- |                                                      |  api and cli certificates
- |<-- archive ------------------------------------------|
- |-- stored -------------------------------------------->|
- |                                                      |  switch to normal mode
+ |-- POST /v1/bootstrap/archive: public key, SANs ---->|  generate root, intermediates,
+ |                                                      |  api and cli certificates (memory)
+ |<------------- certificates + keys sealed to the cli -|
+ |  check and store the files                           |
+ |-- POST /v1/bootstrap/stored ------------------------>|  store api files + sealed archive,
+ |<-------------------------------------- stored -------|  secret used up, normal mode
+ |                                                      |
  |== mTLS (cli client certificate) ====================>|
- |-- confirm ------------------------------------------>|  delete CA keys and archive
- |<-- ok -----------------------------------------------|
+ |-- POST /v1/bootstrap/confirm ----------------------->|  delete the sealed archive
+ |<----------------------------------- confirmed -------|
 ```
 
 1. The cli checks on the probe port that the api is in bootstrap mode.
@@ -174,18 +176,21 @@ cli                                                    api (bootstrap mode)
    [RFC 9266](https://www.rfc-editor.org/rfc/rfc9266)). The secret itself is never sent. See
    [The bootstrap protocol](#the-bootstrap-protocol) for the details.
 5. The cli sends its public key, and optionally extra names for the api certificate.
-6. The api generates the root, the intermediates, its own server certificate and the cli client certificate, and sends
-   the archive:
-   - all certificates and chains, as they are (they are public);
+6. The api generates the root, the intermediates, its own server certificate and the cli client certificate, in memory,
+   and sends the archive (see [The archive](#the-archive)):
+   - all certificates, as they are (they are public);
    - the private key of the cli certificate and the private keys of the root and the intermediates, encrypted with the
      public key of the cli.
-7. The cli stores the archive and reports `stored`.
-8. The api switches to normal mode, but keeps the CA keys.
+7. The cli checks the archive, stores it and reports `stored`.
+8. The api stores its own certificate and key, the chain to verify clients, and the archive as it sent it (with the
+   private keys encrypted to the cli, so the api can't read them). The secret is used up, and the api switches to
+   normal mode.
 9. The cli connects again, now with mTLS and its new client certificate, and confirms. This proves that its certificate
-   works. The confirmation can be repeated.
-10. The api deletes the CA keys and the archive.
+   works. The confirmation can be repeated (`orion-cli bootstrap confirm`).
+10. The api deletes the archive.
 
-After the bootstrap, the api has only its own server certificate and key, and the chains to verify clients. It can't
+The api never writes a CA key to disk, not even encrypted: it only has them in memory while it builds the archive.
+After the bootstrap, the api has only its own server certificate and key, and the chain to verify clients. It can't
 issue or renew any certificate by itself; that goes through the cli.
 
 ### The bootstrap protocol
@@ -197,9 +202,17 @@ base64 (standard, with padding). The shared parts of the protocol are in `pkg/bo
 |----------|---------|----------|
 | `POST /v1/bootstrap/challenge` | No body | `{"nonce": <32 bytes>}`: the nonce of the api |
 | `POST /v1/bootstrap/proof` | `{"nonce": <32 bytes>, "proof": <32 bytes>}`: the nonce and the proof of the cli | `{"proof": <32 bytes>}`: the proof of the api |
+| `POST /v1/bootstrap/archive` | `{"publicKey": <the public key of the cli>, "sans": ["lb.example.com", ...]}` | The archive (see [The archive](#the-archive)) |
+| `POST /v1/bootstrap/stored` | No body | `{"status": "stored"}`; then the api switches to normal mode |
 
-**One TLS connection.** The api binds a bootstrap to the TLS connection it starts on: the challenge, the proof and
-(later) the archive must use the same connection. The api finds the bootstrap by the keying material of the connection
+In normal mode, with mTLS:
+
+| Endpoint | Request | Response |
+|----------|---------|----------|
+| `POST /v1/bootstrap/confirm` | No body; only for the client certificate of the cli (`CN=orion-cli`) | `{"status": "confirmed"}`, also when repeated |
+
+**One TLS connection.** The api binds a bootstrap to the TLS connection it starts on: the challenge, the proof, the
+archive and `stored` must use the same connection. The api finds the bootstrap by the keying material of the connection
 (see below), so there is no session token to steal: another connection, also one of a man in the middle, has other
 keying material. A new challenge on a connection replaces the previous one, and a challenge without a proof expires
 after 5 minutes. The api keeps at most 16 challenges without a proof (`429` after that).
@@ -226,14 +239,57 @@ api proof = HMAC-SHA256(secret, "orion-bootstrap api" || 0x00 || api nonce || cl
 
 | Status | When |
 |--------|------|
-| `400 Bad Request` | No TLS 1.3, an invalid body, or a nonce or proof of the wrong size |
-| `403 Forbidden` | A wrong proof, or the secret expired |
-| `409 Conflict` | A proof without a challenge on this connection |
+| `400 Bad Request` | No TLS 1.3, an invalid body, a nonce or proof of the wrong size, an invalid public key, or an invalid name (or more than 32) for the api certificate |
+| `403 Forbidden` | A wrong proof, the secret expired or is used up; a confirmation from another client than the cli |
+| `409 Conflict` | A proof without a challenge on this connection, an archive without a proof, or `stored` without an archive |
 | `429 Too Many Requests` | Too many wrong proofs, or too many open challenges (with `Retry-After`) |
+
+### The archive
+
+The api hands over the certificates and the private keys in one JSON object. In JSON, all byte strings are base64.
+
+```json
+{
+  "certificates": {
+    "root": "<PEM>",
+    "serverIntermediate": "<PEM>",
+    "apiClientIntermediate": "<PEM>",
+    "apiServer": "<PEM>",
+    "cliClient": "<PEM>"
+  },
+  "enc": "<the encapsulated key of HPKE>",
+  "sealedKeys": "<the private keys, encrypted>"
+}
+```
+
+- **The certificates** are public, so they are not encrypted. The api certificate has `localhost`, `127.0.0.1`, `::1`,
+  the hostname and the addresses of the api host, the host of `--base-url` (unless it listens on all addresses), and
+  the names the cli sent (`orion-cli bootstrap --api-san`).
+- **The private keys** of the root, the two intermediates and the cli certificate (PKCS#8 PEM, as a JSON object) are
+  encrypted with HPKE (RFC 9180, base mode) to the public key of the cli: X-Wing, HKDF-SHA256 and AES-256-GCM, with the
+  info `orion-bootstrap archive v1`.
+- **The additional data** of the encryption binds the keys to the TLS connection and to the certificates:
+
+  ```text
+  aad = "orion-bootstrap archive" || 0x00 || ekm || SHA-256(for each certificate: length (uint64) || PEM)
+  ```
+
+  The cli can only decrypt the archive on the connection it asked for it (a recorded archive is useless on another
+  one), and nobody can swap a certificate without breaking the decryption.
+- **Every request makes a new archive**, with a new CA: until the cli stored one, nothing trusts it. The api keeps the
+  last archive of the connection in memory until `stored`.
+- **The cli checks the archive** before it stores it: the root is a self-signed CA, the intermediates are CAs signed by
+  it, the api certificate is a valid server certificate for `orion-api` and the cli certificate a valid client
+  certificate for `orion-cli`, and every private key belongs to its certificate.
+- **The cli stores the files** like `orion-cli pki init`: the root and the intermediates in `ca/` with their private
+  keys encrypted with the passphrase of the CA keys, and `tls.crt`, `tls.key` and `ca.crt`. It doesn't overwrite any of
+  these files (it refuses before it asks for the secret); when storing fails, it removes what it wrote.
+- **On `stored`** the api writes `server.crt`, `server.key` and `client-ca.crt` to its `--pki-dir`, and
+  `bootstrap-archive.json`: the archive as it sent it, with the keys it can't decrypt. The confirmation deletes it.
 
 ### The key pair of the cli
 
-The api encrypts the archive (#322) to the public key of the cli, with HPKE (RFC 9180), so only the cli can read it.
+The api encrypts the archive to the public key of the cli, with HPKE (RFC 9180), so only the cli can read it.
 
 - **The KEM** is ML-KEM-768 with X25519 (X-Wing, `hpke.MLKEM768X25519()`, HPKE KEM id `0x647A`): the encryption stays
   safe as long as either of the two holds, also against a quantum computer later.
@@ -284,8 +340,13 @@ ORIONCLI_BOOTSTRAP_SECRET=... orion-cli bootstrap --host orion-api.example.com
    runs the challenge and the proof on that one connection. It checks the proof of the api before it sends anything
    else, and it fails when the connection changes in between.
 
-Not yet: sending the public key and receiving the archive (#322); the command stops after the proofs. It stays hidden
-in `orion-cli --help` until bootstrap mode is enabled in the api.
+5. It sends its public key and the names in `--api-san` (repeatable), decrypts the archive with its private key, checks
+   it and stores the files in `--pki-dir`. It refuses to start when one of those files exists already.
+6. It sends `stored`, waits (at most 30 seconds) until the probe port reports `normal`, and confirms over mTLS with its
+   new client certificate, verifying the api with the new root. When the confirmation fails, run
+   `orion-cli bootstrap confirm` to try it again.
+
+The command stays hidden in `orion-cli --help` until bootstrap mode is enabled in the api (#323).
 
 ### Why this is safe
 
@@ -296,7 +357,8 @@ in `orion-cli --help` until bootstrap mode is enabled in the api.
   It doesn't need to pin a CA fingerprint.
 - **The CA keys are encrypted to the cli.** Only the holder of the private key of the cli can read them, also when the
   archive is intercepted or recorded.
-- **The api deletes the CA keys** as soon as the cli has proven that it can use its certificate.
+- **The api never stores the CA keys.** It has them in memory while it builds the archive; on disk it keeps only the
+  archive, which it can't decrypt, until the cli has proven that it can use its certificate.
 
 ### State and recovery
 
@@ -304,13 +366,13 @@ The api stores the state of the bootstrap, so it can continue after a restart:
 
 | State | api port | CA keys on the api |
 |-------|----------|--------------------|
-| `bootstrapping` | Bootstrap mode | Not yet, or generated but not handed over |
-| `handed-over` | Normal mode | Yes, until the cli confirms |
+| `bootstrapping` | Bootstrap mode | In memory only, in an archive that wasn't stored yet |
+| `handed-over` | Normal mode | Only in the archive, encrypted to the cli, until the cli confirms |
 | `confirmed` | Normal mode | No |
 
-- After a restart, the api continues in the state it was in. The secret stays valid until it expires, and a CA that was
-  already generated is reused. (Not yet: until the state is stored, a restart starts a new bootstrap, with a new
-  generated secret.)
+- After a restart, the api continues in the state it was in. The secret stays valid until it expires. A restart during
+  `bootstrapping` makes a new CA at the next archive request. (Not yet, #323: until the state and the secret are
+  stored, a restart in bootstrap mode starts a new bootstrap, with a new generated secret.)
 - If the cli never confirms (e.g. it lost the archive), nobody can connect to the api. Restart the api with
   `--rebootstrap` to start over. The api doesn't fall back to bootstrap mode by itself.
 
@@ -365,7 +427,7 @@ either a certificate or a token.
 
 | Where | Directory | Contents |
 |-------|-----------|----------|
-| api | `~/.orion/api/` (`--pki-dir`) | Its server certificate and key, the chains to verify clients, and during the bootstrap the bootstrap state and the archive |
+| api | `~/.orion/api/` (`--pki-dir`) | Its server certificate and key, the chain to verify clients, and between the hand-over and the confirmation the archive (`bootstrap-archive.json`, the keys encrypted to the cli) |
 | cli | `~/.orion/cli/` | Its bootstrap key pair (`bootstrap.key`, encrypted, and `bootstrap.pub`), its client certificate, the chains, and the encrypted CA keys |
 
 The directories are only readable for their owner, and private keys are stored with mode `0600`.
@@ -391,7 +453,8 @@ In progress:
   an api without certificates fails with an error.
 - [x] The shared secret and the mutual HMAC: the challenge and proof endpoints (#320).
 - [x] `orion-cli bootstrap` up to the proofs, and the key pair of the cli (#321).
-- [ ] The archive, the stored state, the confirmation and `--rebootstrap` (#322); enabling bootstrap mode (#323).
+- [x] The archive, `stored`, the switch to normal mode and the confirmation (#322).
+- [ ] The stored state and secret, resuming after a restart, `--rebootstrap`, and enabling bootstrap mode (#323).
 
 Later, each in its own PR:
 

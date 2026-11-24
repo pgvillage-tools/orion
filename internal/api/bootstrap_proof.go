@@ -32,6 +32,7 @@ import (
 	"github.com/pgvillage-tools/orion/internal/logging"
 	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	"github.com/pgvillage-tools/orion/pkg/bootstrap"
+	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 )
 
 // The bootstrap secret and the proofs: see docs/api/bootstrap-design.md, "The bootstrap protocol"
@@ -53,8 +54,9 @@ const (
 	// it keeps one
 	maxBootstrapSessions = 16
 	bootstrapSessionTTL  = 5 * time.Minute
-	// maxBootstrapBody is the maximum size of the body of a bootstrap request
-	maxBootstrapBody = 4 << 10
+	// maxBootstrapBody is the maximum size of the body of a bootstrap request (the public key of the cli has 1216
+	// bytes, 1624 in base64)
+	maxBootstrapBody = 16 << 10
 )
 
 // generatedSecretEncoding writes a generated secret in upper case letters and digits, without padding
@@ -102,12 +104,18 @@ type bootstrapper struct {
 	secret  []byte
 	expires time.Time
 	now     func() time.Time
+	// dir is the api directory, where the api stores its files and the archive when the cli stored the archive
+	dir string
+	// sans are the detected names of the api host for its certificate (detectedSANs)
+	sans []string
 
 	mutex sync.Mutex
 	// sessions are the challenges, by the keying material of their TLS connection
 	sessions map[string]*bootstrapSession
 	// failures are the times of the wrong proofs within failedProofWindow
 	failures []time.Time
+	// usedUp is set when the cli stored an archive: the secret can't be used again
+	usedUp bool
 }
 
 // bootstrapSession is a challenge of the api on one TLS connection
@@ -116,6 +124,9 @@ type bootstrapSession struct {
 	created  time.Time
 	// proven is set when the cli proved it knows the secret on this connection
 	proven bool
+	// chain and archive are the certificates and the archive handed out on this connection, until the cli stored it
+	chain   *oriontls.Chain
+	archive *endpoints.BootstrapArchive
 }
 
 // newBootstrapper returns a bootstrapper with secret, which expires after ttl
@@ -146,6 +157,10 @@ func (b *bootstrapper) prune(now time.Time) {
 
 // check returns an error when the secret expired, or there were too many wrong proofs; the caller holds the mutex
 func (b *bootstrapper) check(now time.Time) *bootstrapError {
+	if b.usedUp {
+		return &bootstrapError{status: http.StatusForbidden,
+			detail: "the bootstrap secret is used up: the api has its certificates"}
+	}
 	if !now.Before(b.expires) {
 		return &bootstrapError{status: http.StatusForbidden,
 			detail: "the bootstrap secret expired: restart the api for a new one"}
@@ -223,6 +238,8 @@ func (h *Handlers) BootstrapRoutes() []Route {
 	return []Route{
 		{endpoints.BootstrapChallengeEndPoint.Route(endpoints.MethodPost), h.BootstrapChallengeHandler},
 		{endpoints.BootstrapProofEndPoint.Route(endpoints.MethodPost), h.BootstrapProofHandler},
+		{endpoints.BootstrapArchiveEndPoint.Route(endpoints.MethodPost), h.BootstrapArchiveHandler},
+		{endpoints.BootstrapStoredEndPoint.Route(endpoints.MethodPost), h.BootstrapStoredHandler},
 	}
 }
 
@@ -282,8 +299,8 @@ func (h *Handlers) BootstrapProofHandler(w http.ResponseWriter, r *http.Request)
 var errBootstrapTTL = errors.New("--bootstrap-secret-ttl must be positive")
 
 // newBootstrapperFromConfig returns the bootstrapper with the secret and its ttl from cfg (DefaultBootstrapSecretTTL
-// when it isn't set)
-func newBootstrapperFromConfig(ctx context.Context, cfg Config) (*bootstrapper, error) {
+// when it isn't set), which stores the files of the api in dir
+func newBootstrapperFromConfig(ctx context.Context, cfg Config, dir string) (*bootstrapper, error) {
 	ttl := cfg.BootstrapSecretTTL
 	if ttl == 0 {
 		ttl = DefaultBootstrapSecretTTL
@@ -295,5 +312,7 @@ func newBootstrapperFromConfig(ctx context.Context, cfg Config) (*bootstrapper, 
 	if err != nil {
 		return nil, err
 	}
-	return newBootstrapper(secret, ttl), nil
+	b := newBootstrapper(secret, ttl)
+	b.dir, b.sans = dir, detectedSANs(cfg.BaseURL)
+	return b, nil
 }
