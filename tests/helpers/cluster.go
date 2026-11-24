@@ -268,18 +268,52 @@ func WithOwnClusterSetup(numKeepers int, setup func(ctx context.Context, tc *Clu
 	})
 }
 
-// KeeperExec runs script with sh -c in keeper i, as user (the user of the image, postgres, when empty), and returns
-// the exit code and the output
-func (tc *Cluster) KeeperExec(ctx context.Context, i int, user, script string) (int, string) {
-	opts := []tcexec.ProcessOption{tcexec.Multiplexed()}
-	if user != "" {
-		opts = append(opts, tcexec.WithUser(user))
-	}
-	code, out, err := tc.Keepers[i].Exec(ctx, []string{"sh", "-c", script}, opts...)
-	Ω(err).NotTo(HaveOccurred())
+// KeeperPGData is the postgres data directory in the keeper image (ORIONKEEPER_DATA_DIR=/pgdata)
+const KeeperPGData = "/pgdata/postgres"
+
+// KeeperExec runs the command args (an argv, without a shell) in keeper i, as the user of the image (postgres) unless
+// opts set another one (tcexec.WithUser) or env vars (tcexec.WithEnv), and returns the exit code and the output
+func (tc *Cluster) KeeperExec(ctx context.Context, i int, args []string, opts ...tcexec.ProcessOption) (int, string) {
+	code, out, err := tc.Keepers[i].Exec(ctx, args, append([]tcexec.ProcessOption{tcexec.Multiplexed()}, opts...)...)
+	Ω(err).NotTo(HaveOccurred(), "exec %q in keeper %d", args, i)
 	output, err := io.ReadAll(out)
-	Ω(err).NotTo(HaveOccurred())
+	Ω(err).NotTo(HaveOccurred(), "output of %q in keeper %d", args, i)
 	return code, string(output)
+}
+
+// KillPostgres stops postgres in keeper i hard (kill -9 of the postmaster), while the keeper keeps running
+func (tc *Cluster) KillPostgres(ctx context.Context, i int) {
+	rc, err := tc.Keepers[i].CopyFileFromContainer(ctx, path.Join(KeeperPGData, "postmaster.pid"))
+	Ω(err).NotTo(HaveOccurred(), "postmaster.pid of keeper %d", i)
+	defer func() { _ = rc.Close() }()
+	content, err := io.ReadAll(rc)
+	Ω(err).NotTo(HaveOccurred(), "postmaster.pid of keeper %d", i)
+	// the first line is the pid of the postmaster
+	first, _, _ := strings.Cut(string(content), "\n")
+	pid, err := strconv.Atoi(strings.TrimSpace(first))
+	Ω(err).NotTo(HaveOccurred(), "postmaster.pid of keeper %d: %q", i, content)
+	Ω(pid).To(BeNumerically(">", 1), "postmaster.pid of keeper %d", i)
+	cmd := []string{"kill", "-9", strconv.Itoa(pid)}
+	code, out := tc.KeeperExec(ctx, i, cmd)
+	Ω(code).To(Equal(0), "%q in keeper %d: %s", cmd, i, out)
+}
+
+const (
+	// removeDataDirTimeout is how long RemoveDataDir retries rm until the backends of a killed postmaster are gone
+	removeDataDirTimeout = 10 * time.Second
+	// removeDataDirInterval is the time between those retries
+	removeDataDirInterval = 100 * time.Millisecond
+)
+
+// RemoveDataDir removes the postgres data directory of keeper i. After KillPostgres, the backends of the killed
+// postmaster can still write a file (e.g. in pg_stat) for a moment, which makes rm fail with "Directory not empty":
+// it retries until they are gone.
+func (tc *Cluster) RemoveDataDir(ctx context.Context, i int) {
+	cmd := []string{"rm", "-rf", KeeperPGData}
+	Eventually(func(g Gomega) {
+		code, out := tc.KeeperExec(ctx, i, cmd)
+		g.Ω(code).To(Equal(0), "%q in keeper %d: %s", cmd, i, out)
+	}).WithContext(ctx).WithTimeout(removeDataDirTimeout).WithPolling(removeDataDirInterval).Should(Succeed())
 }
 
 // KeeperIP returns the address of keeper i on the network of the cluster, for a client on that network that can't use
