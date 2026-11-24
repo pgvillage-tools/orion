@@ -93,4 +93,5 @@ nav:
       - Sentinel decisions: operations/sentinel-decisions.md
       - Standby cluster: operations/standby-cluster.md
       - Standby resync: operations/resync.md
+      - Synchronous replication: operations/sync-replication.md
       - Unresponsive standbys: operations/unresponsive-standbys.md

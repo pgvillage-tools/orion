@@ -39,6 +39,8 @@ run anywhere, come and go, and change their addresses.
 - [Standby cluster](operations/standby-cluster.md): replicate from the primary of another cluster, and promote into a
   primary cluster of its own.
 - [Standby resync](operations/resync.md): how a keeper gets a new standby, and `resyncFastCheckpoint`.
+- [Synchronous replication](operations/sync-replication.md): commits that wait for a synchronous standby, failover,
+  and a restarted primary.
 - [Unresponsive standbys](operations/unresponsive-standbys.md): set `tcp_user_timeout`, so a standby that stops
   reading can't block the primary.
 
