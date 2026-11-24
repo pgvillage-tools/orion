@@ -88,6 +88,9 @@ nav:
       - Bootstrap design: api/bootstrap-design.md
   - Deploy:
       - Kubernetes: deploy/k8s.md
+  - Cluster:
+      - Cluster spec: cluster/spec.md
+      - Initialization: cluster/initialization.md
   - Operations:
       - Point in time recovery: operations/pitr.md
       - PostgreSQL parameters: operations/postgres-parameters.md
