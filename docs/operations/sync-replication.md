@@ -25,6 +25,12 @@ orion-cli update --patch '{"synchronousReplication": true}'
 | `minSynchronousStandbys` | `1` | The fewest synchronous standbys a commit waits for. |
 | `maxSynchronousStandbys` | `1` | The most standbys the sentinel makes synchronous. At least 1, and at least `minSynchronousStandbys`. |
 
+You can turn it on and off at any time. For example, two to three synchronous standbys:
+
+```bash
+orion-cli update --patch '{"synchronousReplication": true, "minSynchronousStandbys": 2, "maxSynchronousStandbys": 3}'
+```
+
 The keepers apply a change of the spec without a restart of PostgreSQL: the sentinel sets the synchronous standbys of
 the primary, and its keeper writes them to `synchronous_standby_names`.
 
@@ -46,6 +52,20 @@ Which standbys the sentinel makes synchronous, and how it changes them, is in
 `minSynchronousStandbys`, it adds a placeholder (`orionfakestandby`), so commits wait instead of returning with fewer
 synchronous standbys than you asked for.
 
+A keeper started with `--can-be-synchronous-replica=false` is never made synchronous; the sentinel logs
+`fewer synchronous standbys than maxSynchronousStandbys` when that leaves it short.
+
+### Availability and minSynchronousStandbys
+
+With `minSynchronousStandbys` at 1 or more, commits wait when there are fewer healthy standbys than that: the cluster
+chooses consistency over availability. To keep accepting commits when a standby fails, have at least
+`minSynchronousStandbys` + 1 standbys.
+
+`minSynchronousStandbys` can also be 0. The sentinel then makes healthy standbys synchronous (up to
+`maxSynchronousStandbys`), but adds no placeholder: when there is no healthy standby, commits return without one.
+That can lose committed transactions, for example when the primary restarts while it has no synchronous standby and
+fails after that. Only use it with one primary and one standby, when you value availability over consistency.
+
 ## Failover
 
 When the primary fails, the sentinel only elects a standby that is synchronous both in the spec of the primary and in
@@ -55,10 +75,18 @@ acknowledged. The new primary gets the synchronous standbys of the old one, with
 
 ## A primary that restarts
 
-PostgreSQL has a gap here: when the primary restarts while commits wait for a synchronous standby, the waiting
-transactions are committed once it is back, also when no standby has them. A failover after that would lose them.
+PostgreSQL has a gap here ([its docs](https://www.postgresql.org/docs/current/warm-standby.html#SYNCHRONOUS-REPLICATION)):
+when the primary restarts while commits wait for a synchronous standby, the waiting transactions are committed once
+it is back, also when no standby has them. For example:
 
-So when the keeper finds PostgreSQL stopped and starts it again with synchronous replication on, it only lets in the
+1. the synchronous standby goes down;
+2. a client commits, and waits for the standby;
+3. the primary restarts: the transaction is committed, and other clients see it;
+4. the primary fails, and the standby comes back;
+5. the sentinel elects the standby (it is a synchronous standby), which doesn't have the transaction: it is lost.
+
+The sentinel can't tell whether a synchronous standby is really in sync while the primary is down, but the keeper
+knows when the primary restarts. When the keeper finds PostgreSQL stopped and starts it again with synchronous replication on, it only lets in the
 superuser (for the keeper itself) and the replication user, until all synchronous standbys in the spec are in sync
 again. The `pgHBA` entries of the spec, for the normal users, are only added after that.
 

@@ -16,7 +16,7 @@ We suggest that you first read the [Stolon Architecture and Requirements](archit
 ### Misc topics
 
 * [Enabling pg_rewind](pg_rewind.md)
-* [Enabling synchronous replication](syncrepl.md)
+* [Synchronous replication](../operations/sync-replication.md) (reviewed for Orion, moved out of docs/stolon)
 * [PostgreSQL SSL/TLS setup](ssl.md)
 * [Forcing a failover](forcefailover.md)
 * [Service Discovery](service_discovery.md)
