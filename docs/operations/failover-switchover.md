@@ -71,6 +71,29 @@ old primary after a failover.
 - An unknown keeper gives `404 Not Found`, and so does a cluster that doesn't exist yet. While the store doesn't
   answer, the api returns `503 Service Unavailable`.
 
+### Without losing transactions
+
+With asynchronous replication, a commit returns before a standby has it, so a switchover can lose the last
+transactions: the standby takes over with what it had (within `maxStandbyLag`). To switch over without losing any:
+
+- **With synchronous replication** on, just fail the primary: the sentinel only elects a synchronous standby, which has
+  every committed transaction.
+- **Without it**, turn it on for the switchover:
+
+    ```bash
+    orion-cli update --patch --wait '{"synchronousReplication": true}'
+    ```
+
+    Wait until the primary has a synchronous standby (`sync_state` is `sync` in `pg_stat_replication` on the primary),
+    fail the primary with `orion-cli failkeeper <keeper uid> --wait`, and turn it off again:
+
+    ```bash
+    orion-cli update --patch --wait '{"synchronousReplication": false}'
+    ```
+
+    Meanwhile, a commit waits until a synchronous standby has it: when that standby stops answering, commits wait for
+    it (`tests/system/sync_replication_test.go`).
+
 The cli end-to-end test (`tests/cli/bootstrap_test.go`) waits until both keepers converged and stay so for a while,
 runs `orion-cli failkeeper <primary> --wait --wait-timeout 3m`, and checks with `orion-cli status` that another keeper
 runs the primary.
