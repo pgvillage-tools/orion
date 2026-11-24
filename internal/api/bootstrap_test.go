@@ -280,6 +280,8 @@ var _ = Describe("run", func() {
 		}
 		Expect(h.archiveFile).NotTo(BeAnExistingFile(), "the api deleted the archive with the CA keys")
 
+		// a spare connection the client dialed but never used would hold up the shutdown for 5 seconds
+		conn.CloseIdleConnections()
 		cancel()
 		Eventually(done).WithTimeout(5 * time.Second).Should(Receive(BeNil()))
 	})
