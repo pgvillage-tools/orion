@@ -6,7 +6,7 @@ We suggest that you first read the [Stolon Architecture and Requirements](archit
 * [Commands Invocation](commands_invocation.md)
 * [Cluster Specification](cluster_spec.md)
 * [Cluster Initialization](initialization.md)
-* [Setting instance parameters](../operations/postgres-parameters.md)
+* [Setting instance parameters](postgres_parameters.md)
 * [Custom pg_hba.conf entries](custom_pg_hba_entries.md)
 * [Stolon Client](orion-cli.md)
 * Backup/Restore
