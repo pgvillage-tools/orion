@@ -91,6 +91,7 @@ nav:
   - Operations:
       - Point in time recovery: operations/pitr.md
       - Sentinel decisions: operations/sentinel-decisions.md
+      - Rejoining with pg_rewind: operations/pg-rewind.md
       - Standby cluster: operations/standby-cluster.md
       - Standby resync: operations/resync.md
       - Unresponsive standbys: operations/unresponsive-standbys.md

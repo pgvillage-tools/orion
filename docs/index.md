@@ -36,6 +36,8 @@ run anywhere, come and go, and change their addresses.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
 - [Sentinel decisions](operations/sentinel-decisions.md): how the sentinel picks the synchronous standbys, switches
   the proxies, and replaces a standby that can't catch up.
+- [Rejoining with pg_rewind](operations/pg-rewind.md): let an old primary rejoin with pg_rewind instead of a full copy,
+  with `usePgrewind`.
 - [Standby cluster](operations/standby-cluster.md): replicate from the primary of another cluster, and promote into a
   primary cluster of its own.
 - [Standby resync](operations/resync.md): how a keeper gets a new standby, and `resyncFastCheckpoint`.
