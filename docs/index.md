@@ -32,6 +32,9 @@ run anywhere, come and go, and change their addresses.
 
 - [API certificates](api/certificates.md): the certificates the api and the cli use, and how to create them.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
+- [Cluster spec](cluster/spec.md): the desired state of a cluster, and how to view and change it.
+- [Initialization](cluster/initialization.md): create a cluster with `orion-cli init` or `--initial-cluster-spec`, in
+  init mode `new`, `existing` or `pitr`.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
 - [Sentinel decisions](operations/sentinel-decisions.md): how the sentinel picks the synchronous standbys, switches
