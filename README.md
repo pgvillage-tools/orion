@@ -12,7 +12,7 @@ You can run Orion on Virtual Machines, and K8s environemts.
 * Resilient to any kind of partitioning. While trying to keep the maximum availability, it prefers consistency over availability.
 * [kubernetes integration](examples/kubernetes/README.md) letting you achieve postgreSQL high availability.
 * Uses a cluster store like [etcd](https://etcd.io) (v3 api) or the kubernetes API server as an high available data store and for leader election
-* Asynchronous (default) and [synchronous](docs/stolon/syncrepl.md) replication.
+* Asynchronous (default) and [synchronous](docs/operations/sync-replication.md) replication.
 * Full cluster setup in minutes.
 * Easy [cluster administration](docs/stolon/orion-cli.md) with the api nd cli.
 * Can do point in time recovery integrating with your preferred backup/restore tool.
