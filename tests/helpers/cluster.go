@@ -4,10 +4,13 @@ package helpers
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -250,6 +253,29 @@ func (tc *Cluster) connectProbe(ctx context.Context) {
 	Ω(err).NotTo(HaveOccurred())
 	tc.ProbeURL = fmt.Sprintf("http://%s:%s", LocalHost, probePort.Port())
 	tc.ProbeClient = client.NewConnection(endpoints.HTTP, LocalHost, probePort.Num(), APITimeout)
+}
+
+// APIServerCertificates connects to the api port with TLS and returns the certificates the api presents: its own
+// certificate first, then its chain. With verify, it verifies them like the cli does, against the CA in tc.PKI.CLIDir
+// and for the name apiAlias (with the client certificate of the cli, which normal mode requires); without, it accepts
+// any certificate (e.g. the temporary one of bootstrap mode).
+func (tc *Cluster) APIServerCertificates(ctx context.Context, verify bool) []*x509.Certificate {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true} //nolint:gosec // only to read it
+	if verify {
+		var err error
+		cfg, err = pki.CLIFiles(tc.PKI.CLIDir).ClientConfig()
+		Ω(err).NotTo(HaveOccurred())
+		cfg.ServerName = apiAlias
+	}
+	apiPort, err := tc.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", APIInternalPort))
+	Ω(err).NotTo(HaveOccurred())
+	dialer := tls.Dialer{Config: cfg}
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(LocalHost, apiPort.Port()))
+	Ω(err).NotTo(HaveOccurred())
+	defer func() { _ = conn.Close() }()
+	tlsConn, ok := conn.(*tls.Conn)
+	Ω(ok).To(BeTrue())
+	return tlsConn.ConnectionState().PeerCertificates
 }
 
 // RestartAPI stops the api container and starts it again, with the files it has, and waits until it is in mode (on
