@@ -47,6 +47,10 @@ const (
 	PrimaryTimeout = 3 * time.Minute
 	// PollInterval is the interval for polling the cluster with Eventually
 	PollInterval = 2 * time.Second
+	// apiStopTimeout is how long RestartAPI gives the api to stop
+	apiStopTimeout = 10 * time.Second
+	// apiRestartTimeout is how long RestartAPI waits until the api is in its mode again
+	apiRestartTimeout = time.Minute
 )
 
 // failed is set when a test fails, so the containers are kept (and their logs are shown)
@@ -208,22 +212,62 @@ func (tc *Cluster) StartStore(ctx context.Context) {
 // RunAPI starts the api with the certificates in tc.PKI.APIDir, and connects the clients of the tests to it, the api
 // client with the cli certificate in tc.PKI.CLIDir: the last part of StartAPI
 func (tc *Cluster) RunAPI(ctx context.Context) {
-	clientTLS, err := pki.CLIFiles(tc.PKI.CLIDir).ClientConfig()
-	Ω(err).NotTo(HaveOccurred())
+	tc.runAPI(ctx, tc.PKI.APIDir, nil)
+	tc.connectAPI(ctx)
+}
 
-	// run the api to control orion from this test framework
-	tc.API, err = runAPI(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {apiAlias}},
-		tc.PKI.APIDir)
+// RunAPIInBootstrapMode starts the api without certificates, so it starts in bootstrap mode, with secret as its
+// bootstrap secret. Only the probe client of the tests connects to it; Bootstrap connects the api client.
+func (tc *Cluster) RunAPIInBootstrapMode(ctx context.Context, secret string) {
+	tc.PKI = pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "cli")}
+	tc.runAPI(ctx, "", map[string]string{"ORIONAPI_BOOTSTRAP_SECRET": secret})
+	tc.connectProbe(ctx)
+}
+
+// runAPI runs the api container with the api files in pkiDir (none when empty) and the extra environment in env
+func (tc *Cluster) runAPI(ctx context.Context, pkiDir string, env map[string]string) {
+	var err error
+	tc.API, err = runAPI(ctx, tc.store, tc.Network, map[string][]string{tc.Network.Name: {apiAlias}}, pkiDir, env)
 	tc.add(tc.API)
+	Ω(err).NotTo(HaveOccurred())
+}
+
+// connectAPI connects the clients of the tests to the api: the api client with the cli certificate in tc.PKI.CLIDir,
+// and the probe client
+func (tc *Cluster) connectAPI(ctx context.Context) {
+	clientTLS, err := pki.CLIFiles(tc.PKI.CLIDir).ClientConfig()
 	Ω(err).NotTo(HaveOccurred())
 	apiPort, err := tc.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", APIInternalPort))
 	Ω(err).NotTo(HaveOccurred())
 	tc.APIClient = client.NewTLSConnection(LocalHost, apiPort.Num(), APITimeout, clientTLS).
 		WithUnavailableRetries(APIUnavailableRetries)
+	tc.connectProbe(ctx)
+}
+
+// connectProbe connects the probe client of the tests to the probe port of the api
+func (tc *Cluster) connectProbe(ctx context.Context) {
 	probePort, err := tc.API.MappedPort(ctx, fmt.Sprintf("%d/tcp", apiProbeInternalPort))
 	Ω(err).NotTo(HaveOccurred())
 	tc.ProbeURL = fmt.Sprintf("http://%s:%s", LocalHost, probePort.Port())
 	tc.ProbeClient = client.NewConnection(endpoints.HTTP, LocalHost, probePort.Num(), APITimeout)
+}
+
+// RestartAPI stops the api container and starts it again, with the files it has, and waits until it is in mode (on
+// its probe port). In normal mode, it connects the api client of the tests again (the mapped ports can change).
+func (tc *Cluster) RestartAPI(ctx context.Context, mode string) {
+	stopTimeout := apiStopTimeout
+	Ω(tc.API.Stop(ctx, &stopTimeout)).To(Succeed())
+	Ω(tc.API.Start(ctx)).To(Succeed())
+	if mode == endpoints.ModeNormal {
+		tc.connectAPI(ctx)
+	} else {
+		tc.connectProbe(ctx)
+	}
+	Eventually(func(g Gomega) string {
+		m, _, err := tc.ProbeClient.Mode()
+		g.Ω(err).NotTo(HaveOccurred())
+		return m.Mode
+	}).WithContext(ctx).WithTimeout(apiRestartTimeout).WithPolling(PollInterval).Should(Equal(mode))
 }
 
 // SharedCluster registers the BeforeSuite that starts a cluster with numKeepers keepers once, for all specs that only
@@ -665,11 +709,24 @@ func (tc *Cluster) CLI(ctx context.Context, args ...string) (string, int) {
 			FileMode:          cliPKIFileMode,
 		})
 	}
-	return tc.runCLI(ctx, files, nil, args...)
+	return tc.runCLI(ctx, nil, files, nil, args...)
 }
 
 // cliAPIDir is where PKIInit lets orion-cli pki init write the api certificates, in the cli container
 const cliAPIDir = "/tmp/orion-api"
+
+// copyFromCLI copies files from dir in the cli container cnt to hostDir
+func copyFromCLI(ctx context.Context, cnt testcontainers.Container, dir, hostDir string, files ...string) {
+	Ω(os.MkdirAll(hostDir, cliPKIDirMode)).To(Succeed())
+	for _, f := range files {
+		rc, err := cnt.CopyFileFromContainer(ctx, path.Join(dir, f))
+		Ω(err).NotTo(HaveOccurred(), "copying %s from the cli container", path.Join(dir, f))
+		data, err := io.ReadAll(rc)
+		_ = rc.Close()
+		Ω(err).NotTo(HaveOccurred())
+		Ω(os.WriteFile(filepath.Join(hostDir, f), data, cliPKIFileMode)).To(Succeed())
+	}
+}
 
 // PKIInit creates the certificates like a user does, with `orion-cli pki init` in a cli container, and copies them
 // out of it: the cli files to tc.PKI.CLIDir (for CLI and the api client of the tests), the api files to
@@ -677,41 +734,47 @@ const cliAPIDir = "/tmp/orion-api"
 func (tc *Cluster) PKIInit(ctx context.Context) string {
 	tc.PKI = pki.InitOptions{CLIDir: filepath.Join(tc.tmpDir, "cli"), APIDir: filepath.Join(tc.tmpDir, "api")}
 	copyOut := func(cnt testcontainers.Container) {
-		for dir, files := range map[string][]string{
-			tc.PKI.CLIDir: {pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile},
-			tc.PKI.APIDir: {pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile},
-		} {
-			from := cliPKIDir
-			if dir == tc.PKI.APIDir {
-				from = cliAPIDir
-			}
-			Ω(os.MkdirAll(dir, cliPKIDirMode)).To(Succeed())
-			for _, f := range files {
-				rc, err := cnt.CopyFileFromContainer(ctx, path.Join(from, f))
-				Ω(err).NotTo(HaveOccurred(), "copying %s from the cli container", path.Join(from, f))
-				data, err := io.ReadAll(rc)
-				_ = rc.Close()
-				Ω(err).NotTo(HaveOccurred())
-				Ω(os.WriteFile(filepath.Join(dir, f), data, cliPKIFileMode)).To(Succeed())
-			}
-		}
+		copyFromCLI(ctx, cnt, cliPKIDir, tc.PKI.CLIDir, pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile)
+		copyFromCLI(ctx, cnt, cliAPIDir, tc.PKI.APIDir, pki.APIServerCertFile, pki.APIServerKeyFile,
+			pki.APIClientCAFile)
 	}
-	out, code := tc.runCLI(ctx, nil, copyOut, "pki", "init", "--api-dir", cliAPIDir, "--api-san", apiAlias)
+	out, code := tc.runCLI(ctx, nil, nil, copyOut, "pki", "init", "--api-dir", cliAPIDir, "--api-san", apiAlias)
 	Ω(code).To(Equal(0), out)
 	return out
 }
 
-// runCLI runs orion-cli with args in a container on the network of the cluster, with files copied into it. after (when
-// set) gets the container once the command exited, before it is removed. It returns the output and the exit code.
-func (tc *Cluster) runCLI(ctx context.Context, files []testcontainers.ContainerFile,
+// Bootstrap bootstraps the api (started with RunAPIInBootstrapMode) like a user does, with `orion-cli bootstrap` and
+// secret in a cli container; the api certificate is also valid for apiAlias. When it succeeds, it copies the cli files
+// out of the container to tc.PKI.CLIDir, and connects the clients of the tests to the api with them. It returns the
+// output and the exit code of the command.
+func (tc *Cluster) Bootstrap(ctx context.Context, secret string) (string, int) {
+	copyOut := func(cnt testcontainers.Container) {
+		if state, err := cnt.State(ctx); err == nil && state.ExitCode == 0 {
+			copyFromCLI(ctx, cnt, cliPKIDir, tc.PKI.CLIDir, pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile)
+		}
+	}
+	out, code := tc.runCLI(ctx, map[string]string{"ORIONCLI_BOOTSTRAP_SECRET": secret}, nil, copyOut,
+		"bootstrap", "--api-san", apiAlias)
+	if code == 0 {
+		tc.connectAPI(ctx)
+	}
+	return out, code
+}
+
+// runCLI runs orion-cli with args in a container on the network of the cluster, with the extra environment in env and
+// files copied into it. after (when set) gets the container once the command exited, before it is removed. It returns
+// the output and the exit code.
+func (tc *Cluster) runCLI(ctx context.Context, env map[string]string, files []testcontainers.ContainerFile,
 	after func(testcontainers.Container), args ...string) (string, int) {
 	cmd := append([]string{"--host", apiAlias, "--port", strconv.Itoa(APIInternalPort)}, args...)
+	// pki init and bootstrap encrypt the CA keys with a passphrase; the container has no terminal to prompt on
+	cliEnv := map[string]string{"ORIONCLI_CA_PASSPHRASE": cliCAPassphrase}
+	maps.Copy(cliEnv, env)
 	cnt, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image: "cli",
-			Cmd:   cmd,
-			// pki init encrypts the CA keys with a passphrase; the container has no terminal to prompt on
-			Env:        map[string]string{"ORIONCLI_CA_PASSPHRASE": cliCAPassphrase},
+			Image:      "cli",
+			Cmd:        cmd,
+			Env:        cliEnv,
 			Files:      files,
 			Networks:   []string{tc.Network.Name},
 			WaitingFor: wait.ForExit().WithExitTimeout(cliTimeout),
