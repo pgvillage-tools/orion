@@ -131,6 +131,8 @@ openssl pkey -in ~/.orion/cli/ca/root.key -noout -text
   see [Starting without certificates](#starting-without-certificates). With only a part of them, it doesn't start.
 - The api reads its certificates at start. After you replace them (e.g. after a renewal), restart the api.
 - At start, and once a day, the api logs a warning for every certificate it loaded that expires within 30 days.
+- The cli warns on stderr when its client certificate, the api certificate or one of their chains expires within 30
+  days; the output and the exit code stay the same. With an expired certificate it stops with an error that names it.
 - The private key (`server.key`) must be readable for the user that runs the api, and for nobody else.
 
 ### Running the api in a container

@@ -50,6 +50,7 @@ var CmdCLI = &cobra.Command{
 		// The flags and arguments are fine once we get here: from now on an error isn't a usage error, so don't
 		// print the usage with it
 		c.SilenceUsage = true
+		resetCertWarnings()
 		return initConfig()
 	},
 	// just defined to make --version work
@@ -92,9 +93,15 @@ func Execute() {
 	if err := flagutil.SetFlagsFromEnv(CmdCLI.PersistentFlags(), "ORIONCLI"); err != nil {
 		logger.Fatal().Msg(err.Error())
 	}
-	if err := CmdCLI.Execute(); err != nil {
+	if err := executeContext(context.Background()); err != nil {
 		logger.Fatal().Msg(err.Error())
 	}
+}
+
+// executeContext runs the cli with ctx, and returns its error, with an explanation for an invalid certificate of the
+// api
+func executeContext(ctx context.Context) error {
+	return explainCertificateError(CmdCLI.ExecuteContext(ctx))
 }
 
 // stderr writes a line to the error output of the cli (os.Stderr, unless a test set another one)

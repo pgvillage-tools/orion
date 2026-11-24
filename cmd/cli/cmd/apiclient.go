@@ -17,6 +17,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
 	client "github.com/pgvillage-tools/orion/pkg/api_client"
@@ -51,6 +52,16 @@ func newAPIClient(host string, port uint16) (client.Connection, error) {
 	if err != nil {
 		return client.Connection{}, fmt.Errorf("failed to load the client certificate: %w", err)
 	}
+	certs, err := files.Certificates()
+	if err != nil {
+		return client.Connection{}, fmt.Errorf("failed to load the client certificate: %w", err)
+	}
+	now := time.Now()
+	if err = checkValid("cli", certs, now); err != nil {
+		return client.Connection{}, err
+	}
+	warnExpiring("cli", certs, now)
+	tlsConfig.VerifyConnection = warnExpiringAPI
 	return client.NewTLSConnection(host, port, viper.GetDuration(flagTimeout), tlsConfig), nil
 }
 
