@@ -96,3 +96,4 @@ nav:
       - Standby resync: operations/resync.md
       - Synchronous replication: operations/sync-replication.md
       - Unresponsive standbys: operations/unresponsive-standbys.md
+      - Custom pg_hba entries: operations/pg-hba.md
