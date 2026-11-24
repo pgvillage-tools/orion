@@ -150,6 +150,18 @@ var _ = Describe("the bootstrap archive endpoints", func() {
 		Expect(second.Certificates.Root).NotTo(Equal(archive.Certificates.Root))
 	})
 
+	It("use the subject of the request for all certificates", func() {
+		subject := pki.SubjectOptions{Organisation: "Example", Country: "NL", State: "Utrecht", Locality: "Utrecht"}
+		req := archiveRequest()
+		req.Subject = subject.Bootstrap()
+		var archive endpoints.BootstrapArchive
+		resp, _ := post(proven(), endpoints.BootstrapArchiveEndPoint, req, &archive)
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(pki.CheckArchiveSubject(archive.Certificates, subject)).To(Succeed())
+		Expect(pki.CheckArchiveSubject(archive.Certificates, pki.SubjectOptions{})).
+			To(MatchError(ContainSubstring("the root in the archive has subject")))
+	})
+
 	It("store the api files and the archive once the cli stored it, and use the secret up", func() {
 		client := proven()
 		var archive endpoints.BootstrapArchive
@@ -220,6 +232,11 @@ var _ = Describe("the bootstrap archive endpoints", func() {
 		Entry("no JSON object", func() any { return "not an object" }),
 		Entry("no public key", func() any { return endpoints.BootstrapArchiveRequest{} }),
 		Entry("an invalid name", func() any { return archiveRequest("*.example.org") }),
+		Entry("an invalid country", func() any {
+			req := archiveRequest()
+			req.Subject = &endpoints.BootstrapSubject{Country: "Netherlands"}
+			return req
+		}),
 		Entry("too many names", func() any {
 			sans := make([]string, maxExtraSANs+1)
 			for i := range sans {

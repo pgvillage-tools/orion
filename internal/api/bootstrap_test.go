@@ -247,9 +247,11 @@ var _ = Describe("run", func() {
 		Expect(err).NotTo(HaveOccurred())
 		session, err := bootstrap.Start(ctx, bootstrap.NewHTTPClient(5*time.Second), apiURL, []byte(testSecret))
 		Expect(err).NotTo(HaveOccurred())
-		certs, keys, err := session.Archive(ctx, priv, []string{"lb.example.org"})
+		subject := pki.SubjectOptions{Organisation: "Example", Country: "NL"}
+		certs, keys, err := session.Archive(ctx, priv, []string{"lb.example.org"}, subject.Bootstrap())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pki.VerifyArchive(certs, keys, time.Now())).To(Succeed())
+		Expect(pki.CheckArchiveSubject(certs, subject)).To(Succeed())
 		Expect(pki.StoreArchive(opts.CLIDir, certs, keys, []byte("the CA passphrase"))).To(Succeed())
 		Expect(session.Stored(ctx)).To(Succeed())
 		Eventually(mode).WithTimeout(5 * time.Second).Should(Equal(endpoints.ModeNormal))

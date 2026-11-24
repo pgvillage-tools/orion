@@ -189,6 +189,8 @@ orion-cli bootstrap --host orion-api.example.com --api-san orion.example.com
   start when one of them exists already.
 - The api certificate gets the hostname and the addresses of the api host, the host of `--base-url`, and the names in
   `--api-san` (e.g. a load balancer or a DNS alias), on top of `localhost`, `127.0.0.1` and `::1`.
+- `orion-cli bootstrap` takes the same subject options as `pki init` (`--org`, `--country`, `--state` and
+  `--locality`). The api puts that subject on all certificates, and the cli checks it did.
 - The secret can be used once, and is valid for `--bootstrap-secret-ttl` (24 hours) from the start of bootstrap mode.
   The api keeps it (and its expiry) across restarts until it is used up or expired; a generated secret is stored in
   `<pki-dir>/bootstrap-state.json` (mode `0600`) for that.

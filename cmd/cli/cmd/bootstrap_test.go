@@ -50,6 +50,10 @@ type fakeBootstrapAPI struct {
 	flags, apiFlags []string
 	// sans are the extra names the cli sent for the api certificate
 	sans []string
+	// subject is the subject the cli sent for the certificates
+	subject *endpoints.BootstrapSubject
+	// ignoreSubject makes the fake create the certificates with the default subject, whatever the cli sent
+	ignoreSubject atomic.Bool
 	// normal is the TLS config of normal mode, once the cli stored the archive
 	normal atomic.Pointer[tls.Config]
 	// confirmed is set when the cli confirmed the bootstrap with its new certificate
@@ -99,10 +103,14 @@ func bootstrapAPI(mode string) *fakeBootstrapAPI {
 		func(w http.ResponseWriter, r *http.Request) {
 			var req endpoints.BootstrapArchiveRequest
 			Ω(json.NewDecoder(r.Body).Decode(&req)).To(Succeed())
-			f.sans = req.SANs
+			f.sans, f.subject = req.SANs, req.Subject
 			pub, err := bootstrap.KEM().NewPublicKey(req.PublicKey)
 			Ω(err).NotTo(HaveOccurred())
-			chain, err = pki.Generate(pki.InitOptions{APISANs: req.SANs})
+			subject := pki.SubjectOptionsFromBootstrap(req.Subject)
+			if f.ignoreSubject.Load() {
+				subject = pki.SubjectOptions{}
+			}
+			chain, err = pki.Generate(pki.InitOptions{APISANs: req.SANs, Subject: subject})
 			Ω(err).NotTo(HaveOccurred())
 			certs, keys := pki.ArchiveContents(*chain)
 			ekm, err := bootstrap.ExportKeyingMaterial(r.TLS)
@@ -224,6 +232,34 @@ var _ = Describe("bootstrap", func() {
 		Ω(err).NotTo(HaveOccurred())
 		Ω(out).To(ContainSubstring("the bootstrap is done"))
 		Ω(api.confirmed.Load()).To(BeTrue())
+	})
+
+	It("asks for the subject of its flags, and checks the certificates have it", func() {
+		bootstrapSecretEnv(testBootstrapSecret)
+		api := bootstrapAPI(endpoints.ModeBootstrap)
+		_, _, err := run(append([]string{"bootstrap", "--org", "Acme", "--country", "nl", "--state", "UT",
+			"--locality", "Utrecht"}, api.flags...)...)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(api.subject).To(Equal(&endpoints.BootstrapSubject{Organisation: "Acme", Country: "NL", State: "UT",
+			Locality: "Utrecht"}), "the country in upper case")
+	})
+
+	It("refuses an archive without the subject it asked for, and stores nothing", func() {
+		bootstrapSecretEnv(testBootstrapSecret)
+		api := bootstrapAPI(endpoints.ModeBootstrap)
+		api.ignoreSubject.Store(true)
+		_, _, err := run(append([]string{"bootstrap", "--country", "NL"}, api.flags...)...)
+		Ω(err).To(MatchError(ContainSubstring("the root in the archive has subject")))
+		Ω(filepath.Join(dir, pki.CLICertFile)).NotTo(BeAnExistingFile())
+		Ω(api.normal.Load()).To(BeNil(), "the cli didn't tell the api it stored the archive")
+	})
+
+	It("refuses an invalid subject before it asks for anything", func() {
+		bootstrapSecretEnv("")
+		_, _, err := run(append([]string{"bootstrap", "--country", "Netherlands"},
+			bootstrapAPI(endpoints.ModeBootstrap).flags...)...)
+		Ω(err).To(MatchError(ContainSubstring("invalid country")))
+		Ω(filepath.Join(dir, bootstrap.PublicKeyFile)).NotTo(BeAnExistingFile())
 	})
 
 	It("uses the existing key pair", func() {

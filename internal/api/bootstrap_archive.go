@@ -59,8 +59,8 @@ func detectedSANs(baseURL string) []string {
 
 // archive generates the certificates and the private keys on the proven TLS connection with keying material ekm,
 // and returns the archive: the private keys encrypted to pub. The session keeps them until the cli stored them.
-func (b *bootstrapper) archive(ekm []byte, pub hpke.PublicKey, sans []string) (endpoints.BootstrapArchive,
-	*bootstrapError) {
+func (b *bootstrapper) archive(ekm []byte, pub hpke.PublicKey, sans []string, subject pki.SubjectOptions) (
+	endpoints.BootstrapArchive, *bootstrapError) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 	now := b.now()
@@ -73,7 +73,8 @@ func (b *bootstrapper) archive(ekm []byte, pub hpke.PublicKey, sans []string) (e
 		return endpoints.BootstrapArchive{}, err
 	}
 	// a new archive (with a new CA) every time: until the cli stored one, nothing trusts it
-	chain, genErr := pki.Generate(pki.InitOptions{APISANs: append(append([]string{}, b.sans...), sans...)})
+	chain, genErr := pki.Generate(pki.InitOptions{APISANs: append(append([]string{}, b.sans...), sans...),
+		Subject: subject})
 	if genErr != nil {
 		return endpoints.BootstrapArchive{}, &bootstrapError{status: http.StatusInternalServerError,
 			detail: "failed to create the certificates: " + genErr.Error()}
@@ -169,7 +170,12 @@ func (h *Handlers) BootstrapArchiveHandler(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	archive, bErr := h.bootstrap.archive(ekm, pub, req.SANs)
+	subject := pki.SubjectOptionsFromBootstrap(req.Subject)
+	if err = subject.Check(); err != nil {
+		endpoints.WriteProblem(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	archive, bErr := h.bootstrap.archive(ekm, pub, req.SANs, subject)
 	if bErr != nil {
 		logger.Warn().Str("client", r.RemoteAddr).Str("reason", bErr.detail).Msg("refused a bootstrap archive")
 		writeBootstrapError(w, bErr)
