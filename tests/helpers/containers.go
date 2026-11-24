@@ -3,6 +3,7 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -251,13 +252,15 @@ func runProxy(
 		})
 }
 
-// runAPI runs the api, with the api files (as created by pki.Init) from pkiDir
+// runAPI runs the api, with the api files (as created by pki.Init) from pkiDir, and extra environment variables in env.
+// Without pkiDir, the api has no files and starts in bootstrap mode.
 func runAPI(
 	ctx context.Context,
 	st store,
 	nw *testcontainers.DockerNetwork,
 	aliasses map[string][]string,
 	pkiDir string,
+	env map[string]string,
 ) (testcontainers.Container, error) {
 	envSettings := st.env("ORIONAPI")
 	envSettings["ORIONAPI_LOG_LEVEL"] = "debug"
@@ -265,8 +268,12 @@ func runAPI(
 	// shorter than APITimeout (the client), so a store that doesn't respond gives a 500 and not a client timeout;
 	// long enough for the first call to etcd after the api starts
 	envSettings["ORIONAPI_STORE_TIMEOUT"] = APIStoreTimeout.String()
-	files := append(pkiFiles(pkiDir, apiPKIDir, pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile),
-		st.files()...)
+	maps.Copy(envSettings, env)
+	files := st.files()
+	if pkiDir != "" {
+		files = append(pkiFiles(pkiDir, apiPKIDir, pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile),
+			files...)
+	}
 	return testcontainers.GenericContainer(
 		ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
