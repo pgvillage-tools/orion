@@ -60,7 +60,11 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tasklist:
       custom_checkbox: true
 
@@ -83,6 +87,7 @@ exclude_docs: |
 
 nav:
   - Home: index.md
+  - Architecture: architecture.md
   - API:
       - Certificates: api/certificates.md
       - Bootstrap design: api/bootstrap-design.md

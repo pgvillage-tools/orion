@@ -30,6 +30,8 @@ run anywhere, come and go, and change their addresses.
 
 ## Documentation
 
+- [Architecture](architecture.md): how the components talk to each other through the store, and what they
+  require.
 - [API certificates](api/certificates.md): the certificates the api and the cli use, and how to create them.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
 - [Cluster spec](cluster/spec.md): the desired state of a cluster, and how to view and change it.
