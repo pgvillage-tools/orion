@@ -58,7 +58,17 @@ type Config struct {
 }
 
 // validAuthMethods are the auth methods the keeper accepts for the superuser and the replication user
-var validAuthMethods = map[string]struct{}{authTrust: {}, authMd5: {}, authCert: {}, authIdent: {}, authPeer: {}}
+var validAuthMethods = map[string]struct{}{
+	authTrust: {}, authMd5: {}, authScram: {}, authCert: {}, authIdent: {}, authPeer: {},
+}
+
+// authMethodsList is the list of validAuthMethods for the error messages
+const authMethodsList = "scram-sha-256, md5, trust, cert, ident or peer"
+
+// usesPassword returns whether the auth method authenticates with a password
+func usesPassword(method string) bool {
+	return method == authScram || method == authMd5
+}
 
 // validConnectionTypes are the pg_hba connection types the keeper accepts for the superuser and the replication user
 var validConnectionTypes = map[string]struct{}{
@@ -85,13 +95,13 @@ func ValidateUsersConfig(ctx context.Context, c *Config) error {
 		return errors.New("--pg-su-connection-type must be one of: host, hostssl, hostnossl, hostgssenc, hostnogssenc")
 	}
 	if _, ok := validAuthMethods[c.PGReplAuthMethod]; !ok {
-		return errors.New("--pg-repl-auth-method must be one of: md5, trust, cert, ident or peer")
+		return errors.New("--pg-repl-auth-method must be one of: " + authMethodsList)
 	}
 	if c.PGReplUsername == "" {
 		return errors.New("--pg-repl-username is required")
 	}
 	if _, ok := validAuthMethods[c.PGReplLocalAuthMethod]; !ok {
-		return errors.New("--pg-repl-local-auth-method must be one of: md5, trust, cert, ident or peer")
+		return errors.New("--pg-repl-local-auth-method must be one of: " + authMethodsList)
 	}
 	if c.PGReplAuthMethod == authTrust {
 		logger.Warn().
@@ -111,23 +121,23 @@ func ValidateUsersConfig(ctx context.Context, c *Config) error {
 			return errors.New("can not utilize --pg-su-auth-method trust and --pg-su-auth-method trust together with --pg-su-password or --pg-su-passwordfile")
 		}
 	}
-	if c.PGReplAuthMethod == authMd5 && c.PGReplPassword == "" && c.PGReplPasswordFile == "" {
+	if usesPassword(c.PGReplAuthMethod) && c.PGReplPassword == "" && c.PGReplPasswordFile == "" {
 		return errors.New("one of --pg-repl-password or --pg-repl-passwordfile is required")
 	}
-	if c.PGReplAuthMethod == authMd5 && c.PGReplPassword != "" && c.PGReplPasswordFile != "" {
+	if usesPassword(c.PGReplAuthMethod) && c.PGReplPassword != "" && c.PGReplPasswordFile != "" {
 		return errors.New("only one of --pg-repl-password or --pg-repl-passwordfile must be provided")
 	}
 	if _, ok := validAuthMethods[c.PGSUAuthMethod]; !ok {
-		return errors.New("--pg-su-auth-method must be one of: md5, trust, cert, ident or peer")
+		return errors.New("--pg-su-auth-method must be one of: " + authMethodsList)
 	}
-	if c.PGSUAuthMethod == authMd5 && c.PGSUPassword == "" && c.PGSUPasswordFile == "" {
+	if usesPassword(c.PGSUAuthMethod) && c.PGSUPassword == "" && c.PGSUPasswordFile == "" {
 		return errors.New("one of --pg-su-password or --pg-su-passwordfile is required")
 	}
-	if c.PGSUAuthMethod == authMd5 && c.PGSUPassword != "" && c.PGSUPasswordFile != "" {
+	if usesPassword(c.PGSUAuthMethod) && c.PGSUPassword != "" && c.PGSUPasswordFile != "" {
 		return errors.New("only one of --pg-su-password or --pg-su-passwordfile must be provided")
 	}
 	if _, ok := validAuthMethods[c.PGSULocalAuthMethod]; !ok {
-		return errors.New("--pg-su-local-auth-method must be one of: md5, trust, cert, ident or peer")
+		return errors.New("--pg-su-local-auth-method must be one of: " + authMethodsList)
 	}
 
 	if c.PGReplPasswordFile != "" {
@@ -168,7 +178,7 @@ func ValidateUsersConfig(ctx context.Context, c *Config) error {
 		if c.PGReplAuthMethod != c.PGSUAuthMethod {
 			return errors.New("do not support different auth methods when utilizing superuser for replication.")
 		}
-		if c.PGSUPassword != c.PGReplPassword && c.PGSUAuthMethod == authMd5 && c.PGReplAuthMethod == authMd5 {
+		if c.PGSUPassword != c.PGReplPassword && usesPassword(c.PGSUAuthMethod) && usesPassword(c.PGReplAuthMethod) {
 			// revive:disable-next-line
 			return errors.New("provided superuser name and replication user name are the same but provided passwords are different")
 		}
@@ -180,7 +190,7 @@ func ValidateUsersConfig(ctx context.Context, c *Config) error {
 const DefaultConnType = connTypeHost
 
 // DefaultAuthMethod is the default auth method of the superuser and the replication user
-const DefaultAuthMethod = authMd5
+const DefaultAuthMethod = authScram
 
 func readPasswordFromFile(ctx context.Context, filePath string) (string, error) {
 	// Stat, not Lstat: a symlink (as Kubernetes mounts a Secret) has the mode of the file it points to

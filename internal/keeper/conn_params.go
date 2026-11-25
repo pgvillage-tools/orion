@@ -35,7 +35,7 @@ func (p *PostgresKeeper) getSUConnParams(db, followedDB *cluster.DB) pg.ConnPara
 		// and reuse config for sslmode for repl user instead.
 		WithSSLMode(p.pgReplSslMode)
 
-	if p.pgSUAuthMethod == authMd5 {
+	if usesPassword(p.pgSUAuthMethod) {
 		cp = cp.WithPassword(p.pgSUPassword)
 	}
 	return cp
@@ -48,7 +48,7 @@ func (p *PostgresKeeper) getReplConnParams(db, followedDB *cluster.DB) pg.ConnPa
 		WithSPort(followedDB.Status.Port).
 		WithAppName(common.OrionName(db.UID)).
 		WithSSLMode("prefer")
-	if p.pgReplAuthMethod == authMd5 {
+	if usesPassword(p.pgReplAuthMethod) {
 		cp = cp.WithPassword(p.pgReplPassword)
 	}
 	return cp
@@ -61,7 +61,7 @@ func (p *PostgresKeeper) getLocalConnParams() pg.ConnParams {
 		WithSPort(p.pgPort).
 		WithDbName(defaultDatabase)
 		// no sslmode defined since it's not needed and supported over unix sockets
-	if p.pgSUAuthMethod == authMd5 {
+	if usesPassword(p.pgSUAuthMethod) {
 		cp = cp.WithPassword(p.pgSUPassword)
 	}
 	return cp
@@ -74,7 +74,7 @@ func (p *PostgresKeeper) getLocalReplConnParams() pg.ConnParams {
 		WithSPort(p.pgPort)
 		// no sslmode defined since it's not needed and supported over unix sockets
 
-	if p.pgReplAuthMethod == authMd5 {
+	if usesPassword(p.pgReplAuthMethod) {
 		cp = cp.WithPassword(p.pgReplPassword)
 	}
 	return cp

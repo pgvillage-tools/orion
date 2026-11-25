@@ -18,7 +18,7 @@ var _ = Describe("a restarted primary with synchronous replication", Ordered, fu
 	spec := helpers.DefaultSpec()
 	spec.SynchronousReplication = util.ToPtr(true)
 	// normal users connect with a password; the keeper adds the entries for the superuser and replication itself
-	spec.PGHBA = []string{"host all all 0.0.0.0/0 md5", "host all all ::0/0 md5"}
+	spec.PGHBA = []string{"host all all 0.0.0.0/0 scram-sha-256", "host all all ::0/0 scram-sha-256"}
 	tc := helpers.WithOwnClusterSpec(2, spec)
 	const (
 		table    = "lockout"

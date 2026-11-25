@@ -170,7 +170,7 @@ func (p *Manager) Init(ctx context.Context, initConfig *cluster.NewConfig) error
 
 	name := filepath.Join(p.pgBinPath, "initdb")
 	cmd := exec.Command(name, argDatadir, p.dataDir, "-U", p.suUsername)
-	if p.suAuthMethod == "md5" {
+	if p.suAuthMethod == "scram-sha-256" || p.suAuthMethod == "md5" {
 		cmd.Args = append(cmd.Args, "--pwfile", pwfile.Name())
 	}
 	logger.Debug().Str(logCmd, cmd.String()).Msg(logExec)
