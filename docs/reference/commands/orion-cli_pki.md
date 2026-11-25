@@ -1,0 +1,24 @@
+## orion-cli pki
+
+Manage the certificates of Orion
+
+### Options
+
+```
+  -h, --help[=true|false]   help for pki
+```
+
+### Options inherited from parent commands
+
+```
+  -H, --host string        hostname or ip of the api (default "127.0.0.1")
+      --pki-dir string     directory with the client certificate of the cli, and the CA (default "~/.orion/cli")
+  -p, --port uint16        port of the api (default 8443)
+  -T, --timeout duration   timeout for requests to the api (default 30s)
+```
+
+### SEE ALSO
+
+* [orion-cli](orion-cli.md)	 - orion command line interface
+* [orion-cli pki init](orion-cli_pki_init.md)	 - Create the CA, the api server certificate and the cli client certificate
+

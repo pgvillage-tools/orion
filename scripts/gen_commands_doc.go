@@ -21,11 +21,13 @@ import (
 	"log"
 	"os"
 
+	apicmd "github.com/pgvillage-tools/orion/cmd/api/cmd"
 	cli "github.com/pgvillage-tools/orion/cmd/cli/cmd"
 	keepercmd "github.com/pgvillage-tools/orion/cmd/keeper/cmd"
 	proxycmd "github.com/pgvillage-tools/orion/cmd/proxy/cmd"
 	sentinelcmd "github.com/pgvillage-tools/orion/cmd/sentinel/cmd"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
 
@@ -38,16 +40,13 @@ func main() {
 	}
 	outDir = os.Args[1]
 
-	if err := doc.GenMarkdownTree(keepercmd.CmdKeeper, outDir); err != nil {
-		log.Fatal(err)
-	}
-	if err := doc.GenMarkdownTree(sentinelcmd.CmdSentinel, outDir); err != nil {
-		log.Fatal(err)
-	}
-	if err := doc.GenMarkdownTree(proxycmd.CmdProxy, outDir); err != nil {
-		log.Fatal(err)
-	}
-	if err := doc.GenMarkdownTree(cli.CmdCLI, outDir); err != nil {
-		log.Fatal(err)
+	for _, cmd := range []*cobra.Command{
+		apicmd.CmdWebApi, cli.CmdCLI, keepercmd.CmdKeeper, proxycmd.CmdProxy, sentinelcmd.CmdSentinel,
+	} {
+		// without the date, so that the pages only change when the commands change (CI checks they are up to date)
+		cmd.DisableAutoGenTag = true
+		if err := doc.GenMarkdownTree(cmd, outDir); err != nil {
+			log.Fatal(err)
+		}
 	}
 }

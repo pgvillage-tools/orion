@@ -1,0 +1,28 @@
+## orion-sentinel
+
+
+
+```
+orion-sentinel [flags]
+```
+
+### Options
+
+```
+      --cluster-name string                  cluster name
+  -h, --help[=true|false]                    help for orion-sentinel
+      --initial-cluster-spec string          a file providing the initial cluster specification, used only at cluster initialization, ignored if cluster is already initialized
+      --log-color[=true|false]               enable color in log output (default if attached to a terminal)
+      --log-components string                log levels per component, over --log-level, e.g. keeper=debug,kv-store=warn (a component without a level is at debug); components: keeper, kv-store, orion-cli, postgres, postgres-utils, proxy, sentinel, web-api
+      --log-level string                     debug, info (default), warn or error (default "info")
+      --metrics-listen-address string        metrics listen address i.e "0.0.0.0:8080" (disabled by default)
+      --store-backend string                 store backend type (etcdv3 or kubernetes)
+      --store-ca-file string                 verify certificates of HTTPS-enabled store servers using this CA bundle
+      --store-cert-file string               certificate file for client identification to the store
+      --store-endpoints string               a comma-delimited list of store endpoints (use https for tls) (default: http://127.0.0.1:2379)
+      --store-key string                     private key file for client identification to the store
+      --store-prefix string                  the store base prefix (default "orion/cluster")
+      --store-skip-tls-verify[=true|false]   skip store certificate verification (insecure!!!)
+      --store-timeout duration               store request timeout (default 5s)
+```
+

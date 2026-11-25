@@ -1,0 +1,33 @@
+## orion-cli failkeeper
+
+Force keeper as "temporarily" failed. The sentinel will compute a new clusterdata considering it as failed and then restore its state to the real one.
+
+### Synopsis
+
+Force keeper as "temporarily" failed. It's just a one shot operation, the sentinel will compute a new clusterdata considering the keeper as failed and then restore its state to the real one. For example, if the force failed keeper is a master, the sentinel will try to elect a new master. If no new master can be elected, the force failed keeper, if really healthy, will be re-elected as master
+
+```
+orion-cli failkeeper [keeper uid] [flags]
+```
+
+### Options
+
+```
+  -h, --help[=true|false]       help for failkeeper
+      --wait[=true|false]       wait until the cluster applied the change (available, and every healthy keeper converged)
+      --wait-timeout duration   how long --wait waits at most (default 5m0s)
+```
+
+### Options inherited from parent commands
+
+```
+  -H, --host string        hostname or ip of the api (default "127.0.0.1")
+      --pki-dir string     directory with the client certificate of the cli, and the CA (default "~/.orion/cli")
+  -p, --port uint16        port of the api (default 8443)
+  -T, --timeout duration   timeout for requests to the api (default 30s)
+```
+
+### SEE ALSO
+
+* [orion-cli](orion-cli.md)	 - orion command line interface
+

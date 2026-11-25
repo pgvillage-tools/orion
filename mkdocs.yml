@@ -102,3 +102,11 @@ nav:
       - Synchronous replication: operations/sync-replication.md
       - Unresponsive standbys: operations/unresponsive-standbys.md
       - Custom pg_hba entries: operations/pg-hba.md
+  - Reference:
+      - Commands:
+          - reference/commands/index.md
+          - orion-api: reference/commands/orion-api.md
+          - orion-cli: reference/commands/orion-cli.md
+          - orion-keeper: reference/commands/orion-keeper.md
+          - orion-sentinel: reference/commands/orion-sentinel.md
+          - orion-proxy: reference/commands/orion-proxy.md
