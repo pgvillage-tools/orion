@@ -26,12 +26,15 @@ PostgreSQL uses the first entry that matches a connection, so your entries can't
 
 | `pgHBA` in the spec | Entries after the ones of the keeper |
 |---------------------|--------------------------------------|
-| Not set (`null`) | `host all all 0.0.0.0/0 md5` and `host all all ::0/0 md5`: every user, from every host, with a password |
+| Not set (`null`) | `host all all 0.0.0.0/0 scram-sha-256` and `host all all ::0/0 scram-sha-256`: every user, from every host, with a password |
 | `[]` | None: only the superuser and the replication user can connect |
 | A list of entries | Those entries, in that order |
 
-Use `scram-sha-256` in your own entries rather than `md5`: the default entries still use `md5`, which PostgreSQL also
-accepts for a password stored as SCRAM, but `scram-sha-256` never sends or accepts an MD5 hash.
+The default entries take the connection type and the authentication method of the superuser
+(`--pg-su-connection-type` and `--pg-su-auth-method` of the keeper, see [The entries of the keeper](#the-entries-of-the-keeper)).
+
+Use `scram-sha-256` in your own entries rather than `md5`: PostgreSQL also accepts `md5` for a password stored as
+SCRAM, but `scram-sha-256` never sends or accepts an MD5 hash.
 
 `orion-cli init` without a spec leaves `pgHBA` unset, so a new cluster accepts every user with a password.
 
@@ -84,11 +87,11 @@ The connection type and the authentication method of these entries come from the
 |------|---------|---|
 | `--pg-su-username` | The user that runs the keeper | The superuser |
 | `--pg-su-connection-type` | `host` | `host`, `hostssl`, `hostnossl`, `hostgssenc` or `hostnogssenc` |
-| `--pg-su-auth-method` | `md5` | `trust`, `md5`, `cert`, `ident` or `peer` |
+| `--pg-su-auth-method` | `scram-sha-256` | `scram-sha-256`, `md5`, `trust`, `cert`, `ident` or `peer` |
 | `--pg-su-local-auth-method` | `--pg-su-auth-method` | For the `local` entry; `cert` becomes `peer` there |
 | `--pg-repl-username` | (required) | The replication user |
 | `--pg-repl-connection-type` | `host` | As for the superuser |
-| `--pg-repl-auth-method` | `md5` | As for the superuser |
+| `--pg-repl-auth-method` | `scram-sha-256` | As for the superuser |
 | `--pg-repl-local-auth-method` | `--pg-repl-auth-method` | As for the superuser |
 
 ## With synchronous replication
@@ -98,7 +101,7 @@ not the default entries. Only the superuser and the replication user can connect
 sync again. Then the keeper adds your entries and reloads. Otherwise a client could write data that is lost when the
 primary fails before a standby has it.
 
-The end-to-end test `tests/system/sync_lockout_test.go` runs this: with `pgHBA` set to `host all all 0.0.0.0/0 md5`
+The end-to-end test `tests/system/sync_lockout_test.go` runs this: with `pgHBA` set to `host all all 0.0.0.0/0 scram-sha-256`
 and the same for `::0/0`, it kills PostgreSQL on the primary while its synchronous standby is paused. The superuser
 connects again as soon as PostgreSQL runs; a normal user gets a `pg_hba.conf` error until the standby is back and in
 sync, and then reads the data.
