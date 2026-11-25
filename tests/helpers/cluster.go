@@ -771,16 +771,16 @@ func (tc *Cluster) PKIInit(ctx context.Context) string {
 
 // Bootstrap bootstraps the api (started with RunAPIInBootstrapMode) like a user does, with `orion-cli bootstrap` and
 // secret in a cli container; the api certificate is also valid for apiAlias. When it succeeds, it copies the cli files
-// out of the container to tc.PKI.CLIDir, and connects the clients of the tests to the api with them. It returns the
-// output and the exit code of the command.
-func (tc *Cluster) Bootstrap(ctx context.Context, secret string) (string, int) {
+// out of the container to tc.PKI.CLIDir, and connects the clients of the tests to the api with them. args are extra
+// arguments for the command, e.g. the subject options. It returns the output and the exit code of the command.
+func (tc *Cluster) Bootstrap(ctx context.Context, secret string, args ...string) (string, int) {
 	copyOut := func(cnt testcontainers.Container) {
 		if state, err := cnt.State(ctx); err == nil && state.ExitCode == 0 {
 			copyFromCLI(ctx, cnt, cliPKIDir, tc.PKI.CLIDir, pki.CLICertFile, pki.CLIKeyFile, pki.CLICAFile)
 		}
 	}
 	out, code := tc.runCLI(ctx, map[string]string{"ORIONCLI_BOOTSTRAP_SECRET": secret}, nil, copyOut,
-		"bootstrap", "--api-san", apiAlias)
+		append([]string{"bootstrap", "--api-san", apiAlias}, args...)...)
 	if code == 0 {
 		tc.connectAPI(ctx)
 	}

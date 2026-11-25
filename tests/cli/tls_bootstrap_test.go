@@ -21,6 +21,8 @@ var _ = Describe("bootstrapping the api over TLS with orion-cli", Ordered, func(
 	tc := helpers.WithOwnStore()
 
 	const secret = "orion-e2e-bootstrap-secret"
+	// the subject of the certificates, from the subject options of orion-cli bootstrap
+	const org, country, locality = "Orion E2E", "NL", "Amsterdam"
 	// the certificates the api presented in bootstrap mode, and after the bootstrap
 	var bootstrapCert, apiCert *x509.Certificate
 
@@ -49,7 +51,8 @@ var _ = Describe("bootstrapping the api over TLS with orion-cli", Ordered, func(
 		Ω(apiMode(ctx)).To(Equal(endpoints.ModeBootstrap))
 	})
 	It("hands the certificates and the CA keys over to the cli with the secret", func(ctx context.Context) {
-		out, code := tc.Bootstrap(ctx, secret)
+		// the country in lower case: the cli makes it upper case
+		out, code := tc.Bootstrap(ctx, secret, "--org", org, "--country", "nl", "--locality", locality)
 		Ω(code).To(Equal(0), out)
 		Ω(out).To(ContainSubstring("The api proved that it has the bootstrap secret"))
 		Ω(out).To(ContainSubstring("Stored the certificates and the CA keys in "))
@@ -63,6 +66,11 @@ var _ = Describe("bootstrapping the api over TLS with orion-cli", Ordered, func(
 		apiCert = certs[0]
 		Ω(apiCert.Equal(bootstrapCert)).To(BeFalse())
 		Ω(apiCert.Subject.CommonName).To(Equal(pki.APIServerName))
+		Ω(apiCert.Subject.Organization).To(Equal([]string{org}))
+		Ω(apiCert.Subject.Country).To(Equal([]string{country}))
+		Ω(apiCert.Subject.Locality).To(Equal([]string{locality}))
+		Ω(apiCert.Subject.Province).To(BeEmpty())
+		Ω(certs[1].Subject.Organization).To(Equal([]string{org}), "the intermediate")
 		Ω(apiCert.IsCA).To(BeFalse())
 		Ω(apiCert.ExtKeyUsage).To(ContainElement(x509.ExtKeyUsageServerAuth))
 		Ω(apiCert.DNSNames).To(ContainElements("api", "localhost"))
