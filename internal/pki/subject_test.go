@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 )
 
@@ -110,6 +111,27 @@ var _ = Describe("SubjectOptions", func() {
 		}
 		_, err = pki.Generate(opts)
 		Expect(err).To(MatchError(ContainSubstring("invalid country")))
+	})
+
+	It("converts to and from the subject of a bootstrap archive request", func() {
+		s := pki.SubjectOptions{Organisation: "Acme", Country: "NL", State: "UT", Locality: "Utrecht"}
+		Expect(s.Bootstrap()).To(Equal(&endpoints.BootstrapSubject{Organisation: "Acme", Country: "NL", State: "UT",
+			Locality: "Utrecht"}))
+		Expect(pki.SubjectOptionsFromBootstrap(s.Bootstrap())).To(Equal(s))
+		Expect(pki.SubjectOptionsFromBootstrap(nil)).To(Equal(pki.SubjectOptions{}))
+	})
+
+	It("checks the subject of the certificates of an archive", func() {
+		s := pki.SubjectOptions{Organisation: "Acme", Country: "NL"}
+		chain, err := pki.Generate(pki.InitOptions{Subject: s})
+		Expect(err).NotTo(HaveOccurred())
+		certs, _ := pki.ArchiveContents(*chain)
+		Expect(pki.CheckArchiveSubject(certs, s)).To(Succeed())
+		Expect(pki.CheckArchiveSubject(certs, pki.SubjectOptions{Organisation: "Acme", Country: "BE"})).
+			To(MatchError(ContainSubstring(`the root in the archive has subject O="Acme" C="NL"`)))
+
+		certs.CLIClient = []byte("not a certificate")
+		Expect(pki.CheckArchiveSubject(certs, s)).To(MatchError(ContainSubstring("cli certificate")))
 	})
 
 	It("puts the subject on the certificates of Generate", func() {

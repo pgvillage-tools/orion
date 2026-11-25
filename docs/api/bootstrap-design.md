@@ -202,7 +202,7 @@ base64 (standard, with padding). The shared parts of the protocol are in `pkg/bo
 |----------|---------|----------|
 | `POST /v1/bootstrap/challenge` | No body | `{"nonce": <32 bytes>}`: the nonce of the api |
 | `POST /v1/bootstrap/proof` | `{"nonce": <32 bytes>, "proof": <32 bytes>}`: the nonce and the proof of the cli | `{"proof": <32 bytes>}`: the proof of the api |
-| `POST /v1/bootstrap/archive` | `{"publicKey": <the public key of the cli>, "sans": ["lb.example.com", ...]}` | The archive (see [The archive](#the-archive)) |
+| `POST /v1/bootstrap/archive` | `{"publicKey": <the public key of the cli>, "sans": ["lb.example.com", ...], "subject": {"organisation": "PGVillage", "country": "NL", "state": "...", "locality": "..."}}` | The archive (see [The archive](#the-archive)) |
 | `POST /v1/bootstrap/stored` | No body | `{"status": "stored"}`; then the api switches to normal mode |
 
 In normal mode, with mTLS:
@@ -264,7 +264,8 @@ The api hands over the certificates and the private keys in one JSON object. In 
 
 - **The certificates** are public, so they are not encrypted. The api certificate has `localhost`, `127.0.0.1`, `::1`,
   the hostname and the addresses of the api host, the host of `--base-url` (unless it listens on all addresses), and
-  the names the cli sent (`orion-cli bootstrap --api-san`).
+  the names the cli sent (`orion-cli bootstrap --api-san`). All certificates get the subject the cli sent (`--org`,
+  `--country`, `--state` and `--locality`, checked like `pki init` does), each with its own common name.
 - **The private keys** of the root, the two intermediates and the cli certificate (PKCS#8 PEM, as a JSON object) are
   encrypted with HPKE (RFC 9180, base mode) to the public key of the cli: X-Wing, HKDF-SHA256 and AES-256-GCM, with the
   info `orion-bootstrap archive v1`.
@@ -340,8 +341,9 @@ ORIONCLI_BOOTSTRAP_SECRET=... orion-cli bootstrap --host orion-api.example.com
    runs the challenge and the proof on that one connection. It checks the proof of the api before it sends anything
    else, and it fails when the connection changes in between.
 
-5. It sends its public key and the names in `--api-san` (repeatable), decrypts the archive with its private key, checks
-   it and stores the files in `--pki-dir`. It refuses to start when one of those files exists already.
+5. It sends its public key, the names in `--api-san` (repeatable) and the subject (`--org`, `--country`, `--state`,
+   `--locality`), decrypts the archive with its private key, checks it (also that every certificate has that subject)
+   and stores the files in `--pki-dir`. It refuses to start when one of those files exists already.
 6. It sends `stored`, waits (at most 30 seconds) until the probe port reports `normal`, and confirms over mTLS with its
    new client certificate, verifying the api with the new root. When the confirmation fails, run
    `orion-cli bootstrap confirm` to try it again.

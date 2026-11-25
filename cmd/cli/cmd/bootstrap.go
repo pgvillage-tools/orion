@@ -66,7 +66,8 @@ private key is encrypted with the passphrase of the CA keys (--ca-passphrase-fil
 ORIONCLI_CA_PASSPHRASE, else a prompt).
 
 Then the api creates the root, the intermediates, its own certificate (with the names in --api-san
-too) and the client certificate of the cli, and hands them over. The cli checks them, and stores them
+too) and the client certificate of the cli, with the subject of --org, --country, --state and
+--locality (like pki init), and hands them over. The cli checks them, and stores them
 in --pki-dir like ` + "`orion-cli pki init`" + ` does, with the CA keys encrypted with the passphrase. It
 doesn't overwrite existing files. The api then switches to normal mode, and the cli confirms with its
 new client certificate, after which the api deletes the archive with the CA keys.`,
@@ -87,6 +88,7 @@ type bootstrapOptions struct {
 	caPassphraseFile string
 	probePort        uint16
 	apiSANs          []string
+	subject          *subjectFlags
 }
 
 var bootstrapOpts bootstrapOptions
@@ -101,6 +103,7 @@ func init() {
 	flags.Uint16Var(&bootstrapOpts.probePort, "probe-port", defaultProbePort, "probe port of the api")
 	flags.StringSliceVar(&bootstrapOpts.apiSANs, "api-san", nil,
 		"extra name or address for the api certificate, on top of the ones the api detects (repeatable)")
+	bootstrapOpts.subject = addSubjectFlags(flags)
 	cmdBootstrap.AddCommand(cmdBootstrapConfirm)
 	CmdCLI.AddCommand(cmdBootstrap)
 }
@@ -212,6 +215,10 @@ func runBootstrap(c *cobra.Command, _ []string) error {
 	if err = pki.CheckNoCLIFiles(dir); err != nil {
 		return err
 	}
+	subject := bootstrapOpts.subject.options()
+	if err = subject.Check(); err != nil {
+		return err
+	}
 
 	secret, err := bootstrapSecret(bootstrapOpts.secretFile)
 	if err != nil {
@@ -232,11 +239,14 @@ func runBootstrap(c *cobra.Command, _ []string) error {
 		return fmt.Errorf("bootstrap failed: %w", err)
 	}
 	stdout("The api proved that it has the bootstrap secret")
-	certs, keys, err := session.Archive(ctx, priv, bootstrapOpts.apiSANs)
+	certs, keys, err := session.Archive(ctx, priv, bootstrapOpts.apiSANs, subject.Bootstrap())
 	if err != nil {
 		return fmt.Errorf("bootstrap failed: %w", err)
 	}
 	if err = pki.VerifyArchive(certs, keys, time.Now()); err != nil {
+		return fmt.Errorf("bootstrap failed: %w", err)
+	}
+	if err = pki.CheckArchiveSubject(certs, subject); err != nil {
 		return fmt.Errorf("bootstrap failed: %w", err)
 	}
 	if err = pki.StoreArchive(dir, certs, keys, passphrase); err != nil {

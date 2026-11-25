@@ -95,6 +95,22 @@ type BootstrapArchiveRequest struct {
 	PublicKey []byte `json:"publicKey"`
 	// SANs are extra names or addresses for the api certificate (e.g. of a load balancer)
 	SANs []string `json:"sans,omitempty"`
+	// Subject holds the fields of the subject of all certificates, apart from the CommonName (the defaults of pki
+	// init when not set)
+	Subject *BootstrapSubject `json:"subject,omitempty"`
+}
+
+// BootstrapSubject holds the fields of the subject of the certificates of a bootstrap, like the subject options of
+// orion-cli pki init
+type BootstrapSubject struct {
+	// Organisation (O)
+	Organisation string `json:"organisation,omitempty"`
+	// Country (C): two letters, e.g. NL
+	Country string `json:"country,omitempty"`
+	// State (ST): the state or province
+	State string `json:"state,omitempty"`
+	// Locality (L): the city
+	Locality string `json:"locality,omitempty"`
 }
 
 // BootstrapCertificates are the certificates of the archive, PEM encoded (public)

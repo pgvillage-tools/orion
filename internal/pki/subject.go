@@ -20,6 +20,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 )
 
@@ -92,6 +93,51 @@ func checkSubjectField(value string) error {
 	for _, r := range value {
 		if unicode.IsControl(r) {
 			return errors.New("contains a control character")
+		}
+	}
+	return nil
+}
+
+// Bootstrap returns the subject options for the archive request of a bootstrap
+func (s SubjectOptions) Bootstrap() *endpoints.BootstrapSubject {
+	return &endpoints.BootstrapSubject{Organisation: s.Organisation, Country: s.Country, State: s.State,
+		Locality: s.Locality}
+}
+
+// SubjectOptionsFromBootstrap returns the subject options of the archive request of a bootstrap (the defaults when
+// subject is nil)
+func SubjectOptionsFromBootstrap(subject *endpoints.BootstrapSubject) SubjectOptions {
+	if subject == nil {
+		return SubjectOptions{}
+	}
+	return SubjectOptions{Organisation: subject.Organisation, Country: subject.Country, State: subject.State,
+		Locality: subject.Locality}
+}
+
+// CheckArchiveSubject returns an error when a certificate of the archive doesn't have the subject of s (apart from
+// the CommonName)
+func CheckArchiveSubject(certs endpoints.BootstrapCertificates, s SubjectOptions) error {
+	want := s.Subject()
+	for _, c := range []struct {
+		name string
+		data []byte
+	}{
+		{"root", certs.Root},
+		{"server intermediate", certs.ServerIntermediate},
+		{"api client intermediate", certs.APIClientIntermediate},
+		{"api certificate", certs.APIServer},
+		{"cli certificate", certs.CLIClient},
+	} {
+		cert, err := parseCert(c.name, c.data)
+		if err != nil {
+			return err
+		}
+		got := oriontls.SubjectFromPkixName(cert.Subject)
+		if got.Organisation != want.Organisation || got.Country != want.Country || got.State != want.State ||
+			got.Locality != want.Locality {
+			return fmt.Errorf("the %s in the archive has subject O=%q C=%q ST=%q L=%q, not O=%q C=%q ST=%q L=%q",
+				c.name, got.Organisation, got.Country, got.State, got.Locality,
+				want.Organisation, want.Country, want.State, want.Locality)
 		}
 	}
 	return nil

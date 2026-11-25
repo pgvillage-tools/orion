@@ -97,13 +97,15 @@ func Start(ctx context.Context, client *http.Client, baseURL string, secret []by
 	return s, nil
 }
 
-// Archive sends the public key of the cli (pub) and extra names for the api certificate (sans) to the api, and returns
-// the certificates and the private keys of the archive, decrypted with priv (the private key of pub)
-func (s *Session) Archive(ctx context.Context, priv hpke.PrivateKey, sans []string) (
-	endpoints.BootstrapCertificates, ArchiveKeys, error) {
+// Archive sends the public key of the cli (pub), extra names for the api certificate (sans) and the subject of the
+// certificates (nil for the defaults) to the api, and returns the certificates and the private keys of the archive,
+// decrypted with priv (the private key of pub)
+func (s *Session) Archive(ctx context.Context, priv hpke.PrivateKey, sans []string,
+	subject *endpoints.BootstrapSubject) (endpoints.BootstrapCertificates, ArchiveKeys, error) {
 	var archive endpoints.BootstrapArchive
 	if _, err := s.post(ctx, endpoints.BootstrapArchiveEndPoint,
-		endpoints.BootstrapArchiveRequest{PublicKey: priv.PublicKey().Bytes(), SANs: sans}, &archive); err != nil {
+		endpoints.BootstrapArchiveRequest{PublicKey: priv.PublicKey().Bytes(), SANs: sans, Subject: subject},
+		&archive); err != nil {
 		return endpoints.BootstrapCertificates{}, ArchiveKeys{}, err
 	}
 	keys, err := OpenArchive(priv, s.ekm, archive)
