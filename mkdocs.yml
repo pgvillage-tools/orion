@@ -92,6 +92,7 @@ nav:
       - Cluster spec: cluster/spec.md
       - Initialization: cluster/initialization.md
   - Operations:
+      - Failover and switchover: operations/failover-switchover.md
       - Point in time recovery: operations/pitr.md
       - PostgreSQL parameters: operations/postgres-parameters.md
       - Sentinel decisions: operations/sentinel-decisions.md

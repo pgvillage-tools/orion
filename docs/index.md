@@ -36,6 +36,8 @@ run anywhere, come and go, and change their addresses.
 - [Initialization](cluster/initialization.md): create a cluster with `orion-cli init` or `--initial-cluster-spec`, in
   init mode `new`, `existing` or `pitr`.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
+- [Failover and switchover](operations/failover-switchover.md): when the sentinel fails over, what happens to the old
+  primary, and how to switch over with `orion-cli failkeeper`.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
 - [PostgreSQL parameters](operations/postgres-parameters.md): set the parameters of all instances in the cluster
   spec, and when the keeper reloads or restarts PostgreSQL.
