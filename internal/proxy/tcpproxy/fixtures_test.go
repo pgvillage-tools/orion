@@ -87,6 +87,13 @@ func echoes(conn net.Conn) bool {
 	return err == nil && string(buf) == "ping"
 }
 
+// eventuallyClosed waits until the proxy closed conn: SetDestination cancels the connections, and the proxy closes
+// them in their own goroutines, so a connection can still echo right after SetDestination returns
+func eventuallyClosed(conn net.Conn, description string) {
+	GinkgoHelper()
+	Eventually(func() bool { return echoes(conn) }).WithTimeout(waitFor).Should(BeFalse(), description)
+}
+
 // osKeepAlive keeps the tcp keepalive settings of the OS
 var osKeepAlive = net.KeepAliveConfig{Enable: true, Idle: -1, Interval: -1, Count: -1}
 
