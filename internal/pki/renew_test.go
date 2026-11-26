@@ -175,3 +175,119 @@ var _ = Describe("LoadIntermediate", func() {
 		Ω(err).To(HaveOccurred())
 	})
 })
+
+var _ = Describe("RenewAPI", func() {
+	passphrase := []byte("renew-test-passphrase")
+	var opts pki.InitOptions
+	BeforeEach(func() {
+		dir := GinkgoT().TempDir()
+		opts = pki.InitOptions{
+			CLIDir:       filepath.Join(dir, "cli"),
+			APIDir:       filepath.Join(dir, "api"),
+			APISANs:      []string{"orion-api.example.org", "10.0.0.1"},
+			CAPassphrase: passphrase,
+			Subject:      pki.SubjectOptions{Organisation: "Acme", Country: "NL"},
+		}
+		_, err := pki.Init(opts)
+		Ω(err).NotTo(HaveOccurred())
+	})
+	renew := func(apiDir string, sans ...string) (*pki.RenewResult, []string, error) {
+		return pki.RenewAPI(pki.RenewAPIOptions{
+			CLIDir: opts.CLIDir, APIDir: apiDir, APISANs: sans, CAPassphrase: passphrase, LeafExpiry: 90 * oriontls.Day,
+		})
+	}
+	// verify checks the api files in dir like a client of this CA, for name
+	verify := func(dir, name string) *x509.Certificate {
+		files := pki.APIFiles(dir)
+		pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+		Ω(err).NotTo(HaveOccurred(), "expected the key to belong to the certificate")
+		roots, _, err := pki.LoadCertPool(pki.CLIFiles(opts.CLIDir).CAFile)
+		Ω(err).NotTo(HaveOccurred())
+		intermediates := x509.NewCertPool()
+		for _, der := range pair.Certificate[1:] {
+			c, parseErr := x509.ParseCertificate(der)
+			Ω(parseErr).NotTo(HaveOccurred())
+			intermediates.AddCert(c)
+		}
+		_, err = pair.Leaf.Verify(x509.VerifyOptions{
+			DNSName: name, Roots: roots, Intermediates: intermediates,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		})
+		Ω(err).NotTo(HaveOccurred())
+		clientCA, err := os.ReadFile(files.CAFile)
+		Ω(err).NotTo(HaveOccurred())
+		expected, err := os.ReadFile(filepath.Join(opts.CLIDir, pki.CLICADir, pki.APIClientIntermediate, "ca.crt"))
+		Ω(err).NotTo(HaveOccurred())
+		Ω(clientCA).To(Equal(expected))
+		return pair.Leaf
+	}
+
+	It("renews the certificate in the api directory, with its names and the new ones", func() {
+		oldKey, err := os.ReadFile(pki.APIFiles(opts.APIDir).KeyFile)
+		Ω(err).NotTo(HaveOccurred())
+		result, sans, err := renew(opts.APIDir, "orion.example.org")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(sans).To(ConsistOf(pki.APIServerName, "localhost", "127.0.0.1", "::1", "orion-api.example.org", "10.0.0.1",
+			"orion.example.org"))
+		Ω(result.Previous).NotTo(BeNil())
+		Ω(result.Renewed.SerialNumber).NotTo(Equal(result.Previous.SerialNumber))
+		Ω(result.Renewed.Subject.String()).To(Equal(result.Previous.Subject.String()))
+		Ω(result.Renewed.NotAfter).To(BeTemporally("~", time.Now().Add(90*oriontls.Day), time.Minute))
+		leaf := verify(opts.APIDir, "orion.example.org")
+		Ω(leaf.SerialNumber).To(Equal(result.Renewed.SerialNumber))
+		verify(opts.APIDir, "orion-api.example.org")
+		newKey, err := os.ReadFile(pki.APIFiles(opts.APIDir).KeyFile)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(newKey).NotTo(Equal(oldKey), "expected a new private key")
+	})
+
+	It("creates the api files in an empty directory", func() {
+		dir := filepath.Join(GinkgoT().TempDir(), "new-api")
+		result, sans, err := renew(dir)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(result.Previous).To(BeNil())
+		Ω(sans).To(ConsistOf(pki.APIServerName, "localhost", "127.0.0.1", "::1"))
+		verify(dir, "localhost")
+	})
+
+	It("refuses the api files of another CA, and changes nothing", func() {
+		otherDir := GinkgoT().TempDir()
+		_, err := pki.Init(pki.InitOptions{
+			CLIDir: filepath.Join(otherDir, "cli"), APIDir: filepath.Join(otherDir, "api"),
+		})
+		Ω(err).NotTo(HaveOccurred())
+		before, err := os.ReadFile(pki.APIFiles(filepath.Join(otherDir, "api")).CertFile)
+		Ω(err).NotTo(HaveOccurred())
+		_, _, err = renew(filepath.Join(otherDir, "api"))
+		Ω(err).To(MatchError(ContainSubstring("is not signed by the intermediate server of this CA")))
+		after, err := os.ReadFile(pki.APIFiles(filepath.Join(otherDir, "api")).CertFile)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(after).To(Equal(before))
+	})
+
+	It("refuses an api directory with the CA directory in it", func() {
+		_, _, err := renew(opts.CLIDir)
+		Ω(err).To(MatchError(ContainSubstring("contains the CA directory")))
+	})
+
+	It("refuses an invalid name", func() {
+		_, _, err := renew(opts.APIDir, "not a name")
+		Ω(err).To(MatchError(ContainSubstring(`invalid name or address for the api certificate: "not a name"`)))
+	})
+
+	It("changes nothing with a wrong passphrase", func() {
+		before, err := os.ReadFile(pki.APIFiles(opts.APIDir).CertFile)
+		Ω(err).NotTo(HaveOccurred())
+		_, err = func() (*pki.RenewResult, error) {
+			r, _, renewErr := pki.RenewAPI(pki.RenewAPIOptions{
+				CLIDir: opts.CLIDir, APIDir: opts.APIDir, CAPassphrase: []byte("wrong-passphrase"),
+				LeafExpiry: oriontls.Year,
+			})
+			return r, renewErr
+		}()
+		Ω(err).To(MatchError(oriontls.ErrWrongPassphrase))
+		after, err := os.ReadFile(pki.APIFiles(opts.APIDir).CertFile)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(after).To(Equal(before))
+	})
+})
