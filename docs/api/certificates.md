@@ -313,6 +313,35 @@ Only the cli that created the CA (with `pki init` or `bootstrap`) has the interm
 and the certificate are replaced one after the other, each atomically; when writing the certificate fails, the cli
 puts the previous key back.
 
+### The server certificate of the api
+
+```bash
+orion-cli pki renew api --api-dir ~/.orion/api
+# Passphrase for the CA keys:
+# Renewed the api certificate orion-api in /home/me/.orion/api: valid until 2027-11-26T07:31:00Z (serial 1f3a…)
+# Names on the certificate: orion-api, localhost, 127.0.0.1, ::1, orion-api.example.com
+# Copy server.crt, server.key and client-ca.crt to the --pki-dir of the api: it loads them within a minute, or right away on SIGHUP
+```
+
+Then copy the three files to the `--pki-dir` of the api, e.g.:
+
+```bash
+scp ~/.orion/api/server.crt ~/.orion/api/server.key ~/.orion/api/client-ca.crt orion-api.example.com:/etc/orion/api/
+```
+
+- **The same files as `pki init`:** a new key and certificate, signed by the server intermediate in `--pki-dir`
+  (`ca/server`), followed by that intermediate, and the api client intermediate as `client-ca.crt`.
+- **The names** of the certificate in `--api-dir` are kept, when there is one. On top come `localhost`, `127.0.0.1`,
+  `::1`, the configured api host (`--host`) and the names in `--api-san`. The cli prints the names.
+- **`--api-dir` must hold the files of this CA**, or be empty (e.g. for a new api host). Files of another CA are
+  refused, and nothing is changed. Like `pki init`, the cli refuses an `--api-dir` that contains its CA directory.
+- **The api loads the new files without a restart** (see [Running the api](#running-the-api)). It only switches when
+  the three files belong together, so copying them one by one is safe.
+- `--leaf-validity`, `--key-algorithm` and the passphrase work like for the cli certificate.
+
+The api keeps its private key on the api host only with the online renewal, which is not there yet. With this one,
+the private key is made by the cli, and copied to the api like after `pki init`.
+
 ## Using the cli
 
 All cli commands that talk to the api log in with the client certificate in `--pki-dir` (default `~/.orion/cli`).

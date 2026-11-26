@@ -94,3 +94,34 @@ var _ = Describe("pki renew cli", func() {
 		expectError(err, `--key-algorithm: unknown algorithm "dsa"`, "")
 	})
 })
+
+var _ = Describe("pki renew api", func() {
+	It("writes api files that the cli trusts, with the names of the current certificate", func() {
+		cliDir := GinkgoT().TempDir()
+		apiDir := filepath.Join(GinkgoT().TempDir(), "api")
+		usePKIDir(cliDir)
+		_, _, err := run("pki", "init", "--api-dir", apiDir, "--api-san", "orion-api.example.org")
+		Ω(err).NotTo(HaveOccurred())
+
+		out, _, err := run("pki", "renew", "api", "--api-dir", apiDir, "--api-san", "orion.example.org",
+			"--leaf-validity", "90d")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(out).To(HavePrefix("Renewed the api certificate orion-api in " + apiDir + ": valid until "))
+		Ω(out).To(ContainSubstring("Names on the certificate: orion-api, localhost, 127.0.0.1, ::1, " +
+			"orion-api.example.org, orion.example.org"))
+		Ω(out).To(ContainSubstring("Copy server.crt, server.key and client-ca.crt to the --pki-dir of the api"))
+
+		tlsConfig, err := pki.APIFiles(apiDir).ServerConfig()
+		Ω(err).NotTo(HaveOccurred())
+		api := newFakeAPIWithTLS(tlsConfig)
+		out, _, err = api.run("pki", "list")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(out).To(ContainSubstring("is trusted by the root of the cli"))
+		Ω(out).To(MatchRegexp(`api\s+-\s+orion-api\s.*valid \(8\dd left\)`))
+	})
+
+	It("needs --api-dir", func() {
+		_, _, err := run("pki", "renew", "api")
+		expectError(err, `required flag(s) "api-dir" not set`, "")
+	})
+})
