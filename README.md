@@ -32,7 +32,37 @@ Orion is composed of the following main components
 
 For more details and requirements see [Orion Architecture and Requirements](docs/stolon/architecture.md)
 
-![Orion architecture](docs/stolon/architecture_small.png)
+<!-- Same diagram as docs/architecture.md: change both -->
+```mermaid
+flowchart LR
+    clients([Clients])
+    cli([orion-cli])
+    proxy[orion-proxy]
+    api[orion-api]
+    sentinel["orion-sentinel<br/>(several, one leader)"]
+    store[("store<br/>etcd v3 or Kubernetes api server")]
+
+    subgraph node1 [Primary]
+        keeper1[orion-keeper]
+        primary[(PostgreSQL)]
+    end
+    subgraph node2 [Standby]
+        keeper2[orion-keeper]
+        standby[(PostgreSQL)]
+    end
+
+    clients -->|PostgreSQL protocol| proxy
+    proxy -->|forwards to the primary| primary
+    standby -->|streaming replication| primary
+    keeper1 -->|manages| primary
+    keeper2 -->|manages| standby
+    cli -->|REST over mTLS| api
+
+    keeper1 & keeper2 -->|own state; reads cluster data| store
+    sentinel -->|leader election; reads states; writes cluster data| store
+    proxy -->|own state; reads cluster data| store
+    api -->|reads and changes cluster data; reads leader| store
+```
 
 ## Documentation
 
