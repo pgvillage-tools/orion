@@ -56,7 +56,7 @@ var _ = Describe("Proxy destination", func() {
 
 		p.SetDestination(d2)
 		Expect(p.Destination()).To(Equal(d2))
-		Expect(echoes(old)).To(BeFalse(), "a connection to the old destination stays open")
+		eventuallyClosed(old, "a connection to the old destination stays open")
 		conn := dial(p)
 		Expect(greeting(conn)).To(Equal("d2"))
 		Expect(echoes(conn)).To(BeTrue())
@@ -77,6 +77,6 @@ var _ = Describe("Proxy destination", func() {
 		conn := dial(p)
 		Expect(greeting(conn)).To(Equal("d1"))
 		p.SetDestination(nil)
-		Expect(echoes(conn)).To(BeFalse())
+		eventuallyClosed(conn, "a connection stays open without a destination")
 	})
 })
