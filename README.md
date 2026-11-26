@@ -30,7 +30,7 @@ Orion is composed of the following main components
 * api: Manage Orion clusters with a restful API
 * cli: consume the api in an easy way
 
-For more details and requirements see [Orion Architecture and Requirements](docs/stolon/architecture.md)
+For more details and requirements see [Orion Architecture and Requirements](docs/architecture.md)
 
 ![Orion architecture](docs/stolon/architecture_small.png)
 

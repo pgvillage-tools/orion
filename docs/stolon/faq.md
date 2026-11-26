@@ -46,7 +46,7 @@ The orion pros are the same of the above question and it'll let you avoid the ne
 
 ## What happens if etcd is partitioned?
 
-See [Stolon Architecture and Requirements](architecture.md)
+See [Stolon Architecture and Requirements](../architecture.md)
 
 ## How are backups handled with orion?
 
