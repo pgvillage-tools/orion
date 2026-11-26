@@ -139,13 +139,26 @@ var _ = Describe("certReloader", func() {
 		Expect(serverSerial(r)).To(Equal(apiSerial(second)))
 	})
 
-	It("refuses a certificate that isn't valid now", func() {
+	It("doesn't switch to a certificate that isn't valid now, but starts with one", func() {
 		r, err := newCertReloader(apiFiles, metrics)
 		Expect(err).NotTo(HaveOccurred())
 		r.now = func() time.Time { return time.Now().Add(20 * 365 * 24 * time.Hour) }
 		copyAll(second)
 		Expect(r.reload()).To(MatchError(ContainSubstring("is valid from")))
 		Expect(serverSerial(r)).To(Equal(apiSerial(first)))
+
+		// the api must run to renew an expired certificate online
+		dir := GinkgoT().TempDir()
+		expired := pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api"),
+			LeafExpiry: time.Second}
+		_, err = pki.Init(expired)
+		Expect(err).NotTo(HaveOccurred())
+		time.Sleep(time.Second)
+		copyAll(expired)
+		r, err = newCertReloader(apiFiles, metrics)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(serverSerial(r)).To(Equal(apiSerial(expired)))
+		Expect(time.Now().After(r.certificates()[0].NotAfter)).To(BeTrue())
 	})
 
 	It("refuses a certificate that isn't signed by the intermediate after it", func() {
