@@ -32,7 +32,7 @@ const keyError = "error"
 
 // CmdWebApi exports the main webapi process
 var CmdWebApi = &cobra.Command{
-	Use:     "api",
+	Use:     "orion-api",
 	Run:     runAPI,
 	Version: cmdcommon.Version,
 }

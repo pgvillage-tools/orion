@@ -1,0 +1,29 @@
+## orion-cli promote
+
+Promotes a standby cluster to a primary cluster
+
+```
+orion-cli promote [flags]
+```
+
+### Options
+
+```
+  -h, --help[=true|false]       help for promote
+      --wait[=true|false]       wait until the cluster applied the change (available, and every healthy keeper converged)
+      --wait-timeout duration   how long --wait waits at most (default 5m0s)
+```
+
+### Options inherited from parent commands
+
+```
+  -H, --host string        hostname or ip of the api (default "127.0.0.1")
+      --pki-dir string     directory with the client certificate of the cli, and the CA (default "~/.orion/cli")
+  -p, --port uint16        port of the api (default 8443)
+  -T, --timeout duration   timeout for requests to the api (default 30s)
+```
+
+### SEE ALSO
+
+* [orion-cli](orion-cli.md)	 - orion command line interface
+

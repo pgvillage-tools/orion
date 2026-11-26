@@ -1,0 +1,33 @@
+## orion-cli removekeeper
+
+Removes a keeper that is gone for good from the cluster data
+
+### Synopsis
+
+Removes a keeper, and its database, from the cluster data, for a keeper that is gone for good (e.g. its node is lost). A keeper that still runs registers itself again. The keeper of the primary can't be removed: fail it first (orion-cli failkeeper), and remove it once another keeper runs the primary.
+
+```
+orion-cli removekeeper [keeper uid] [flags]
+```
+
+### Options
+
+```
+  -h, --help[=true|false]       help for removekeeper
+      --wait[=true|false]       wait until the cluster applied the change (available, and every healthy keeper converged)
+      --wait-timeout duration   how long --wait waits at most (default 5m0s)
+```
+
+### Options inherited from parent commands
+
+```
+  -H, --host string        hostname or ip of the api (default "127.0.0.1")
+      --pki-dir string     directory with the client certificate of the cli, and the CA (default "~/.orion/cli")
+  -p, --port uint16        port of the api (default 8443)
+  -T, --timeout duration   timeout for requests to the api (default 30s)
+```
+
+### SEE ALSO
+
+* [orion-cli](orion-cli.md)	 - orion command line interface
+

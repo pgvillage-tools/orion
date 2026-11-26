@@ -45,6 +45,9 @@ jobs:
               - '.golangci.yaml'
               - '.testcoverage.yaml'
               - 'Makefile'
+              # the command reference is checked against the commands
+              - 'scripts/gen_commands_doc.sh'
+              - 'docs/reference/commands/**'
             e2e_src:
               - '**/*.go'
               - '!**/*_test.go'
@@ -147,6 +150,15 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- .
+      - name: Check that the command reference is up to date
+        run: |
+          ./scripts/gen_commands_doc.sh
+          if [ -n "$(git status --porcelain -- docs/reference/commands)" ]; then
+            git status --short -- docs/reference/commands
+            git diff -- docs/reference/commands
+            echo "::error::docs/reference/commands is not up to date: run scripts/gen_commands_doc.sh and commit the result"
+            exit 1
+          fi
 
   lint-go:
     name: Lint Go code
