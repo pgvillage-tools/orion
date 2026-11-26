@@ -250,6 +250,34 @@ To alert on certificates that expire within 30 days:
 Because the api reads its certificates at start, the metric shows the certificates it uses, not the files on disk.
 After you renew the certificates and restart the api, the alert clears.
 
+## Listing the certificates
+
+`orion-cli pki list` shows the certificates in `--pki-dir` (the client certificate of the cli, the intermediates and
+the root), and the certificates the api sends (its server certificate and the server intermediate), with their expiry:
+
+```text
+$ orion-cli pki list
+SOURCE  FILE                   COMMON NAME    ISSUER         SERIAL      EXPIRES           STATUS
+cli     tls.crt                orion-cli      api-clients    35432de4…   2027-11-26 07:31  valid (364d left)
+cli     ca/api-clients/ca.crt  api-clients    Orion root CA  66d5f6ac…   2029-11-25 07:31  valid (1094d left)
+cli     ca/server/ca.crt       server         Orion root CA  27b29d88…   2029-11-25 07:31  valid (1094d left)
+cli     ca/root.crt            Orion root CA  Orion root CA  b9783946…   2031-11-25 07:31  valid (1824d left)
+api     -                      orion-api      server         5e0c1a7d…   2027-11-26 07:31  valid (364d left)
+api     -                      server         Orion root CA  27b29d88…   2029-11-25 07:31  valid (1094d left)
+
+The certificate of the api at orion-api.example.com:8443 is trusted by the root of the cli
+```
+
+- **The serials** are shortened in this example; the cli prints them in full (hex).
+- **The status** is `valid`, `expires soon` (within 30 days), `expired` or `not valid yet`.
+- **For the api**, the cli only does a TLS handshake. It doesn't send its client certificate and needs no
+  passphrase, so the list also works when the certificate of the cli or of the api expired. It then checks the
+  certificates of the api against the root in `--pki-dir`, for the api host, and says when they don't match (e.g.
+  `certificate signed by unknown authority` for an api of another CA).
+- **`--local`** lists only the files in `--pki-dir`, without connecting to the api.
+- **`--format json`** prints the certificates and the result of the check as JSON.
+- When the api can't be reached, the cli lists its own certificates and exits with an error.
+
 ## Using the cli
 
 All cli commands that talk to the api log in with the client certificate in `--pki-dir` (default `~/.orion/cli`).
