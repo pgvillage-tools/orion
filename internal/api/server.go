@@ -207,6 +207,7 @@ func normalServer(ctx context.Context, files pki.TLSFiles, h *Handlers, metrics 
 	if err != nil {
 		return nil, fmt.Errorf("failed to load the certificates: %w", err)
 	}
+	h.certs = reloader
 	warnExpiring(ctx, reloader.certificates())
 	hup, stopHUP := notifyHUP()
 	go func() {

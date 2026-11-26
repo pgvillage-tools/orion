@@ -170,7 +170,7 @@ func (pk *PrivateKey) Decode() error {
 	if !ok {
 		return errors.New("private key can't be used for signing")
 	}
-	algorithm, err := algorithmOf(signer)
+	algorithm, err := AlgorithmOf(signer)
 	if err != nil {
 		return err
 	}
@@ -179,8 +179,8 @@ func (pk *PrivateKey) Decode() error {
 	return nil
 }
 
-// algorithmOf returns the KeyAlgorithm of a key
-func algorithmOf(key crypto.Signer) (KeyAlgorithm, error) {
+// AlgorithmOf returns the KeyAlgorithm of a key, or an error for a key of an unsupported type or size
+func AlgorithmOf(key crypto.Signer) (KeyAlgorithm, error) {
 	switch k := key.(type) {
 	case *ecdsa.PrivateKey:
 		if k.Curve == elliptic.P256() {

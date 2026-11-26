@@ -20,6 +20,6 @@ Renew certificates of the cli and the api
 ### SEE ALSO
 
 * [orion-cli pki](orion-cli_pki.md)	 - Manage the certificates of Orion
-* [orion-cli pki renew api](orion-cli_pki_renew_api.md)	 - Renew the server certificate of the api, in a directory to copy to the api
+* [orion-cli pki renew api](orion-cli_pki_renew_api.md)	 - Renew the server certificate of the api
 * [orion-cli pki renew cli](orion-cli_pki_renew_cli.md)	 - Renew the client certificate of the cli
 
