@@ -50,12 +50,11 @@ const (
 	decimal           = 10
 )
 
-// warnExpiring warns about the certificates (as loaded at start) that expire soon. The api reads its certificates
-// at start only, so new files need a restart.
+// warnExpiring warns about the certificates the api serves with that expire soon
 func warnExpiring(ctx context.Context, certs []*x509.Certificate) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
 	for _, e := range pki.ExpiringCertificates(certs, time.Now(), pki.ExpiryWarning) {
-		logger.Warn().Str("certificate", e).Msg("certificate expires soon; renew it with the cli and restart the api")
+		logger.Warn().Str("certificate", e).Msg("certificate expires soon; renew it with the cli")
 	}
 }
 
@@ -204,20 +203,15 @@ func run(ctx context.Context, cfg Config, files pki.TLSFiles, bootstrap bool, h 
 // required, and the api routes
 func normalServer(ctx context.Context, files pki.TLSFiles, h *Handlers, metrics *apiMetrics) (*http.Server, error) {
 	_, logger := logging.GetLogComponent(ctx, logging.WebApiComponent)
-	tlsConfig, err := files.ServerConfig()
+	reloader, err := newCertReloader(files, metrics)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load the certificates: %w", err)
 	}
-	certs, err := files.Certificates()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load the certificates: %w", err)
-	}
-	metrics.setCertificates(certs)
-	warnExpiring(ctx, certs)
+	warnExpiring(ctx, reloader.certificates())
+	hup, stopHUP := notifyHUP()
 	go func() {
-		for range time.Tick(expiryCheckPeriod) {
-			warnExpiring(ctx, certs)
-		}
+		defer stopHUP()
+		reloader.watch(ctx, certReloadPeriod, hup)
 	}()
 
 	logger.Debug().Msg("registering routes")
@@ -227,7 +221,7 @@ func normalServer(ctx context.Context, files pki.TLSFiles, h *Handlers, metrics 
 	}
 	return &http.Server{
 		Handler:           auth.Middleware(newMux(ctx, routes), auth.ClientCertAuthenticator{}),
-		TLSConfig:         tlsConfig,
+		TLSConfig:         reloader.tlsConfig(),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}, nil
 }

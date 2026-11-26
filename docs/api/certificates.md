@@ -129,7 +129,11 @@ openssl pkey -in ~/.orion/cli/ca/root.key -noout -text
 
 - Without any of its three files in `--pki-dir` (and none set with `--tls-*-file`), the api starts in bootstrap mode:
   see [Starting without certificates](#starting-without-certificates). With only a part of them, it doesn't start.
-- The api reads its certificates at start. After you replace them (e.g. after a renewal), restart the api.
+- The api loads new certificate files without a restart. It checks the files every minute, and right away on
+  SIGHUP (e.g. `kill -HUP <pid>`, or `docker kill --signal HUP <container>`). It only switches when the certificate,
+  the key and the CA belong together, and the certificate is valid now. Otherwise it keeps the certificates it has,
+  and logs a warning with the reason, e.g. while you copy the files one by one. Open connections keep the certificates
+  they started with; new connections get the new ones. A Kubernetes Secret that changes is picked up the same way.
 - At start, and once a day, the api logs a warning for every certificate it loaded that expires within 30 days.
 - The cli warns on stderr when its client certificate, the api certificate or one of their chains expires within 30
   days; the output and the exit code stay the same. With an expired certificate it stops with an error that names it.
@@ -229,7 +233,7 @@ readinessProbe:
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `orion_api_certificate_expiry_timestamp_seconds` | gauge | `common_name`, `serial`, `ca` | Expiry of each certificate the api loaded at start (its certificate, its chain and the CA of the clients), in seconds since the unix epoch. |
+| `orion_api_certificate_expiry_timestamp_seconds` | gauge | `common_name`, `serial`, `ca` | Expiry of each certificate the api serves with (its certificate, its chain and the CA of the clients), in seconds since the unix epoch. |
 | `orion_api_requests_total` | counter | `method`, `route`, `code` | Requests on the api port, after authentication. `route` is the path of the route, e.g. `/v1/cluster/keepers/{uid}`. |
 | `orion_api_request_duration_seconds` | histogram | `method`, `route` | Duration of those requests. |
 | `orion_cluster_identifier` | gauge | `cluster_name`, `component` | Always 1, with `component="api"`. The other components have it too. |
@@ -247,8 +251,8 @@ To alert on certificates that expire within 30 days:
     summary: "Certificate {{ $labels.common_name }} of the orion api expires within 30 days"
 ```
 
-Because the api reads its certificates at start, the metric shows the certificates it uses, not the files on disk.
-After you renew the certificates and restart the api, the alert clears.
+The metric shows the certificates the api serves with, not the files on disk. After you renew the certificates,
+the alert clears once the api loaded the new files (within a minute, or right away on SIGHUP).
 
 ## Listing the certificates
 

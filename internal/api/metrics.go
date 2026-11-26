@@ -63,7 +63,7 @@ func newAPIMetrics(registry *prometheus.Registry) *apiMetrics {
 			Namespace: metricsNamespace,
 			Subsystem: metricsSubsystem,
 			Name:      "certificate_expiry_timestamp_seconds",
-			Help: "Expiry of the certificates the api loaded at start (its certificate, its chain and the CA of " +
+			Help: "Expiry of the certificates the api serves with (its certificate, its chain and the CA of " +
 				"the clients), as seconds since the unix epoch",
 		}, []string{"common_name", "serial", "ca"}),
 	}
