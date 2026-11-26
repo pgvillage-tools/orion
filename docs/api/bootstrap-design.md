@@ -410,8 +410,9 @@ the clock of the api host forward, start a new bootstrap on a running PKI. Renew
 - **The client certificate of the cli** (1 year): the cli signs a new one with the key of the client intermediate,
   locally.
 - **The api certificate** (1 year): the cli signs a CSR of the api with the key of the server intermediate. The api
-  keeps its private key, and never has a CA key. When the certificate has expired already, the cli trusts the
-  certificate it knows from before for this one step.
+  keeps its private key, and never has a CA key. This needs a valid api certificate: the cli doesn't keep the api
+  certificate, so with an expired one it can't tell the real api from someone who has an old key of it. An expired
+  api certificate is renewed offline: the cli writes the files, and they are copied to the api.
 - **An intermediate** (3 years): the cli issues a new one with the root key, locally, and gives the api the new chain
   in the same way.
 - **The root** (5 years): a CA rotation, with a period in which both roots are trusted. That is planned work, well

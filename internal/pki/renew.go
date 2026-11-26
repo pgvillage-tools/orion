@@ -16,6 +16,7 @@ package pki
 
 import (
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -137,7 +138,7 @@ func RenewCLI(opts RenewCLIOptions) (*RenewResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = replacePair(files.CertFile, files.KeyFile, leaf.Cert.PEM, leaf.PrivateKey.PEM); err != nil {
+	if err = ReplacePair(files.CertFile, files.KeyFile, leaf.Cert.PEM, leaf.PrivateKey.PEM); err != nil {
 		return nil, err
 	}
 	renewed := leaf.Cert.X509()
@@ -159,9 +160,9 @@ func currentAlgorithm(keyFile string, fallback oriontls.KeyAlgorithm) oriontls.K
 	return key.Algorithm
 }
 
-// replacePair writes keyPEM and certPEM to keyFile and certFile, each atomically. When the certificate can't be
+// ReplacePair writes keyPEM and certPEM to keyFile and certFile, each atomically. When the certificate can't be
 // written, the previous key is put back, so the files still belong together.
-func replacePair(certFile, keyFile string, certPEM, keyPEM []byte) error {
+func ReplacePair(certFile, keyFile string, certPEM, keyPEM []byte) error {
 	previousKey, readErr := os.ReadFile(keyFile)
 	if err := oriontls.WriteFile(keyFile, keyPEM, true); err != nil {
 		return fmt.Errorf("failed to write %s: %w", keyFile, err)
@@ -219,18 +220,9 @@ func RenewAPI(opts RenewAPIOptions) (*RenewResult, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	sans := append([]string{APIServerName}, DefaultAPISANs...)
-	if previous != nil {
-		sans = append(sans, previous.DNSNames...)
-		for _, ip := range previous.IPAddresses {
-			sans = append(sans, ip.String())
-		}
-	}
-	sans = uniqueValues(append(sans, opts.APISANs...))
-	for _, san := range sans {
-		if !oriontls.IsValidServer(san) {
-			return nil, nil, fmt.Errorf("invalid name or address for the api certificate: %q", san)
-		}
+	sans, err := apiSANs(previous, opts.APISANs)
+	if err != nil {
+		return nil, nil, err
 	}
 	algorithm := opts.KeyAlgorithm
 	if algorithm == "" {
@@ -247,7 +239,7 @@ func RenewAPI(opts RenewAPIOptions) (*RenewResult, []string, error) {
 		return nil, nil, err
 	}
 	certPEM := append(append([]byte{}, leaf.Cert.PEM...), intermediate.Cert.PEM...)
-	if err = replacePair(files.CertFile, files.KeyFile, certPEM, leaf.PrivateKey.PEM); err != nil {
+	if err = ReplacePair(files.CertFile, files.KeyFile, certPEM, leaf.PrivateKey.PEM); err != nil {
 		return nil, nil, err
 	}
 	if err = oriontls.WriteFile(files.CAFile, clientCA, false); err != nil {
@@ -277,4 +269,115 @@ func currentAPICert(certFile string, intermediate *x509.Certificate) (*x509.Cert
 			"or with the api directory of this CA: %w", certFile, ServerIntermediate, err)
 	}
 	return certs[0], nil
+}
+
+// apiSANs returns the names for a new api certificate: its CommonName, DefaultAPISANs, the names on current (when
+// set) and extra
+func apiSANs(current *x509.Certificate, extra []string) ([]string, error) {
+	sans := append([]string{APIServerName}, DefaultAPISANs...)
+	if current != nil {
+		sans = append(sans, current.DNSNames...)
+		for _, ip := range current.IPAddresses {
+			sans = append(sans, ip.String())
+		}
+	}
+	sans = uniqueValues(append(sans, extra...))
+	for _, san := range sans {
+		if !oriontls.IsValidServer(san) {
+			return nil, fmt.Errorf("invalid name or address for the api certificate: %q", san)
+		}
+	}
+	return sans, nil
+}
+
+// SignAPIRequestOptions are the options of SignAPIRequest
+type SignAPIRequestOptions struct {
+	// CLIDir is the directory of the cli, with the CA directory
+	CLIDir string
+	// CAPassphrase decrypts the private key of the server intermediate
+	CAPassphrase []byte
+	// Request is the PEM encoded certificate request of the api
+	Request []byte
+	// Current is the certificate the api serves with now: its names are kept, and it must be of this CA
+	Current *x509.Certificate
+	// APISANs are added to the names
+	APISANs []string
+	// LeafExpiry is the validity of the new certificate
+	LeafExpiry time.Duration
+}
+
+// SignedAPIRequest is the result of SignAPIRequest
+type SignedAPIRequest struct {
+	RenewResult
+	// Chain is the new certificate followed by the server intermediate, PEM encoded: what the api serves
+	Chain []byte
+	// SANs are the names on the new certificate
+	SANs []string
+}
+
+// errUnexpectedPEM is returned for PEM data of another type than expected
+var errUnexpectedPEM = errors.New("no PEM encoded certificate request found")
+
+// SignAPIRequest signs the certificate request of the api (the online renewal) with the server intermediate. The
+// request must be signed by its own key (the api has that key), and be for the CommonName of the api. The new
+// certificate keeps the names of the current one.
+func SignAPIRequest(opts SignAPIRequestOptions) (*SignedAPIRequest, error) {
+	block, _ := pem.Decode(opts.Request)
+	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+		return nil, errUnexpectedPEM
+	}
+	request, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid certificate request: %w", err)
+	}
+	if err = request.CheckSignature(); err != nil {
+		return nil, fmt.Errorf("the certificate request isn't signed by its key: %w", err)
+	}
+	if request.Subject.CommonName != APIServerName {
+		return nil, fmt.Errorf("the certificate request is for %q, not for %s", request.Subject.CommonName,
+			APIServerName)
+	}
+	if opts.Current == nil {
+		return nil, errors.New("the current certificate of the api is required")
+	}
+	intermediate, err := LoadIntermediate(opts.CLIDir, ServerIntermediate, opts.CAPassphrase)
+	if err != nil {
+		return nil, err
+	}
+	if err = opts.Current.CheckSignatureFrom(intermediate.Cert.X509()); err != nil {
+		return nil, fmt.Errorf("the certificate of the api is not signed by the intermediate %s of this CA: %w",
+			ServerIntermediate, err)
+	}
+	sans, err := apiSANs(opts.Current, opts.APISANs)
+	if err != nil {
+		return nil, err
+	}
+	subject := intermediate.Cert.Subject.SetCommonName(APIServerName)
+	cert := oriontls.Cert{
+		Subject:        &subject,
+		Expiry:         opts.LeafExpiry,
+		KeyUsage:       oriontls.DefaultKeyUsage,
+		ExtKeyUsage:    oriontls.DefaultServerExtKeyUsages,
+		AlternateNames: sans,
+	}
+	if request.PublicKeyAlgorithm == x509.RSA {
+		cert.KeyUsage |= x509.KeyUsageKeyEncipherment
+	}
+	if err = cert.Generate(); err != nil {
+		return nil, err
+	}
+	if err = cert.SignPublicKey(request.PublicKey, intermediate); err != nil {
+		return nil, err
+	}
+	renewed := cert.X509()
+	return &SignedAPIRequest{
+		RenewResult: RenewResult{
+			Previous:     opts.Current,
+			Renewed:      renewed,
+			Capped:       renewed.NotAfter.Equal(intermediate.Cert.X509().NotAfter),
+			Intermediate: intermediate.Cert.X509(),
+		},
+		Chain: append(append([]byte{}, cert.PEM...), intermediate.Cert.PEM...),
+		SANs:  sans,
+	}, nil
 }

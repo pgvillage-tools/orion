@@ -15,13 +15,17 @@
 package cmd
 
 import (
+	"crypto/x509"
 	"fmt"
+	"net"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
+	endpoints "github.com/pgvillage-tools/orion/pkg/api_endpoints"
 	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -54,15 +58,21 @@ var cmdPKIRenewAPI = &cobra.Command{
 	Use:   "api",
 	RunE:  runPKIRenewAPI,
 	Args:  cobra.NoArgs,
-	Short: "Renew the server certificate of the api, in a directory to copy to the api",
-	Long: `Write a new server certificate and private key for the api to --api-dir, signed by the server
-intermediate in --pki-dir, together with the api client intermediate (client-ca.crt): the same
-files as pki init. Copy them to the --pki-dir of the api: it loads them within a minute, or right
-away on SIGHUP, without a restart.
+	Short: "Renew the server certificate of the api",
+	Long: `Renew the server certificate of the api, signed by the server intermediate in --pki-dir.
 
-The new certificate keeps the names of the certificate in --api-dir (when there is one; it must be
-of this CA), and gets localhost, 127.0.0.1, ::1, the configured api host (--host) and the names
-in --api-san.
+Online (without --api-dir): the api creates a new private key, which never leaves the api, and
+sends a certificate request for it. The cli signs it, and the api stores the new certificate and
+serves new connections with it, without a restart. The api must have a valid certificate: an
+expired one is renewed offline.
+
+Offline (with --api-dir): the cli writes a new certificate and key to --api-dir, together with the
+api client intermediate (client-ca.crt): the same files as pki init. Copy them to the --pki-dir of
+the api: it loads them within a minute, or right away on SIGHUP, without a restart.
+
+The new certificate keeps the names of the current one (the one the api serves with; offline, the
+one in --api-dir, when there is one), and gets localhost, 127.0.0.1, ::1, the configured api host
+(--host) and the names in --api-san.
 
 The private key of the intermediate is decrypted with the passphrase of the CA keys: it is read
 from --ca-passphrase-file, else from ORIONCLI_CA_PASSPHRASE, else the cli asks for it.
@@ -117,10 +127,10 @@ func init() {
 	pkiRenewCLIOpts.add(cmdPKIRenewCLI)
 	pkiRenewAPIOpts.add(cmdPKIRenewAPI)
 	flags := cmdPKIRenewAPI.Flags()
-	flags.StringVar(&pkiRenewAPIOpts.apiDir, "api-dir", "", "directory to write the api files to (required)")
+	flags.StringVar(&pkiRenewAPIOpts.apiDir, "api-dir", "",
+		"renew offline: directory to write the api files to (default: renew online, on the api)")
 	flags.StringSliceVar(&pkiRenewAPIOpts.apiSANs, "api-san", nil,
 		"extra name or ip address for the api certificate (can be repeated)")
-	_ = cmdPKIRenewAPI.MarkFlagRequired("api-dir")
 	cmdPKIRenew.AddCommand(cmdPKIRenewCLI, cmdPKIRenewAPI)
 	cmdPKI.AddCommand(cmdPKIRenew)
 }
@@ -162,24 +172,101 @@ func runPKIRenewAPI(c *cobra.Command, _ []string) error {
 	if c.Flags().Changed(flagHost) {
 		host, _ = c.Flags().GetString(flagHost)
 	}
+	sans := append([]string{host}, pkiRenewAPIOpts.apiSANs...)
+	cliDir := filepath.Dir(files.CertFile)
+	validity, algorithm, passphrase, err := pkiRenewAPIOpts.parse()
+	if err != nil {
+		return err
+	}
+	if pkiRenewAPIOpts.apiDir == "" {
+		return renewAPIOnline(c, files, host, sans, validity, algorithm, passphrase)
+	}
 	opts := pki.RenewAPIOptions{
-		CLIDir:  filepath.Dir(files.CertFile),
-		APISANs: append([]string{host}, pkiRenewAPIOpts.apiSANs...),
+		CLIDir: cliDir, APISANs: sans, LeafExpiry: validity, KeyAlgorithm: algorithm, CAPassphrase: passphrase,
 	}
 	if opts.APIDir, err = pki.ExpandHome(pkiRenewAPIOpts.apiDir); err != nil {
 		return err
 	}
-	if opts.LeafExpiry, opts.KeyAlgorithm, opts.CAPassphrase, err = pkiRenewAPIOpts.parse(); err != nil {
-		return err
-	}
-	result, sans, err := pki.RenewAPI(opts)
+	result, names, err := pki.RenewAPI(opts)
 	if err != nil {
 		return fmt.Errorf("failed to renew the api certificate: %w", err)
 	}
 	printRenewed("api certificate", opts.APIDir, result)
-	stdout("Names on the certificate: %s", strings.Join(sans, ", "))
+	stdout("Names on the certificate: %s", strings.Join(names, ", "))
 	stdout("Copy %s, %s and %s to the --pki-dir of the api: it loads them within a minute, or right away on SIGHUP",
 		pki.APIServerCertFile, pki.APIServerKeyFile, pki.APIClientCAFile)
+	return nil
+}
+
+// trustedAPICertificate returns the certificate the api at host serves with, after checking it against the root of
+// the cli
+func trustedAPICertificate(c *cobra.Command, files pki.TLSFiles, host string) (*x509.Certificate, error) {
+	address := net.JoinHostPort(host, strconv.Itoa(int(viper.GetUint16(flagPort))))
+	peer, err := apiCertificates(c.Context(), address, host, viper.GetDuration(flagTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get the certificate of the api at %s: %w", address, err)
+	}
+	if len(peer) == 0 {
+		return nil, fmt.Errorf("the api at %s sent no certificate", address)
+	}
+	roots, _, err := pki.LoadCertPool(files.CAFile)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if now.After(peer[0].NotAfter) {
+		return nil, fmt.Errorf("the certificate of the api at %s expired at %s: renew it offline, with --api-dir, "+
+			"and copy the files to the api", address, peer[0].NotAfter.Format(time.RFC3339))
+	}
+	if err = checkAPIChain(peer, roots, host, now); err != nil {
+		return nil, fmt.Errorf("the certificate of the api at %s isn't trusted by the root of the cli: %w", address,
+			err)
+	}
+	return peer[0], nil
+}
+
+// renewAPIOnline renews the certificate of the api on the api: the api makes the key and a certificate request, the
+// cli signs it, and the api serves with the new certificate
+func renewAPIOnline(c *cobra.Command, files pki.TLSFiles, host string, sans []string, validity time.Duration,
+	algorithm oriontls.KeyAlgorithm, passphrase []byte) error {
+	current, err := trustedAPICertificate(c, files, host)
+	if err != nil {
+		return err
+	}
+	apiClient, err := defaultAPIClient()
+	if err != nil {
+		return err
+	}
+	request, code, err := apiClient.RequestAPICertificate(endpoints.APICertificateRequestRequest{
+		KeyAlgorithm: string(algorithm),
+	})
+	if err != nil {
+		return apiError("the api didn't create a certificate request", code, err)
+	}
+	signed, err := pki.SignAPIRequest(pki.SignAPIRequestOptions{
+		CLIDir: filepath.Dir(files.CertFile), CAPassphrase: passphrase, Request: request.Request, Current: current,
+		APISANs: sans, LeafExpiry: validity,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to sign the certificate request of the api: %w", err)
+	}
+	if _, code, err = apiClient.PutAPICertificate(endpoints.APICertificate{Chain: signed.Chain}); err != nil {
+		return apiError("the api didn't take the new certificate", code, err)
+	}
+	// a new connection must get the new certificate
+	apiClient.CloseIdleConnections()
+	serving, err := trustedAPICertificate(c, files, host)
+	if err != nil {
+		return fmt.Errorf("the api took the new certificate, but: %w", err)
+	}
+	if serving.SerialNumber.Cmp(signed.Renewed.SerialNumber) != 0 {
+		return fmt.Errorf("the api took the new certificate (serial %x), but serves with serial %x",
+			signed.Renewed.SerialNumber, serving.SerialNumber)
+	}
+	printRenewed("api certificate", "the api at "+net.JoinHostPort(host, strconv.Itoa(int(viper.GetUint16(flagPort)))),
+		&signed.RenewResult)
+	stdout("Names on the certificate: %s", strings.Join(signed.SANs, ", "))
+	stdout("The api serves new connections with it; its private key never left the api")
 	return nil
 }
 
