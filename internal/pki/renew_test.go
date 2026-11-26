@@ -15,8 +15,11 @@
 package pki_test
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"time"
@@ -289,5 +292,71 @@ var _ = Describe("RenewAPI", func() {
 		after, err := os.ReadFile(pki.APIFiles(opts.APIDir).CertFile)
 		Ω(err).NotTo(HaveOccurred())
 		Ω(after).To(Equal(before))
+	})
+})
+
+var _ = Describe("SignAPIRequest", func() {
+	var (
+		opts    pki.InitOptions
+		current *x509.Certificate
+	)
+	BeforeEach(func() {
+		dir := GinkgoT().TempDir()
+		opts = pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api")}
+		_, err := pki.Init(opts)
+		Ω(err).NotTo(HaveOccurred())
+		_, certs, err := pki.LoadCertPool(pki.APIFiles(opts.APIDir).CertFile)
+		Ω(err).NotTo(HaveOccurred())
+		current = certs[0]
+	})
+	request := func(cn string) []byte {
+		key := oriontls.PrivateKey{Algorithm: oriontls.DefaultKeyAlgorithm}
+		Ω(key.Generate()).To(Succeed())
+		der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+			Subject: pkix.Name{CommonName: cn},
+		}, key.Signer())
+		Ω(err).NotTo(HaveOccurred())
+		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})
+	}
+	sign := func(req []byte, cur *x509.Certificate) (*pki.SignedAPIRequest, error) {
+		return pki.SignAPIRequest(pki.SignAPIRequestOptions{
+			CLIDir: opts.CLIDir, Request: req, Current: cur, APISANs: []string{"orion.example.org"},
+			LeafExpiry: oriontls.Year,
+		})
+	}
+
+	It("signs a request of the api with the names of its current certificate", func() {
+		signed, err := sign(request(pki.APIServerName), current)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(signed.SANs).To(ConsistOf(pki.APIServerName, "localhost", "127.0.0.1", "::1", "orion.example.org"))
+		Ω(signed.Renewed.ExtKeyUsage).To(Equal([]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}))
+		Ω(signed.Renewed.CheckSignatureFrom(signed.Intermediate)).To(Succeed())
+		chainFile := filepath.Join(GinkgoT().TempDir(), "chain.crt")
+		Ω(os.WriteFile(chainFile, signed.Chain, 0o600)).To(Succeed())
+		_, chain, err := pki.LoadCertPool(chainFile)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(chain).To(HaveLen(2))
+		Ω(chain[1].Equal(signed.Intermediate)).To(BeTrue())
+	})
+
+	It("refuses a request for another name", func() {
+		_, err := sign(request("evil"), current)
+		Ω(err).To(MatchError(ContainSubstring(`the certificate request is for "evil"`)))
+	})
+
+	It("refuses data that isn't a request", func() {
+		_, err := sign(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: current.Raw}), current)
+		Ω(err).To(MatchError(ContainSubstring("no PEM encoded certificate request found")))
+	})
+
+	It("refuses an api of another CA", func() {
+		dir := GinkgoT().TempDir()
+		other := pki.InitOptions{CLIDir: filepath.Join(dir, "cli"), APIDir: filepath.Join(dir, "api")}
+		_, err := pki.Init(other)
+		Ω(err).NotTo(HaveOccurred())
+		_, certs, err := pki.LoadCertPool(pki.APIFiles(other.APIDir).CertFile)
+		Ω(err).NotTo(HaveOccurred())
+		_, err = sign(request(pki.APIServerName), certs[0])
+		Ω(err).To(MatchError(ContainSubstring("is not signed by the intermediate server of this CA")))
 	})
 })

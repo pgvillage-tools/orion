@@ -16,6 +16,7 @@
 package tls
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
@@ -163,15 +164,20 @@ func (c *Cert) Generate() error {
 // never outlives the signer: its expiry is capped at the expiry of the signer. A root signs itself, with its own pair
 // as the signer.
 func (c *Cert) Sign(privateKey PrivateKey, signer Pair) error {
+	pubKey, err := privateKey.PublicKey()
+	if err != nil {
+		return err
+	}
+	return c.SignPublicKey(pubKey, signer)
+}
+
+// SignPublicKey is Sign for a public key, e.g. of a certificate request: the private key stays with its owner
+func (c *Cert) SignPublicKey(pubKey crypto.PublicKey, signer Pair) error {
 	if c.cert == nil {
 		return errors.New("certificate needs to be generated before it can be signed")
 	}
 	if signer.PrivateKey.key == nil || signer.Cert.cert == nil {
 		return errors.New("signer not properly initialized")
-	}
-	pubKey, err := privateKey.PublicKey()
-	if err != nil {
-		return err
 	}
 	parent := signer.Cert.cert
 	selfSigned := parent == c.cert

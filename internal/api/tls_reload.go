@@ -17,6 +17,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/pgvillage-tools/orion/internal/logging"
 	"github.com/pgvillage-tools/orion/internal/pki"
+	oriontls "github.com/pgvillage-tools/orion/pkg/tls"
 )
 
 // certReloadPeriod is how often the api checks its certificate files for changes
@@ -229,4 +231,36 @@ func (r *certReloader) watch(ctx context.Context, period time.Duration, hup <-ch
 			warnExpiring(ctx, r.certificates())
 		}
 	}
+}
+
+// keyAlgorithm returns the algorithm of the private key the api serves with (the default when it is unknown)
+func (r *certReloader) keyAlgorithm() oriontls.KeyAlgorithm {
+	cert := r.current.Load().config.Certificates[0]
+	if signer, ok := cert.PrivateKey.(crypto.Signer); ok {
+		if algorithm, err := oriontls.AlgorithmOf(signer); err == nil {
+			return algorithm
+		}
+	}
+	return oriontls.DefaultKeyAlgorithm
+}
+
+// intermediate returns the certificate after the certificate of the api in its file (nil when there is none)
+func (r *certReloader) intermediate() *x509.Certificate {
+	certs := r.current.Load().config.Certificates[0].Certificate
+	if len(certs) < 2 {
+		return nil
+	}
+	c, err := x509.ParseCertificate(certs[1])
+	if err != nil {
+		return nil
+	}
+	return c
+}
+
+// replace writes a new certificate (chainPEM) and key to the files, and serves new connections with them
+func (r *certReloader) replace(chainPEM, keyPEM []byte) error {
+	if err := pki.ReplacePair(r.files.CertFile, r.files.KeyFile, chainPEM, keyPEM); err != nil {
+		return err
+	}
+	return r.reload()
 }
