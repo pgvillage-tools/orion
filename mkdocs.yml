@@ -87,6 +87,7 @@ nav:
       - Certificates: api/certificates.md
       - Bootstrap design: api/bootstrap-design.md
   - Deploy:
+      - Installation: deploy/install.md
       - Kubernetes: deploy/k8s.md
   - Cluster:
       - Cluster spec: cluster/spec.md

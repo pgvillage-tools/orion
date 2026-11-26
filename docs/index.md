@@ -36,6 +36,7 @@ run anywhere, come and go, and change their addresses.
 - [Cluster spec](cluster/spec.md): the desired state of a cluster, and how to view and change it.
 - [Initialization](cluster/initialization.md): create a cluster with `orion-cli init` or `--initial-cluster-spec`, in
   init mode `new`, `existing` or `pitr`.
+- [Installation](deploy/install.md): the binaries of a release, the container images, or a build from source.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
 - [Failover and switchover](operations/failover-switchover.md): when the sentinel fails over, what happens to the old
   primary, and how to switch over with `orion-cli failkeeper`.
