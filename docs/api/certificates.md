@@ -134,6 +134,8 @@ openssl pkey -in ~/.orion/cli/ca/root.key -noout -text
   the key and the CA belong together, and the certificate is valid now. Otherwise it keeps the certificates it has,
   and logs a warning with the reason, e.g. while you copy the files one by one. Open connections keep the certificates
   they started with; new connections get the new ones. A Kubernetes Secret that changes is picked up the same way.
+- At start, the api also starts with a certificate that expired (it logs a warning), so the certificate can still be
+  renewed; it never switches to one that isn't valid.
 - At start, and once a day, the api logs a warning for every certificate it loaded that expires within 30 days.
 - The cli warns on stderr when its client certificate, the api certificate or one of their chains expires within 30
   days; the output and the exit code stay the same. With an expired certificate it stops with an error that names it.

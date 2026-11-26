@@ -62,7 +62,8 @@ type certReloader struct {
 // newCertReloader loads the certificates in files, and fails when they can't be used
 func newCertReloader(files pki.TLSFiles, metrics *apiMetrics) (*certReloader, error) {
 	r := &certReloader{files: files, metrics: metrics, now: time.Now}
-	loaded, err := r.load()
+	// at start, an expired certificate is used (with a warning, by the caller): the api must run to renew it online
+	loaded, err := r.load(false)
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +89,10 @@ func digestOf(parts ...[]byte) [sha256.Size]byte {
 	return sha256.Sum256(bytes.Join(parts, []byte{0}))
 }
 
-// load reads and checks the files: the key must belong to the certificate, the certificate must be valid now and
-// signed by the next certificate in the file (its intermediate), and the CA file must hold a certificate
-func (r *certReloader) load() (*loadedCerts, error) {
+// load reads and checks the files: the key must belong to the certificate, the certificate must be signed by the
+// next certificate in the file (its intermediate), and the CA file must hold a certificate. With checkValidity, the
+// certificate must also be valid now.
+func (r *certReloader) load(checkValidity bool) (*loadedCerts, error) {
 	certPEM, keyPEM, caPEM, err := r.readFiles()
 	if err != nil {
 		return nil, err
@@ -106,7 +108,7 @@ func (r *certReloader) load() (*loadedCerts, error) {
 	}
 	leaf := chain[0]
 	now := r.now()
-	if now.After(leaf.NotAfter) || now.Before(leaf.NotBefore) {
+	if checkValidity && (now.After(leaf.NotAfter) || now.Before(leaf.NotBefore)) {
 		return nil, fmt.Errorf("the certificate in %s is valid from %s to %s only", r.files.CertFile,
 			leaf.NotBefore.Format(time.RFC3339), leaf.NotAfter.Format(time.RFC3339))
 	}
@@ -153,7 +155,8 @@ func (r *certReloader) reload() error {
 	if digestOf(certPEM, keyPEM, caPEM) == r.current.Load().digest {
 		return errUnchanged
 	}
-	loaded, err := r.load()
+	// a new certificate that isn't valid now would replace one that may still be
+	loaded, err := r.load(true)
 	if err != nil {
 		return err
 	}
