@@ -17,7 +17,6 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/pgvillage-tools/orion/internal/pki"
@@ -76,12 +75,8 @@ func init() {
 	flags.StringVar(&pkiInitOpts.apiDir, "api-dir", defaultAPIPKIDir, "directory to store the api files in")
 	flags.StringSliceVar(&pkiInitOpts.apiSANs, "api-san", nil,
 		"extra name or ip address for the api certificate (can be repeated)")
-	var algorithms []string
-	for _, a := range oriontls.KeyAlgorithms() {
-		algorithms = append(algorithms, string(a))
-	}
 	flags.StringVar(&pkiInitOpts.keyAlgorithm, "key-algorithm", string(oriontls.DefaultKeyAlgorithm),
-		"algorithm of the private keys ("+strings.Join(algorithms, ", ")+")")
+		"algorithm of the private keys ("+keyAlgorithmNames()+")")
 	flags.StringVar(&pkiInitOpts.rootValidity, "root-validity", "5y", "validity of the root (e.g. 5y, 365d, 8760h)")
 	flags.StringVar(&pkiInitOpts.intermediateValidity, "intermediate-validity", "3y", "validity of the intermediates")
 	flags.StringVar(&pkiInitOpts.leafValidity, "leaf-validity", "1y",

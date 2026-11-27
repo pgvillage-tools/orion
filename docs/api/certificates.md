@@ -284,6 +284,35 @@ The certificate of the api at orion-api.example.com:8443 is trusted by the root 
 - **`--format json`** prints the certificates and the result of the check as JSON.
 - When the api can't be reached, the cli lists its own certificates and exits with an error.
 
+## Renewing the certificates
+
+The cli has the keys of the CA, so renewals go through the cli. A renewal keeps the CA: certificates of the same CA
+keep working. Don't start a new bootstrap or `pki init --force` when a certificate expires: that creates a new CA,
+and the api and the cli of the old one no longer trust each other.
+
+### The client certificate of the cli
+
+```bash
+orion-cli pki renew cli
+# Passphrase for the CA keys:
+# Renewed the client certificate orion-cli in /home/me/.orion/cli: valid until 2027-11-26T07:31:00Z (serial 5e0c…)
+```
+
+- **A new key and certificate**, with the same subject, signed by the api client intermediate in `--pki-dir`
+  (`ca/api-clients`). The api accepts it right away: nothing changes on the api.
+- **An expired certificate can be renewed.** It must be signed by that intermediate, so a certificate of another CA
+  is refused, and nothing is changed.
+- **The passphrase** decrypts the key of the intermediate: from `--ca-passphrase-file`, `ORIONCLI_CA_PASSPHRASE` or
+  a prompt, like `pki init`. With a wrong passphrase, nothing is changed.
+- **`--leaf-validity`** (default `1y`) sets the validity, **`--key-algorithm`** the algorithm of the new key (default:
+  that of the current key).
+- **The certificate never outlives the intermediate.** When the intermediate expires first, the cli warns: renew the
+  intermediate then.
+
+Only the cli that created the CA (with `pki init` or `bootstrap`) has the intermediate, in `--pki-dir/ca`. The key
+and the certificate are replaced one after the other, each atomically; when writing the certificate fails, the cli
+puts the previous key back.
+
 ## Using the cli
 
 All cli commands that talk to the api log in with the client certificate in `--pki-dir` (default `~/.orion/cli`).

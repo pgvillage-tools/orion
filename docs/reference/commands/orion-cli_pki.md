@@ -22,4 +22,5 @@ Manage the certificates of Orion
 * [orion-cli](orion-cli.md)	 - orion command line interface
 * [orion-cli pki init](orion-cli_pki_init.md)	 - Create the CA, the api server certificate and the cli client certificate
 * [orion-cli pki list](orion-cli_pki_list.md)	 - List the certificates of the cli and the api, and when they expire
+* [orion-cli pki renew](orion-cli_pki_renew.md)	 - Renew certificates of the cli and the api
 
