@@ -121,7 +121,8 @@ func RenewCLI(opts RenewCLIOptions) (*RenewResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = current.X509().CheckSignatureFrom(intermediate.Cert.X509()); err != nil {
+	if err = signedByIntermediate(current.X509(), opts.CLIDir, APIClientIntermediate,
+		intermediate.Cert.X509()); err != nil {
 		return nil, fmt.Errorf("%s is not signed by the intermediate %s in %s: %w", files.CertFile,
 			APIClientIntermediate, filepath.Join(opts.CLIDir, CLICADir), err)
 	}
@@ -203,7 +204,7 @@ func RenewAPI(opts RenewAPIOptions) (*RenewResult, []string, error) {
 	if opts.CLIDir == "" || opts.APIDir == "" {
 		return nil, nil, errors.New("both the cli and the api directory need to be set")
 	}
-	if err := (InitOptions{CLIDir: opts.CLIDir, APIDir: opts.APIDir}).checkDirs(); err != nil {
+	if err := (InitOptions{CLIDir: opts.CLIDir, APIDir: opts.APIDir}).CheckDirs(); err != nil {
 		return nil, nil, err
 	}
 	intermediate, err := LoadIntermediate(opts.CLIDir, ServerIntermediate, opts.CAPassphrase)
@@ -216,7 +217,7 @@ func RenewAPI(opts RenewAPIOptions) (*RenewResult, []string, error) {
 		return nil, nil, fmt.Errorf("failed to read the api client intermediate: %w", err)
 	}
 	files := APIFiles(opts.APIDir)
-	previous, err := currentAPICert(files.CertFile, intermediate.Cert.X509())
+	previous, err := currentAPICert(files.CertFile, opts.CLIDir, intermediate.Cert.X509())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -255,8 +256,8 @@ func RenewAPI(opts RenewAPIOptions) (*RenewResult, []string, error) {
 }
 
 // currentAPICert returns the api certificate in certFile (nil when there is none), and refuses one that isn't signed
-// by the server intermediate: the api directory then holds files of another CA
-func currentAPICert(certFile string, intermediate *x509.Certificate) (*x509.Certificate, error) {
+// by the server intermediate (or the one it replaced): the api directory then holds files of another CA
+func currentAPICert(certFile, cliDir string, intermediate *x509.Certificate) (*x509.Certificate, error) {
 	_, certs, err := LoadCertPool(certFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
@@ -264,7 +265,7 @@ func currentAPICert(certFile string, intermediate *x509.Certificate) (*x509.Cert
 	if err != nil {
 		return nil, err
 	}
-	if err = certs[0].CheckSignatureFrom(intermediate); err != nil {
+	if err = signedByIntermediate(certs[0], cliDir, ServerIntermediate, intermediate); err != nil {
 		return nil, fmt.Errorf("%s is not signed by the intermediate %s of this CA: renew it in an empty directory, "+
 			"or with the api directory of this CA: %w", certFile, ServerIntermediate, err)
 	}
@@ -344,7 +345,8 @@ func SignAPIRequest(opts SignAPIRequestOptions) (*SignedAPIRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = opts.Current.CheckSignatureFrom(intermediate.Cert.X509()); err != nil {
+	if err = signedByIntermediate(opts.Current, opts.CLIDir, ServerIntermediate,
+		intermediate.Cert.X509()); err != nil {
 		return nil, fmt.Errorf("the certificate of the api is not signed by the intermediate %s of this CA: %w",
 			ServerIntermediate, err)
 	}
