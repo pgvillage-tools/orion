@@ -137,7 +137,7 @@ func RenewCLI(opts RenewCLIOptions) (*RenewResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = replacePair(files.CertFile, files.KeyFile, leaf); err != nil {
+	if err = replacePair(files.CertFile, files.KeyFile, leaf.Cert.PEM, leaf.PrivateKey.PEM); err != nil {
 		return nil, err
 	}
 	renewed := leaf.Cert.X509()
@@ -159,14 +159,14 @@ func currentAlgorithm(keyFile string, fallback oriontls.KeyAlgorithm) oriontls.K
 	return key.Algorithm
 }
 
-// replacePair writes the private key and the certificate of pair to keyFile and certFile, each atomically. When the
-// certificate can't be written, the previous key is put back, so the files still belong together.
-func replacePair(certFile, keyFile string, pair oriontls.Pair) error {
+// replacePair writes keyPEM and certPEM to keyFile and certFile, each atomically. When the certificate can't be
+// written, the previous key is put back, so the files still belong together.
+func replacePair(certFile, keyFile string, certPEM, keyPEM []byte) error {
 	previousKey, readErr := os.ReadFile(keyFile)
-	if err := oriontls.WriteFile(keyFile, pair.PrivateKey.PEM, true); err != nil {
+	if err := oriontls.WriteFile(keyFile, keyPEM, true); err != nil {
 		return fmt.Errorf("failed to write %s: %w", keyFile, err)
 	}
-	if err := oriontls.WriteFile(certFile, pair.Cert.PEM, false); err != nil {
+	if err := oriontls.WriteFile(certFile, certPEM, false); err != nil {
 		if readErr == nil {
 			if restoreErr := oriontls.WriteFile(keyFile, previousKey, true); restoreErr != nil {
 				return fmt.Errorf("failed to write %s (%w), and to put back the previous %s: %w", certFile, err,
@@ -176,4 +176,105 @@ func replacePair(certFile, keyFile string, pair oriontls.Pair) error {
 		return fmt.Errorf("failed to write %s: %w", certFile, err)
 	}
 	return nil
+}
+
+// RenewAPIOptions are the options of RenewAPI
+type RenewAPIOptions struct {
+	// CLIDir is the directory of the cli, with the CA directory
+	CLIDir string
+	// APIDir is where the api files are written; a certificate in it is renewed (it must be one of this CA)
+	APIDir string
+	// APISANs are added to the api certificate, on top of DefaultAPISANs and the names on the current certificate
+	APISANs []string
+	// CAPassphrase decrypts the private key of the server intermediate
+	CAPassphrase []byte
+	// LeafExpiry is the validity of the new certificate
+	LeafExpiry time.Duration
+	// KeyAlgorithm of the new key; empty means the algorithm of the current key (else that of the intermediate)
+	KeyAlgorithm oriontls.KeyAlgorithm
+}
+
+// RenewAPI writes a new server certificate and private key for the api to the api directory, signed by the server
+// intermediate, together with the api client intermediate (client-ca.crt): the same files as Init. The certificate
+// keeps the names of the current one in the api directory, when there is one. Copy the files to the api, which loads
+// them without a restart.
+func RenewAPI(opts RenewAPIOptions) (*RenewResult, []string, error) {
+	if opts.CLIDir == "" || opts.APIDir == "" {
+		return nil, nil, errors.New("both the cli and the api directory need to be set")
+	}
+	if err := (InitOptions{CLIDir: opts.CLIDir, APIDir: opts.APIDir}).checkDirs(); err != nil {
+		return nil, nil, err
+	}
+	intermediate, err := LoadIntermediate(opts.CLIDir, ServerIntermediate, opts.CAPassphrase)
+	if err != nil {
+		return nil, nil, err
+	}
+	clientCAFile := filepath.Join(opts.CLIDir, CLICADir, APIClientIntermediate, caName+crtExt)
+	clientCA, err := os.ReadFile(clientCAFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read the api client intermediate: %w", err)
+	}
+	files := APIFiles(opts.APIDir)
+	previous, err := currentAPICert(files.CertFile, intermediate.Cert.X509())
+	if err != nil {
+		return nil, nil, err
+	}
+	sans := append([]string{APIServerName}, DefaultAPISANs...)
+	if previous != nil {
+		sans = append(sans, previous.DNSNames...)
+		for _, ip := range previous.IPAddresses {
+			sans = append(sans, ip.String())
+		}
+	}
+	sans = uniqueValues(append(sans, opts.APISANs...))
+	for _, san := range sans {
+		if !oriontls.IsValidServer(san) {
+			return nil, nil, fmt.Errorf("invalid name or address for the api certificate: %q", san)
+		}
+	}
+	algorithm := opts.KeyAlgorithm
+	if algorithm == "" {
+		algorithm = currentAlgorithm(files.KeyFile, intermediate.PrivateKey.Algorithm)
+	}
+	leaf, err := IssueLeaf(intermediate, LeafRequest{
+		Subject:        intermediate.Cert.Subject.SetCommonName(APIServerName),
+		ExtKeyUsage:    oriontls.DefaultServerExtKeyUsages,
+		AlternateNames: sans,
+		Expiry:         opts.LeafExpiry,
+		KeyAlgorithm:   algorithm,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	certPEM := append(append([]byte{}, leaf.Cert.PEM...), intermediate.Cert.PEM...)
+	if err = replacePair(files.CertFile, files.KeyFile, certPEM, leaf.PrivateKey.PEM); err != nil {
+		return nil, nil, err
+	}
+	if err = oriontls.WriteFile(files.CAFile, clientCA, false); err != nil {
+		return nil, nil, fmt.Errorf("failed to write %s: %w", files.CAFile, err)
+	}
+	renewed := leaf.Cert.X509()
+	return &RenewResult{
+		Previous:     previous,
+		Renewed:      renewed,
+		Capped:       renewed.NotAfter.Equal(intermediate.Cert.X509().NotAfter),
+		Intermediate: intermediate.Cert.X509(),
+	}, sans, nil
+}
+
+// currentAPICert returns the api certificate in certFile (nil when there is none), and refuses one that isn't signed
+// by the server intermediate: the api directory then holds files of another CA
+func currentAPICert(certFile string, intermediate *x509.Certificate) (*x509.Certificate, error) {
+	_, certs, err := LoadCertPool(certFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err = certs[0].CheckSignatureFrom(intermediate); err != nil {
+		return nil, fmt.Errorf("%s is not signed by the intermediate %s of this CA: renew it in an empty directory, "+
+			"or with the api directory of this CA: %w", certFile, ServerIntermediate, err)
+	}
+	return certs[0], nil
 }
