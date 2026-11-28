@@ -108,6 +108,7 @@ nav:
       - Synchronous replication: operations/sync-replication.md
       - Unresponsive standbys: operations/unresponsive-standbys.md
       - Custom pg_hba entries: operations/pg-hba.md
+      - Managing keepers: operations/keepers.md
   - Reference:
       - Commands:
           - reference/commands/index.md

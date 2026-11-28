@@ -42,6 +42,8 @@ run anywhere, come and go, and change their addresses.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
 - [Failover and switchover](operations/failover-switchover.md): when the sentinel fails over, what happens to the old
   primary, and how to switch over with `orion-cli failkeeper`.
+- [Managing keepers](operations/keepers.md): add a keeper, remove one that is gone for good, and read the
+  keepers, proxies and sentinels in `orion-cli status`.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.
 - [PostgreSQL parameters](operations/postgres-parameters.md): set the parameters of all instances in the cluster
   spec, and when the keeper reloads or restarts PostgreSQL.
