@@ -54,6 +54,8 @@ run anywhere, come and go, and change their addresses.
 - [Standby resync](operations/resync.md): how a keeper gets a new standby, and `resyncFastCheckpoint`.
 - [Synchronous replication](operations/sync-replication.md): commits that wait for a synchronous standby, failover,
   and a restarted primary.
+- [Monitoring](operations/monitoring.md): the probes and the Prometheus metrics of every component, and what to
+  alert on.
 - [Unresponsive standbys](operations/unresponsive-standbys.md): set `tcp_user_timeout`, so a standby that stops
   reading can't block the primary.
 
