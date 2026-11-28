@@ -242,3 +242,84 @@ var _ = Describe("pki renew api", func() {
 		Ω(api.requests()).To(BeEmpty())
 	})
 })
+
+var _ = Describe("pki renew intermediate", func() {
+	// newPKI runs pki init in new directories, makes the cli use them, and returns the cli and the api directory
+	newPKI := func() (string, string) {
+		cliDir := GinkgoT().TempDir()
+		apiDir := filepath.Join(GinkgoT().TempDir(), "api")
+		usePKIDir(cliDir)
+		_, _, err := run("pki", "init", "--api-dir", apiDir, "--api-san", "orion-api.example.org")
+		Ω(err).NotTo(HaveOccurred())
+		return cliDir, apiDir
+	}
+	// apiOf returns a fake api with the files in apiDir, which answers whoami
+	apiOf := func(apiDir string) *fakeAPI {
+		tlsConfig, err := pki.APIFiles(apiDir).ServerConfig()
+		Ω(err).NotTo(HaveOccurred())
+		api := newFakeAPIWithTLS(tlsConfig)
+		api.handle(endpoints.WhoAmIEndPoint.Route(endpoints.MethodGet), func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, endpoints.WhoAmIResponse{Name: pki.CLIClientName, Method: "certificate"}, "")
+		})
+		return api
+	}
+
+	It("renews the server intermediate and the api certificate", func() {
+		cliDir, apiDir := newPKI()
+		oldIntermediate, err := os.ReadFile(filepath.Join(cliDir, pki.CLICADir, pki.ServerIntermediate, "ca.crt"))
+		Ω(err).NotTo(HaveOccurred())
+
+		out, stderrOut, err := run("pki", "renew", "intermediate", "server", "--api-dir", apiDir,
+			"--intermediate-validity", "2y", "--leaf-validity", "90d")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(stderrOut).To(BeEmpty())
+		Ω(out).To(HavePrefix("Renewed the intermediate server in " +
+			filepath.Join(cliDir, pki.CLICADir, pki.ServerIntermediate) + ": valid until "))
+		Ω(out).To(ContainSubstring("Renewed the api certificate orion-api in " + apiDir))
+		Ω(out).To(ContainSubstring("orion-api.example.org"))
+		Ω(out).To(ContainSubstring("Copy server.crt, server.key and client-ca.crt to the --pki-dir of the api"))
+		previous, err := os.ReadFile(filepath.Join(cliDir, pki.CLICADir, pki.ServerIntermediate,
+			pki.PreviousIntermediateFile))
+		Ω(err).NotTo(HaveOccurred())
+		Ω(previous).To(Equal(oldIntermediate))
+
+		out, _, err = apiOf(apiDir).run("pki", "list")
+		Ω(err).NotTo(HaveOccurred())
+		Ω(out).To(ContainSubstring("is trusted by the root of the cli"))
+		Ω(out).To(MatchRegexp(`api\s+-\s+server\s.*valid \(7\d\dd left\)`))
+	})
+
+	It("renews the api client intermediate and the cli certificate", func() {
+		cliDir, apiDir := newPKI()
+		oldAPI := apiOf(apiDir)
+
+		out, _, err := run("pki", "renew", "intermediate", "api-clients", "--api-dir", apiDir)
+		Ω(err).NotTo(HaveOccurred())
+		Ω(out).To(ContainSubstring("Renewed the intermediate api-clients in "))
+		Ω(out).To(ContainSubstring("Renewed the client certificate orion-cli in " + cliDir))
+		Ω(out).To(ContainSubstring("Copy " + pki.APIFiles(apiDir).CAFile + " to the --pki-dir of the api"))
+
+		// the api with the previous client-ca.crt refuses the new client certificate; with the new one, it accepts it
+		whoAmI := func(api *fakeAPI) error {
+			config, err := pki.CLIFiles(cliDir).ClientConfig()
+			Ω(err).NotTo(HaveOccurred())
+			config.ServerName = "localhost"
+			client := &http.Client{Transport: &http.Transport{TLSClientConfig: config}, Timeout: 5 * time.Second}
+			resp, err := client.Get(api.url("/" + endpoints.APIVersion + "/" + string(endpoints.WhoAmIEndPoint)))
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+			return err
+		}
+		Ω(whoAmI(oldAPI)).NotTo(Succeed())
+		Ω(whoAmI(apiOf(apiDir))).To(Succeed())
+	})
+
+	It("needs an intermediate and --api-dir", func() {
+		_, apiDir := newPKI()
+		_, _, err := run("pki", "renew", "intermediate", "root", "--api-dir", apiDir)
+		expectError(err, `invalid argument "root"`, "")
+		_, _, err = run("pki", "renew", "intermediate", "server")
+		expectError(err, `required flag(s) "api-dir" not set`, "")
+	})
+})

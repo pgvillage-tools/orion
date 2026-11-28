@@ -307,7 +307,7 @@ orion-cli pki renew cli
 - **`--leaf-validity`** (default `1y`) sets the validity, **`--key-algorithm`** the algorithm of the new key (default:
   that of the current key).
 - **The certificate never outlives the intermediate.** When the intermediate expires first, the cli warns: renew the
-  intermediate then.
+  intermediate then (see [The intermediates](#the-intermediates)).
 
 Only the cli that created the CA (with `pki init` or `bootstrap`) has the intermediate, in `--pki-dir/ca`. The key
 and the certificate are replaced one after the other, each atomically; when writing the certificate fails, the cli
@@ -346,7 +346,7 @@ orion-cli pki renew api
 - **The api must be able to write its files.** With a read-only `--pki-dir` (e.g. a Kubernetes Secret), the api
   refuses the certificate and keeps its own: renew offline, and update the Secret.
 - **The intermediate stays the same.** A certificate of a new intermediate is refused: renew the intermediate
-  offline.
+  offline (see [The intermediates](#the-intermediates)).
 - `--key-algorithm` sets the algorithm of the new key (default: that of the current key of the api);
   `--leaf-validity` and the passphrase work like for the cli certificate.
 
@@ -375,6 +375,45 @@ scp ~/.orion/api/server.crt ~/.orion/api/server.key ~/.orion/api/client-ca.crt o
 - **The api loads the new files without a restart** (see [Running the api](#running-the-api)). It only switches when
   the three files belong together, so copying them one by one is safe.
 - This also renews an expired api certificate.
+
+### The intermediates
+
+The intermediates expire after 3 years (`--intermediate-validity` of `pki init`), and the certificates they sign
+never outlive them. Renew an intermediate before it expires, together with the certificates it signs:
+
+```bash
+orion-cli pki renew intermediate server --api-dir ~/.orion/api
+# Passphrase for the CA keys:
+# Renewed the intermediate server in /home/me/.orion/cli/ca/server: valid until 2029-11-26T07:31:00Z (serial 7b21…)
+# Renewed the api certificate orion-api in /home/me/.orion/api: valid until 2027-11-26T07:31:00Z (serial 1f3a…)
+# Names on the certificate: orion-api, localhost, 127.0.0.1, ::1, orion-api.example.com
+# Copy server.crt, server.key and client-ca.crt to the --pki-dir of the api: it loads them within a minute, or right away on SIGHUP
+
+orion-cli pki renew intermediate api-clients --api-dir ~/.orion/api
+# Passphrase for the CA keys:
+# Renewed the intermediate api-clients in /home/me/.orion/cli/ca/api-clients: valid until 2029-11-26T07:31:00Z (serial 3c9d…)
+# Renewed the client certificate orion-cli in /home/me/.orion/cli: valid until 2027-11-26T07:31:00Z (serial 5e0c…)
+# Copy /home/me/.orion/api/client-ca.crt to the --pki-dir of the api: it loads it within a minute, or right away on SIGHUP. Until then, the api refuses the new client certificate of the cli
+```
+
+- **A new key and certificate** for the intermediate, with the same subject, signed by the root in `--pki-dir`
+  (`ca/root.crt`). The key is encrypted with the passphrase of the CA keys, like the current one. The cli and the
+  api keep trusting the same root: nothing changes for them.
+- **The certificates it signs are renewed too:** they don't chain to the new key.
+    - `server`: the server certificate of the api, written to `--api-dir`, like `pki renew api --api-dir`. The new
+      intermediate goes with it in `server.crt`.
+    - `api-clients`: the client certificate of the cli, in `--pki-dir`, like `pki renew cli`. The new intermediate
+      is written to `--api-dir` as `client-ca.crt`: the api only accepts client certificates signed by it. **Until
+      the api has the new `client-ca.crt`, it refuses the cli**: copy it right away.
+- **The current certificate of the intermediate is kept** as `ca/<intermediate>/previous.crt`. `pki renew cli` and
+  `pki renew api` still renew certificates it signed: when the renewal stops halfway, run them to finish it.
+- **`--intermediate-validity`** (default `3y`) sets the validity of the intermediate, **`--leaf-validity`** (default
+  `1y`) that of the certificates it signs, and **`--key-algorithm`** the algorithm of all new keys (default: that of
+  each current key).
+- **The intermediate never outlives the root.** When the root expires first, the cli warns. Renewing the root is not
+  supported yet.
+- For now, an intermediate is renewed offline only: copy the files in `--api-dir` to the api, which loads them
+  without a restart.
 
 ## Using the cli
 

@@ -103,9 +103,9 @@ func isWithin(path, dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// checkDirs refuses an api directory that contains the CA directory of the cli: copying the api directory to the
+// CheckDirs refuses an api directory that contains the CA directory of the cli: copying the api directory to the
 // api host would copy the CA keys too
-func (o InitOptions) checkDirs() error {
+func (o InitOptions) CheckDirs() error {
 	apiDir, err := realPath(o.APIDir)
 	if err != nil {
 		return err
@@ -134,7 +134,7 @@ func (o InitOptions) check() error {
 	if o.CLIDir == "" || o.APIDir == "" {
 		return errors.New("both the cli and the api directory need to be set")
 	}
-	if err := o.checkDirs(); err != nil {
+	if err := o.CheckDirs(); err != nil {
 		return err
 	}
 	if err := o.checkSANs(); err != nil {
