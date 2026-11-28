@@ -15,11 +15,17 @@
 package cmd
 
 import (
+	"crypto"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -120,8 +126,119 @@ var _ = Describe("pki renew api", func() {
 		Ω(out).To(MatchRegexp(`api\s+-\s+orion-api\s.*valid \(8\dd left\)`))
 	})
 
-	It("needs --api-dir", func() {
-		_, _, err := run("pki", "renew", "api")
-		expectError(err, `required flag(s) "api-dir" not set`, "")
+	Describe("online", func() {
+		var (
+			api     *fakeAPI
+			serving atomic.Pointer[tls.Certificate]
+			pending crypto.Signer
+		)
+		BeforeEach(func() {
+			cliDir := GinkgoT().TempDir()
+			apiDir := filepath.Join(GinkgoT().TempDir(), "api")
+			usePKIDir(cliDir)
+			_, _, err := run("pki", "init", "--api-dir", apiDir, "--api-san", "orion-api.example.org")
+			Ω(err).NotTo(HaveOccurred())
+			files := pki.APIFiles(apiDir)
+			pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+			Ω(err).NotTo(HaveOccurred())
+			serving.Store(&pair)
+			clientCAs, _, err := pki.LoadCertPool(files.CAFile)
+			Ω(err).NotTo(HaveOccurred())
+			// like the api: new connections get the certificate it serves with now
+			api = newFakeAPIWithTLS(&tls.Config{
+				MinVersion: tls.VersionTLS13,
+				GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+					return &tls.Config{
+						MinVersion:   tls.VersionTLS13,
+						Certificates: []tls.Certificate{*serving.Load()},
+						ClientCAs:    clientCAs,
+						ClientAuth:   tls.RequireAndVerifyClientCert,
+					}, nil
+				},
+			})
+			api.handle(endpoints.APICertificateRequestEndPoint.Route(endpoints.MethodPost),
+				func(w http.ResponseWriter, _ *http.Request) {
+					key := oriontls.PrivateKey{Algorithm: oriontls.DefaultKeyAlgorithm}
+					Ω(key.Generate()).To(Succeed())
+					pending = key.Signer()
+					der, csrErr := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+						Subject: pkix.Name{CommonName: pki.APIServerName},
+					}, pending)
+					Ω(csrErr).NotTo(HaveOccurred())
+					writeJSON(w, http.StatusOK, endpoints.APICertificateRequestResponse{
+						Request: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}),
+					}, "")
+				})
+			api.handle(endpoints.APICertificateEndPoint.Route(endpoints.MethodPut),
+				func(w http.ResponseWriter, r *http.Request) {
+					var cert endpoints.APICertificate
+					Ω(json.NewDecoder(r.Body).Decode(&cert)).To(Succeed())
+					keyDER, keyErr := x509.MarshalPKCS8PrivateKey(pending)
+					Ω(keyErr).NotTo(HaveOccurred())
+					renewed, pairErr := tls.X509KeyPair(cert.Chain,
+						pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
+					Ω(pairErr).NotTo(HaveOccurred())
+					serving.Store(&renewed)
+					writeJSON(w, http.StatusOK, endpoints.APICertificateResponse{
+						Serial: renewed.Leaf.SerialNumber.Text(16), NotAfter: renewed.Leaf.NotAfter,
+					}, "")
+				})
+		})
+
+		It("renews the certificate on the api, which keeps its key", func() {
+			before := serving.Load().Leaf.SerialNumber
+			out, _, err := api.run("pki", "renew", "api", "--api-san", "orion.example.org", "--leaf-validity", "90d")
+			Ω(err).NotTo(HaveOccurred())
+			Ω(out).To(HavePrefix("Renewed the api certificate orion-api in the api at 127.0.0.1:" + api.port() +
+				": valid until "))
+			Ω(out).To(ContainSubstring("Names on the certificate: orion-api, localhost, 127.0.0.1, ::1, " +
+				"orion-api.example.org, orion.example.org"))
+			Ω(out).To(ContainSubstring("its private key never left the api"))
+			leaf := serving.Load().Leaf
+			Ω(leaf.SerialNumber).NotTo(Equal(before))
+			Ω(leaf.NotAfter).To(BeTemporally("~", time.Now().Add(90*oriontls.Day), time.Minute))
+			Ω(api.requestsTo(http.MethodPost, "/v1/pki/api/csr")).To(HaveLen(1))
+			Ω(api.requestsTo(http.MethodPut, "/v1/pki/api/certificate")).To(HaveLen(1))
+		})
+
+		It("fails when the api doesn't serve the new certificate", func() {
+			// an api that answers, but keeps its certificate
+			api.mux = http.NewServeMux()
+			api.handle(endpoints.APICertificateRequestEndPoint.Route(endpoints.MethodPost),
+				func(w http.ResponseWriter, _ *http.Request) {
+					key := oriontls.PrivateKey{Algorithm: oriontls.DefaultKeyAlgorithm}
+					Ω(key.Generate()).To(Succeed())
+					der, csrErr := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+						Subject: pkix.Name{CommonName: pki.APIServerName},
+					}, key.Signer())
+					Ω(csrErr).NotTo(HaveOccurred())
+					writeJSON(w, http.StatusOK, endpoints.APICertificateRequestResponse{
+						Request: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}),
+					}, "")
+				})
+			api.handle(endpoints.APICertificateEndPoint.Route(endpoints.MethodPut),
+				func(w http.ResponseWriter, _ *http.Request) {
+					writeJSON(w, http.StatusOK, endpoints.APICertificateResponse{}, "")
+				})
+			_, _, err := api.run("pki", "renew", "api")
+			expectError(err, "the api took the new certificate (serial ", "")
+		})
+	})
+
+	It("renews an expired api certificate offline only", func() {
+		const validity = 2 * time.Second
+		cliDir := GinkgoT().TempDir()
+		apiDir := filepath.Join(GinkgoT().TempDir(), "api")
+		usePKIDir(cliDir)
+		_, _, err := run("pki", "init", "--api-dir", apiDir, "--leaf-validity", validity.String())
+		Ω(err).NotTo(HaveOccurred())
+		tlsConfig, err := pki.APIFiles(apiDir).ServerConfig()
+		Ω(err).NotTo(HaveOccurred())
+		api := newFakeAPIWithTLS(tlsConfig)
+		time.Sleep(validity)
+		_, _, err = api.run("pki", "renew", "api")
+		expectError(err, "the certificate of the api at 127.0.0.1:"+api.port()+" expired at ",
+			"renew it offline, with --api-dir, and copy the files to the api")
+		Ω(api.requests()).To(BeEmpty())
 	})
 })

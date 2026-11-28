@@ -315,6 +315,43 @@ puts the previous key back.
 
 ### The server certificate of the api
 
+Online, on the api itself:
+
+```bash
+orion-cli pki renew api
+# Passphrase for the CA keys:
+# Renewed the api certificate orion-api in the api at orion-api.example.com:8443: valid until 2027-11-26T07:31:00Z (serial 1f3a…)
+# Names on the certificate: orion-api, localhost, 127.0.0.1, ::1, orion-api.example.com
+# The api serves new connections with it; its private key never left the api
+```
+
+1. The cli checks the certificate the api serves with now against its root.
+2. The api creates a new private key, keeps it in memory, and sends a certificate request for it
+   (`POST /v1/pki/api/csr`).
+3. The cli checks the request (signed by its key, for `orion-api`), and signs it with the server intermediate.
+4. The api checks the certificate: for its new key, signed by the intermediate it has, a server certificate for
+   `orion-api`, valid now. It writes the certificate and the key to its files, and serves new connections with them
+   (`PUT /v1/pki/api/certificate`).
+5. The cli connects again, and checks that the api serves the new certificate.
+
+- **The private key of the api never leaves the api.** The cli only sees the request and signs it.
+- **Only the cli can renew:** the api answers 403 to a client certificate with another common name than
+  `orion-cli`.
+- **The key of a request waits 10 minutes** for its certificate, in memory only. A new request replaces it. After a
+  restart of the api, run the renewal again.
+- **The names** of the certificate the api serves with are kept. On top come `localhost`, `127.0.0.1`, `::1`, the
+  configured api host (`--host`) and the names in `--api-san`. The cli prints the names.
+- **The api must have a valid certificate.** When it expired, the cli can't tell the real api from someone who has
+  an old key of it, so it refuses: renew it offline. The cli also refuses an api of another CA.
+- **The api must be able to write its files.** With a read-only `--pki-dir` (e.g. a Kubernetes Secret), the api
+  refuses the certificate and keeps its own: renew offline, and update the Secret.
+- **The intermediate stays the same.** A certificate of a new intermediate is refused: renew the intermediate
+  offline.
+- `--key-algorithm` sets the algorithm of the new key (default: that of the current key of the api);
+  `--leaf-validity` and the passphrase work like for the cli certificate.
+
+Offline, in a directory that you copy to the api:
+
 ```bash
 orion-cli pki renew api --api-dir ~/.orion/api
 # Passphrase for the CA keys:
@@ -330,17 +367,14 @@ scp ~/.orion/api/server.crt ~/.orion/api/server.key ~/.orion/api/client-ca.crt o
 ```
 
 - **The same files as `pki init`:** a new key and certificate, signed by the server intermediate in `--pki-dir`
-  (`ca/server`), followed by that intermediate, and the api client intermediate as `client-ca.crt`.
-- **The names** of the certificate in `--api-dir` are kept, when there is one. On top come `localhost`, `127.0.0.1`,
-  `::1`, the configured api host (`--host`) and the names in `--api-san`. The cli prints the names.
+  (`ca/server`), followed by that intermediate, and the api client intermediate as `client-ca.crt`. The cli makes
+  the private key, and you copy it to the api, like after `pki init`.
+- **The names** of the certificate in `--api-dir` are kept, when there is one, with the same extra names as online.
 - **`--api-dir` must hold the files of this CA**, or be empty (e.g. for a new api host). Files of another CA are
   refused, and nothing is changed. Like `pki init`, the cli refuses an `--api-dir` that contains its CA directory.
 - **The api loads the new files without a restart** (see [Running the api](#running-the-api)). It only switches when
   the three files belong together, so copying them one by one is safe.
-- `--leaf-validity`, `--key-algorithm` and the passphrase work like for the cli certificate.
-
-The api keeps its private key on the api host only with the online renewal, which is not there yet. With this one,
-the private key is made by the cli, and copied to the api like after `pki init`.
+- This also renews an expired api certificate.
 
 ## Using the cli
 

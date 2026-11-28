@@ -52,6 +52,11 @@ type Handlers struct {
 	// pkiDir is the api directory, with the archive and the state of the bootstrap: the confirmation of the cli
 	// removes the archive
 	pkiDir string
+	// certs are the certificates of the api port in normal mode (nil in bootstrap mode); the online renewal
+	// replaces them
+	certs *certReloader
+	// renewal holds the private key of the last certificate request of the online renewal
+	renewal pendingRenewal
 }
 
 // NewHandlers returns a new Handlers object. election is only used to read the sentinel leader; the api never runs for
@@ -80,6 +85,7 @@ func (h *Handlers) Routes() []Route {
 	routes = append(routes, h.MemberRoutes()...)
 	routes = append(routes, h.WhoAmIRoutes()...)
 	routes = append(routes, h.BootstrapConfirmRoutes()...)
+	routes = append(routes, h.APICertificateRoutes()...)
 	return routes
 }
 
