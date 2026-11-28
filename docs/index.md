@@ -40,6 +40,8 @@ run anywhere, come and go, and change their addresses.
   init mode `new`, `existing` or `pitr`.
 - [Installation](deploy/install.md): the binaries of a release, the container images, or a build from source.
 - [Orion on Kubernetes](deploy/k8s.md): run Orion on Kubernetes, with Kubernetes as the store.
+- [The store](deploy/store.md): etcd or Kubernetes as the store, TLS and client certificates for etcd, several
+  clusters in one store, and what happens when the store is down.
 - [Failover and switchover](operations/failover-switchover.md): when the sentinel fails over, what happens to the old
   primary, and how to switch over with `orion-cli failkeeper`.
 - [Point in time recovery](operations/pitr.md): archive the WAL, take base backups, and restore into a new cluster.

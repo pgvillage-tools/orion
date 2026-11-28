@@ -94,6 +94,7 @@ nav:
   - Deploy:
       - Installation: deploy/install.md
       - Kubernetes: deploy/k8s.md
+      - The store: deploy/store.md
   - Cluster:
       - Cluster spec: cluster/spec.md
       - Initialization: cluster/initialization.md
