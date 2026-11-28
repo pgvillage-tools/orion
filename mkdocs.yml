@@ -88,6 +88,7 @@ exclude_docs: |
 nav:
   - Home: index.md
   - Architecture: architecture.md
+  - FAQ: faq.md
   - API:
       - Certificates: api/certificates.md
       - Bootstrap design: api/bootstrap-design.md

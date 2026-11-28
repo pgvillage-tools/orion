@@ -32,6 +32,7 @@ run anywhere, come and go, and change their addresses.
 
 - [Architecture](architecture.md): how the components talk to each other through the store, and what they
   require.
+- [FAQ](faq.md): frequently asked questions, with links to the pages that answer them.
 - [API certificates](api/certificates.md): the certificates the api and the cli use, and how to create them.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
 - [Command reference](reference/commands/index.md): the options of every command, and their environment variables.
