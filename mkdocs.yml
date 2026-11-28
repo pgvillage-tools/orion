@@ -91,6 +91,7 @@ nav:
   - API:
       - Certificates: api/certificates.md
       - Bootstrap design: api/bootstrap-design.md
+      - REST api: api/endpoints.md
   - Deploy:
       - Installation: deploy/install.md
       - Kubernetes: deploy/k8s.md

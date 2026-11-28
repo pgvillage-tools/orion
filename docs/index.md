@@ -34,6 +34,8 @@ run anywhere, come and go, and change their addresses.
   require.
 - [API certificates](api/certificates.md): the certificates the api and the cli use, and how to create them.
 - [Bootstrap design](api/bootstrap-design.md): the design of TLS and the bootstrap of the api.
+- [REST api](api/endpoints.md): the endpoints of the api, their answers and status codes, and the cli commands that
+  use them.
 - [Command reference](reference/commands/index.md): the options of every command, and their environment variables.
 - [Cluster spec](cluster/spec.md): the desired state of a cluster, and how to view and change it.
 - [Initialization](cluster/initialization.md): create a cluster with `orion-cli init` or `--initial-cluster-spec`, in
